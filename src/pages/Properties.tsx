@@ -113,11 +113,18 @@ export default function Properties() {
                       <span>{property.square_footage.toLocaleString()} sqft</span>
                     )}
                   </div>
-                  {property.price_per_sqft && (
-                    <div className="text-sm text-muted-foreground">
-                      ${property.price_per_sqft}/sqft
-                    </div>
-                  )}
+                  <div className="flex flex-col gap-1">
+                    {property.price_per_sqft && (
+                      <div className="text-sm text-muted-foreground">
+                        ${property.price_per_sqft}/sqft
+                      </div>
+                    )}
+                    {property.arv_estimate && (
+                      <div className="text-sm font-medium text-success">
+                        ARV: ${Number(property.arv_estimate).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </Link>

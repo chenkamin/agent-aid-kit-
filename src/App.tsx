@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Properties from "./pages/Properties";
+import PropertyForm from "./pages/PropertyForm";
+import PropertyDetail from "./pages/PropertyDetail";
 import Contacts from "./pages/Contacts";
 import Activities from "./pages/Activities";
 import NotFound from "./pages/NotFound";
@@ -22,6 +24,9 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/properties" element={<Properties />} />
+            <Route path="/properties/new" element={<PropertyForm />} />
+            <Route path="/properties/:id" element={<PropertyDetail />} />
+            <Route path="/properties/:id/edit" element={<PropertyForm />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/activities" element={<Activities />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

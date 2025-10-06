@@ -118,6 +118,7 @@ export type Database = {
           above_ground_sqf: number | null
           address: string | null
           agent_notes: string | null
+          arv_estimate: number | null
           basement: boolean | null
           basement_sqf: number | null
           bath: number | null
@@ -182,6 +183,7 @@ export type Database = {
           above_ground_sqf?: number | null
           address?: string | null
           agent_notes?: string | null
+          arv_estimate?: number | null
           basement?: boolean | null
           basement_sqf?: number | null
           bath?: number | null
@@ -246,6 +248,7 @@ export type Database = {
           above_ground_sqf?: number | null
           address?: string | null
           agent_notes?: string | null
+          arv_estimate?: number | null
           basement?: boolean | null
           basement_sqf?: number | null
           bath?: number | null
