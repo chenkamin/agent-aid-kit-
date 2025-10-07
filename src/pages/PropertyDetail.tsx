@@ -368,7 +368,7 @@ export default function PropertyDetail() {
                 Add Activity
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent aria-describedby="activity-form-description">
               <DialogHeader>
                 <DialogTitle>Add New Activity</DialogTitle>
               </DialogHeader>

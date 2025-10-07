@@ -175,7 +175,7 @@ export default function Properties() {
       )}
 
       <Dialog open={!!selectedProperty} onOpenChange={() => setSelectedProperty(null)}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto" aria-describedby="property-details-description">
           <DialogHeader>
             <DialogTitle className="text-2xl">
               {selectedProperty?.address || "Untitled Property"}
