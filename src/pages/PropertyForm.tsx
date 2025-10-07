@@ -318,6 +318,10 @@ export default function PropertyForm() {
                     <SelectItem value="Under Contract">Under Contract</SelectItem>
                     <SelectItem value="Sold">Sold</SelectItem>
                     <SelectItem value="Off Market">Off Market</SelectItem>
+                    <SelectItem value="Tracking">Tracking</SelectItem>
+                    <SelectItem value="Not Relevant">Not Relevant</SelectItem>
+                    <SelectItem value="Follow Up">Follow Up</SelectItem>
+                    <SelectItem value="Waiting for Response">Waiting for Response</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

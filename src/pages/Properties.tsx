@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock } from "lucide-react";
+import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,7 +22,15 @@ export default function Properties() {
     queryFn: async () => {
       const { data } = await supabase
         .from("properties")
-        .select("*")
+        .select(`
+          *,
+          activities!activities_property_id_fkey(
+            id,
+            type,
+            due_at,
+            status
+          )
+        `)
         .order("created_at", { ascending: false });
       return data || [];
     },
@@ -37,9 +46,35 @@ export default function Properties() {
         return "bg-success text-success-foreground";
       case "Off Market":
         return "bg-muted text-muted-foreground";
+      case "Tracking":
+        return "bg-blue-500 text-white";
+      case "Not Relevant":
+        return "bg-gray-500 text-white";
+      case "Follow Up":
+        return "bg-purple-500 text-white";
+      case "Waiting for Response":
+        return "bg-orange-500 text-white";
       default:
         return "bg-secondary text-secondary-foreground";
     }
+  };
+
+  const getNextFollowUp = (property: any) => {
+    if (!property.activities || property.activities.length === 0) return null;
+    
+    const followUps = property.activities.filter(
+      (activity: any) => 
+        activity.type === 'follow_up' && 
+        activity.status === 'open' && 
+        activity.due_at
+    );
+    
+    if (followUps.length === 0) return null;
+    
+    // Sort by due_at and return the earliest one
+    return followUps.sort(
+      (a: any, b: any) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime()
+    )[0];
   };
 
   if (isLoading) {
@@ -87,44 +122,53 @@ export default function Properties() {
         <Card>
           <CardContent className="p-0">
             <div className="divide-y divide-border">
-              {properties?.map((property) => (
-                <div
-                  key={property.id}
-                  onClick={() => setSelectedProperty(property)}
-                  className="flex items-center justify-between p-6 hover:bg-accent/50 cursor-pointer transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold text-foreground truncate">
-                      {property.address || "Untitled Property"}
-                    </h3>
-                    {(property.city || property.state) && (
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {[property.city, property.state].filter(Boolean).join(", ")}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center gap-6 ml-6">
-                    {property.price && (
-                      <div className="text-right">
-                        <div className="flex items-center text-xl font-bold text-foreground">
-                          <DollarSign className="h-5 w-5" />
-                          {Number(property.price).toLocaleString()}
+              {properties?.map((property) => {
+                const nextFollowUp = getNextFollowUp(property);
+                return (
+                  <div
+                    key={property.id}
+                    onClick={() => setSelectedProperty(property)}
+                    className="flex items-center justify-between p-6 hover:bg-accent/50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold text-foreground truncate">
+                        {property.address || "Untitled Property"}
+                      </h3>
+                      {(property.city || property.state) && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {[property.city, property.state].filter(Boolean).join(", ")}
+                        </p>
+                      )}
+                      {nextFollowUp && (
+                        <div className="flex items-center gap-2 mt-2 text-sm font-medium text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950 px-3 py-1 rounded-full w-fit animate-pulse">
+                          <Clock className="h-4 w-4" />
+                          <span>Follow up: {format(new Date(nextFollowUp.due_at), "MMM d, yyyy")}</span>
                         </div>
-                        {property.price_per_sqft && (
-                          <p className="text-sm text-muted-foreground">
-                            ${property.price_per_sqft}/sqft
-                          </p>
-                        )}
-                      </div>
-                    )}
+                      )}
+                    </div>
                     
-                    <Badge className={getStatusColor(property.status)}>
-                      {property.status}
-                    </Badge>
+                    <div className="flex items-center gap-6 ml-6">
+                      {property.price && (
+                        <div className="text-right">
+                          <div className="flex items-center text-xl font-bold text-foreground">
+                            <DollarSign className="h-5 w-5" />
+                            {Number(property.price).toLocaleString()}
+                          </div>
+                          {property.price_per_sqft && (
+                            <p className="text-sm text-muted-foreground">
+                              ${property.price_per_sqft}/sqft
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      
+                      <Badge className={getStatusColor(property.status)}>
+                        {property.status}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

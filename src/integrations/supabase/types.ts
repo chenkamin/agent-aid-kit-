@@ -368,6 +368,9 @@ export type Database = {
         | "price-reduction-ask"
         | "closing"
         | "other"
+        | "offer"
+        | "follow_up"
+        | "viewing"
       contact_type:
         | "Agent"
         | "Seller"
@@ -392,6 +395,10 @@ export type Database = {
         | "Sold"
         | "Off Market"
         | "Pending"
+        | "Tracking"
+        | "Not Relevant"
+        | "Follow Up"
+        | "Waiting for Response"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -532,6 +539,9 @@ export const Constants = {
         "price-reduction-ask",
         "closing",
         "other",
+        "offer",
+        "follow_up",
+        "viewing",
       ],
       contact_type: [
         "Agent",
@@ -559,6 +569,10 @@ export const Constants = {
         "Sold",
         "Off Market",
         "Pending",
+        "Tracking",
+        "Not Relevant",
+        "Follow Up",
+        "Waiting for Response",
       ],
     },
   },
