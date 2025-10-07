@@ -1,21 +1,36 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Properties() {
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
+  const [isAddingActivity, setIsAddingActivity] = useState(false);
+  const [activityForm, setActivityForm] = useState({
+    type: "note",
+    title: "",
+    body: "",
+    due_at: "",
+  });
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   const { data: properties, isLoading } = useQuery({
     queryKey: ["properties"],
@@ -75,6 +90,72 @@ export default function Properties() {
     return followUps.sort(
       (a: any, b: any) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime()
     )[0];
+  };
+
+  const addActivityMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const { error } = await supabase.from("activities").insert([{
+        ...data,
+        property_id: selectedProperty?.id,
+        status: 'open',
+      }]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      toast({
+        title: "Activity added",
+        description: "The activity has been added successfully.",
+      });
+      setIsAddingActivity(false);
+      setActivityForm({ type: "note", title: "", body: "", due_at: "" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: `Failed to add activity: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAddActivity = () => {
+    if (!activityForm.title) {
+      toast({
+        title: "Error",
+        description: "Please enter a title for the activity",
+        variant: "destructive",
+      });
+      return;
+    }
+    addActivityMutation.mutate(activityForm);
+  };
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case "call":
+        return <Phone className="h-4 w-4" />;
+      case "email":
+        return <Mail className="h-4 w-4" />;
+      case "meeting":
+        return <Video className="h-4 w-4" />;
+      case "offer":
+        return <DollarSign className="h-4 w-4" />;
+      case "follow_up":
+        return <Clock className="h-4 w-4" />;
+      case "viewing":
+        return <Home className="h-4 w-4" />;
+      default:
+        return <FileText className="h-4 w-4" />;
+    }
+  };
+
+  const getActivityStatusIcon = (status: string) => {
+    return status === "done" ? (
+      <CheckCircle2 className="h-4 w-4 text-success" />
+    ) : (
+      <Clock className="h-4 w-4 text-warning" />
+    );
   };
 
   if (isLoading) {
@@ -316,6 +397,128 @@ export default function Properties() {
                   </p>
                 </div>
               )}
+
+              <div className="pt-4 border-t">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-lg">Activities</h3>
+                  <Dialog open={isAddingActivity} onOpenChange={setIsAddingActivity}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Activity
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent aria-describedby="activity-form-description">
+                      <DialogHeader>
+                        <DialogTitle>Add New Activity</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 mt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="activity-type">Type</Label>
+                          <Select
+                            value={activityForm.type}
+                            onValueChange={(value) => setActivityForm(prev => ({ ...prev, type: value }))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="call">Call</SelectItem>
+                              <SelectItem value="email">Email</SelectItem>
+                              <SelectItem value="meeting">Meeting</SelectItem>
+                              <SelectItem value="note">Note</SelectItem>
+                              <SelectItem value="offer">Offer Sent</SelectItem>
+                              <SelectItem value="follow_up">Follow Up</SelectItem>
+                              <SelectItem value="viewing">Viewing</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="activity-title">Title</Label>
+                          <Input
+                            id="activity-title"
+                            value={activityForm.title}
+                            onChange={(e) => setActivityForm(prev => ({ ...prev, title: e.target.value }))}
+                            placeholder="e.g., Called agent about property"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="activity-body">Details</Label>
+                          <Textarea
+                            id="activity-body"
+                            value={activityForm.body}
+                            onChange={(e) => setActivityForm(prev => ({ ...prev, body: e.target.value }))}
+                            placeholder="Additional details..."
+                            rows={3}
+                          />
+                        </div>
+
+                        {activityForm.type === "follow_up" && (
+                          <div className="space-y-2">
+                            <Label htmlFor="activity-due">Follow Up Date</Label>
+                            <Input
+                              id="activity-due"
+                              type="datetime-local"
+                              value={activityForm.due_at}
+                              onChange={(e) => setActivityForm(prev => ({ ...prev, due_at: e.target.value }))}
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" onClick={() => setIsAddingActivity(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={handleAddActivity} disabled={addActivityMutation.isPending}>
+                            {addActivityMutation.isPending ? "Adding..." : "Add Activity"}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                {!selectedProperty.activities || selectedProperty.activities.length === 0 ? (
+                  <p className="text-muted-foreground text-sm italic">No activities yet</p>
+                ) : (
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                    {selectedProperty.activities.map((activity: any) => (
+                      <div
+                        key={activity.id}
+                        className="flex gap-3 p-3 rounded-lg border bg-card"
+                      >
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="p-2 rounded-full bg-primary/10 text-primary">
+                            {getActivityIcon(activity.type)}
+                          </div>
+                          {getActivityStatusIcon(activity.status)}
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-start justify-between">
+                            <h4 className="font-semibold text-sm">{activity.title}</h4>
+                            <Badge variant="outline" className="capitalize text-xs">
+                              {activity.type.replace("_", " ")}
+                            </Badge>
+                          </div>
+                          {activity.body && (
+                            <p className="text-xs text-muted-foreground">{activity.body}</p>
+                          )}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            {activity.due_at && (
+                              <span>Due: {format(new Date(activity.due_at), "MMM d, yyyy")}</span>
+                            )}
+                            <span>•</span>
+                            <span>{format(new Date(activity.created_at), "MMM d, yyyy")}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>
