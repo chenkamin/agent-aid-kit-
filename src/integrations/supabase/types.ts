@@ -27,6 +27,7 @@ export type Database = {
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           body?: string | null
@@ -40,6 +41,7 @@ export type Database = {
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"] | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           body?: string | null
@@ -53,6 +55,7 @@ export type Database = {
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"] | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -67,6 +70,81 @@ export type Database = {
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activities_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      buy_boxes: {
+        Row: {
+          cities: string[] | null
+          created_at: string
+          home_types: string[] | null
+          id: string
+          max_bathrooms: number | null
+          max_bedrooms: number | null
+          max_price: number | null
+          max_square_footage: number | null
+          min_bathrooms: number | null
+          min_bedrooms: number | null
+          min_price: number | null
+          min_square_footage: number | null
+          name: string
+          neighborhoods: string[] | null
+          updated_at: string
+          user_id: string
+          zip_codes: string[] | null
+        }
+        Insert: {
+          cities?: string[] | null
+          created_at?: string
+          home_types?: string[] | null
+          id?: string
+          max_bathrooms?: number | null
+          max_bedrooms?: number | null
+          max_price?: number | null
+          max_square_footage?: number | null
+          min_bathrooms?: number | null
+          min_bedrooms?: number | null
+          min_price?: number | null
+          min_square_footage?: number | null
+          name: string
+          neighborhoods?: string[] | null
+          updated_at?: string
+          user_id: string
+          zip_codes?: string[] | null
+        }
+        Update: {
+          cities?: string[] | null
+          created_at?: string
+          home_types?: string[] | null
+          id?: string
+          max_bathrooms?: number | null
+          max_bedrooms?: number | null
+          max_price?: number | null
+          max_square_footage?: number | null
+          min_bathrooms?: number | null
+          min_bedrooms?: number | null
+          min_price?: number | null
+          min_square_footage?: number | null
+          name?: string
+          neighborhoods?: string[] | null
+          updated_at?: string
+          user_id?: string
+          zip_codes?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "buy_boxes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -84,6 +162,7 @@ export type Database = {
           tags: string[] | null
           type: Database["public"]["Enums"]["contact_type"] | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           company?: string | null
@@ -97,6 +176,7 @@ export type Database = {
           tags?: string[] | null
           type?: Database["public"]["Enums"]["contact_type"] | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           company?: string | null
@@ -109,6 +189,36 @@ export type Database = {
           related_properties?: string[] | null
           tags?: string[] | null
           type?: Database["public"]["Enums"]["contact_type"] | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
           updated_at?: string | null
         }
         Relationships: []
@@ -176,6 +286,7 @@ export type Database = {
           tags: string[] | null
           updated_at: string | null
           url: string | null
+          user_id: string | null
           year_built: number | null
           zip: string | null
         }
@@ -241,6 +352,7 @@ export type Database = {
           tags?: string[] | null
           updated_at?: string | null
           url?: string | null
+          user_id?: string | null
           year_built?: number | null
           zip?: string | null
         }
@@ -306,6 +418,7 @@ export type Database = {
           tags?: string[] | null
           updated_at?: string | null
           url?: string | null
+          user_id?: string | null
           year_built?: number | null
           zip?: string | null
         }
@@ -343,6 +456,13 @@ export type Database = {
             columns: ["linked_comp_5"]
             isOneToOne: false
             referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "properties_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]

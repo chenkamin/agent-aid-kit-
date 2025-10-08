@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard } from "lucide-react";
+import { Building2, Users, Activity, LayoutDashboard, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LayoutProps {
@@ -15,6 +15,7 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Properties", href: "/properties", icon: Building2 },
     { name: "Contacts", href: "/contacts", icon: Users },
     { name: "Activities", href: "/activities", icon: Activity },
+    { name: "Buy Box", href: "/buybox", icon: Target },
   ];
 
   return (

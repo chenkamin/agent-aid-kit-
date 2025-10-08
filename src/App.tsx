@@ -10,6 +10,7 @@ import PropertyForm from "./pages/PropertyForm";
 import PropertyDetail from "./pages/PropertyDetail";
 import Contacts from "./pages/Contacts";
 import Activities from "./pages/Activities";
+import BuyBox from "./pages/BuyBox";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/properties/:id/edit" element={<PropertyForm />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/activities" element={<Activities />} />
+            <Route path="/buybox" element={<BuyBox />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
