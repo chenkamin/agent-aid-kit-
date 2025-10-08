@@ -5,17 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Plus, Users, Mail, Phone, Building } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Contacts() {
+  const { user } = useAuth();
+  
   const { data: contacts, isLoading } = useQuery({
-    queryKey: ["contacts"],
+    queryKey: ["contacts", user?.id],
     queryFn: async () => {
+      if (!user?.id) return [];
       const { data } = await supabase
         .from("contacts")
         .select("*")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       return data || [];
     },
+    enabled: !!user?.id,
   });
 
   const getTypeColor = (type: string) => {

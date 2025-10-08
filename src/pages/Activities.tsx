@@ -5,17 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Plus, Calendar, CheckCircle2, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Activities() {
+  const { user } = useAuth();
+  
   const { data: activities, isLoading } = useQuery({
-    queryKey: ["activities"],
+    queryKey: ["activities", user?.id],
     queryFn: async () => {
+      if (!user?.id) return [];
       const { data } = await supabase
         .from("activities")
         .select("*, properties(address, city)")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       return data || [];
     },
+    enabled: !!user?.id,
   });
 
   const getStatusIcon = (status: string) => {

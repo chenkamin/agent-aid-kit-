@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2 } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function Properties() {
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
@@ -29,12 +31,24 @@ export default function Properties() {
     body: "",
     due_at: "",
   });
+  const [isCreatingList, setIsCreatingList] = useState(false);
+  const [listForm, setListForm] = useState({
+    name: "",
+    zipCodes: "",
+    priceMax: "",
+    daysOnZillow: "",
+    forSaleByAgent: true,
+    forSaleByOwner: true,
+    forRent: false,
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   
   const { data: properties, isLoading } = useQuery({
-    queryKey: ["properties"],
+    queryKey: ["properties", user?.id],
     queryFn: async () => {
+      if (!user?.id) return [];
       const { data } = await supabase
         .from("properties")
         .select(`
@@ -46,9 +60,11 @@ export default function Properties() {
             status
           )
         `)
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       return data || [];
     },
+    enabled: !!user?.id,
   });
 
   const getStatusColor = (status: string) => {
@@ -94,15 +110,17 @@ export default function Properties() {
 
   const addActivityMutation = useMutation({
     mutationFn: async (data: any) => {
+      if (!user?.id) throw new Error("User not authenticated");
       const { error } = await supabase.from("activities").insert([{
         ...data,
         property_id: selectedProperty?.id,
+        user_id: user.id,
         status: 'open',
       }]);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
       toast({
         title: "Activity added",
         description: "The activity has been added successfully.",
@@ -129,6 +147,67 @@ export default function Properties() {
       return;
     }
     addActivityMutation.mutate(activityForm);
+  };
+
+  const createListMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (!user?.id) throw new Error("User not authenticated");
+      
+      const { error } = await supabase.from("buy_boxes").insert([{
+        user_id: user.id,
+        name: data.name,
+        zip_codes: data.zipCodes,
+        price_max: data.priceMax ? parseFloat(data.priceMax) : null,
+        days_on_zillow: data.daysOnZillow ? parseInt(data.daysOnZillow) : null,
+        for_sale_by_agent: data.forSaleByAgent,
+        for_sale_by_owner: data.forSaleByOwner,
+        for_rent: data.forRent,
+      }]);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({
+        title: "List created",
+        description: "Your property list has been created successfully.",
+      });
+      setIsCreatingList(false);
+      setListForm({
+        name: "",
+        zipCodes: "",
+        priceMax: "",
+        daysOnZillow: "",
+        forSaleByAgent: true,
+        forSaleByOwner: true,
+        forRent: false,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: `Failed to create list: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCreateList = () => {
+    if (!listForm.name) {
+      toast({
+        title: "Error",
+        description: "Please enter a name for the list",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Convert comma-separated strings to arrays
+    const formattedData = {
+      ...listForm,
+      zipCodes: listForm.zipCodes ? listForm.zipCodes.split(',').map(z => z.trim()).filter(Boolean) : [],
+    };
+    
+    createListMutation.mutate(formattedData);
   };
 
   const getActivityIcon = (type: string) => {
@@ -175,12 +254,140 @@ export default function Properties() {
             Manage your real estate portfolio
           </p>
         </div>
-        <Link to="/properties/new">
-          <Button size="lg" className="text-base">
-            <Plus className="mr-2 h-5 w-5" />
-            Add Property
-          </Button>
-        </Link>
+        <div className="flex gap-3">
+          <Dialog open={isCreatingList} onOpenChange={setIsCreatingList}>
+            <DialogTrigger asChild>
+              <Button size="lg" variant="outline" className="text-base">
+                <List className="mr-2 h-5 w-5" />
+                Create List
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" aria-describedby="create-list-description">
+              <DialogHeader>
+                <DialogTitle>Create Property List</DialogTitle>
+                <p id="create-list-description" className="text-sm text-muted-foreground">
+                  Define criteria for your property search list (for future Zillow scraping)
+                </p>
+              </DialogHeader>
+              
+              <div className="space-y-6 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="list-name">List Name *</Label>
+                  <Input
+                    id="list-name"
+                    value={listForm.name}
+                    onChange={(e) => setListForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g., Cleveland Investment Properties"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="zip-codes">Zip Codes *</Label>
+                  <Input
+                    id="zip-codes"
+                    value={listForm.zipCodes}
+                    onChange={(e) => setListForm(prev => ({ ...prev, zipCodes: e.target.value }))}
+                    placeholder="e.g., 44125, 44137"
+                  />
+                  <p className="text-xs text-muted-foreground">Comma-separated zip codes</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="price-max">Maximum Price</Label>
+                  <Input
+                    id="price-max"
+                    type="number"
+                    value={listForm.priceMax}
+                    onChange={(e) => setListForm(prev => ({ ...prev, priceMax: e.target.value }))}
+                    placeholder="e.g., 200000"
+                  />
+                  <p className="text-xs text-muted-foreground">Maximum price for properties</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="days-on-zillow">Days On Zillow</Label>
+                  <Input
+                    id="days-on-zillow"
+                    type="number"
+                    value={listForm.daysOnZillow}
+                    onChange={(e) => setListForm(prev => ({ ...prev, daysOnZillow: e.target.value }))}
+                    placeholder="Leave empty for any"
+                  />
+                  <p className="text-xs text-muted-foreground">Filter by days listed on Zillow (optional)</p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>Listing Type</Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="for-sale-by-agent"
+                        checked={listForm.forSaleByAgent}
+                        onCheckedChange={(checked) => 
+                          setListForm(prev => ({ ...prev, forSaleByAgent: checked === true }))
+                        }
+                      />
+                      <label
+                        htmlFor="for-sale-by-agent"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        For Sale By Agent
+                      </label>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="for-sale-by-owner"
+                        checked={listForm.forSaleByOwner}
+                        onCheckedChange={(checked) => 
+                          setListForm(prev => ({ ...prev, forSaleByOwner: checked === true }))
+                        }
+                      />
+                      <label
+                        htmlFor="for-sale-by-owner"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        For Sale By Owner
+                      </label>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="for-rent"
+                        checked={listForm.forRent}
+                        onCheckedChange={(checked) => 
+                          setListForm(prev => ({ ...prev, forRent: checked === true }))
+                        }
+                      />
+                      <label
+                        htmlFor="for-rent"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        For Rent
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t">
+                  <Button variant="outline" onClick={() => setIsCreatingList(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateList} disabled={createListMutation.isPending}>
+                    {createListMutation.isPending ? "Creating..." : "Create List"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Link to="/properties/new">
+            <Button size="lg" className="text-base">
+              <Plus className="mr-2 h-5 w-5" />
+              Add Property
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {properties && properties.length === 0 ? (

@@ -1,7 +1,18 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard } from "lucide-react";
+import { Building2, Users, Activity, LayoutDashboard, LogOut, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface LayoutProps {
   children: ReactNode;
@@ -9,6 +20,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
+  const { user, signOut } = useAuth();
   
   const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -16,6 +28,13 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Contacts", href: "/contacts", icon: Users },
     { name: "Activities", href: "/activities", icon: Activity },
   ];
+
+  const getUserInitials = () => {
+    if (user?.email) {
+      return user.email.substring(0, 2).toUpperCase();
+    }
+    return "U";
+  };
 
   return (
     <div className="min-h-screen bg-secondary">
@@ -46,6 +65,33 @@ export default function Layout({ children }: LayoutProps) {
                 </Link>
               );
             })}
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-10 w-10 rounded-full ml-4">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-primary text-primary-foreground">
+                      {getUserInitials()}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">My Account</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {user?.email}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Sign out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </nav>
         </div>
       </header>
