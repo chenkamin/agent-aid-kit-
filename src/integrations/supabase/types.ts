@@ -27,6 +27,7 @@ export type Database = {
           title: string | null
           type: Database["public"]["Enums"]["activity_type"] | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           body?: string | null
@@ -40,6 +41,7 @@ export type Database = {
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"] | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           body?: string | null
@@ -53,6 +55,7 @@ export type Database = {
           title?: string | null
           type?: Database["public"]["Enums"]["activity_type"] | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -67,6 +70,146 @@ export type Database = {
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activities_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      buy_boxes: {
+        Row: {
+          cities: string[] | null
+          created_at: string
+          days_on_zillow: number | null
+          for_rent: boolean | null
+          for_sale_by_agent: boolean | null
+          for_sale_by_owner: boolean | null
+          home_types: string[] | null
+          id: string
+          max_bathrooms: number | null
+          max_bedrooms: number | null
+          max_price: number | null
+          max_square_footage: number | null
+          min_bathrooms: number | null
+          min_bedrooms: number | null
+          min_price: number | null
+          min_square_footage: number | null
+          name: string
+          neighborhoods: string[] | null
+          price_max: number | null
+          updated_at: string
+          user_id: string
+          zip_codes: string[] | null
+        }
+        Insert: {
+          cities?: string[] | null
+          created_at?: string
+          days_on_zillow?: number | null
+          for_rent?: boolean | null
+          for_sale_by_agent?: boolean | null
+          for_sale_by_owner?: boolean | null
+          home_types?: string[] | null
+          id?: string
+          max_bathrooms?: number | null
+          max_bedrooms?: number | null
+          max_price?: number | null
+          max_square_footage?: number | null
+          min_bathrooms?: number | null
+          min_bedrooms?: number | null
+          min_price?: number | null
+          min_square_footage?: number | null
+          name: string
+          neighborhoods?: string[] | null
+          price_max?: number | null
+          updated_at?: string
+          user_id: string
+          zip_codes?: string[] | null
+        }
+        Update: {
+          cities?: string[] | null
+          created_at?: string
+          days_on_zillow?: number | null
+          for_rent?: boolean | null
+          for_sale_by_agent?: boolean | null
+          for_sale_by_owner?: boolean | null
+          home_types?: string[] | null
+          id?: string
+          max_bathrooms?: number | null
+          max_bedrooms?: number | null
+          max_price?: number | null
+          max_square_footage?: number | null
+          min_bathrooms?: number | null
+          min_bedrooms?: number | null
+          min_price?: number | null
+          min_square_footage?: number | null
+          name?: string
+          neighborhoods?: string[] | null
+          price_max?: number | null
+          updated_at?: string
+          user_id?: string
+          zip_codes?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "buy_boxes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      communication_settings: {
+        Row: {
+          created_at: string | null
+          email_host: string | null
+          email_password: string | null
+          email_port: string | null
+          email_username: string | null
+          id: string
+          sms_api_key: string | null
+          sms_api_secret: string | null
+          sms_from_number: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          email_host?: string | null
+          email_password?: string | null
+          email_port?: string | null
+          email_username?: string | null
+          id?: string
+          sms_api_key?: string | null
+          sms_api_secret?: string | null
+          sms_from_number?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          email_host?: string | null
+          email_password?: string | null
+          email_port?: string | null
+          email_username?: string | null
+          id?: string
+          sms_api_key?: string | null
+          sms_api_secret?: string | null
+          sms_from_number?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "communication_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -84,6 +227,7 @@ export type Database = {
           tags: string[] | null
           type: Database["public"]["Enums"]["contact_type"] | null
           updated_at: string | null
+          user_id: string | null
         }
         Insert: {
           company?: string | null
@@ -97,6 +241,7 @@ export type Database = {
           tags?: string[] | null
           type?: Database["public"]["Enums"]["contact_type"] | null
           updated_at?: string | null
+          user_id?: string | null
         }
         Update: {
           company?: string | null
@@ -109,6 +254,98 @@ export type Database = {
           related_properties?: string[] | null
           tags?: string[] | null
           type?: Database["public"]["Enums"]["contact_type"] | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cron_execution_log: {
+        Row: {
+          details: Json | null
+          executed_at: string | null
+          id: string
+          job_name: string
+          status: string | null
+        }
+        Insert: {
+          details?: Json | null
+          executed_at?: string | null
+          id?: string
+          job_name: string
+          status?: string | null
+        }
+        Update: {
+          details?: Json | null
+          executed_at?: string | null
+          id?: string
+          job_name?: string
+          status?: string | null
+        }
+        Relationships: []
+      }
+      email_templates: {
+        Row: {
+          body: string
+          created_at: string | null
+          id: string
+          name: string
+          subject: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string | null
+          id?: string
+          name: string
+          subject: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          subject?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_templates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
           updated_at?: string | null
         }
         Relationships: []
@@ -126,6 +363,7 @@ export type Database = {
           bed: number | null
           bedrooms: number | null
           building_sqf: number | null
+          buy_box_id: string | null
           city: string | null
           client_email: string | null
           created_at: string | null
@@ -139,6 +377,8 @@ export type Database = {
           home_type: Database["public"]["Enums"]["home_type"] | null
           id: string
           initial_status: string | null
+          is_new_listing: boolean | null
+          last_scraped_at: string | null
           last_sold_date: string | null
           last_sold_price: number | null
           linked_comp_1: string | null
@@ -146,6 +386,7 @@ export type Database = {
           linked_comp_3: string | null
           linked_comp_4: string | null
           linked_comp_5: string | null
+          listing_discovered_at: string | null
           listing_url: string | null
           living_sqf: number | null
           lot_size: string | null
@@ -176,6 +417,8 @@ export type Database = {
           tags: string[] | null
           updated_at: string | null
           url: string | null
+          user_id: string | null
+          workflow_state: Database["public"]["Enums"]["workflow_state"] | null
           year_built: number | null
           zip: string | null
         }
@@ -191,6 +434,7 @@ export type Database = {
           bed?: number | null
           bedrooms?: number | null
           building_sqf?: number | null
+          buy_box_id?: string | null
           city?: string | null
           client_email?: string | null
           created_at?: string | null
@@ -204,6 +448,8 @@ export type Database = {
           home_type?: Database["public"]["Enums"]["home_type"] | null
           id?: string
           initial_status?: string | null
+          is_new_listing?: boolean | null
+          last_scraped_at?: string | null
           last_sold_date?: string | null
           last_sold_price?: number | null
           linked_comp_1?: string | null
@@ -211,6 +457,7 @@ export type Database = {
           linked_comp_3?: string | null
           linked_comp_4?: string | null
           linked_comp_5?: string | null
+          listing_discovered_at?: string | null
           listing_url?: string | null
           living_sqf?: number | null
           lot_size?: string | null
@@ -241,6 +488,8 @@ export type Database = {
           tags?: string[] | null
           updated_at?: string | null
           url?: string | null
+          user_id?: string | null
+          workflow_state?: Database["public"]["Enums"]["workflow_state"] | null
           year_built?: number | null
           zip?: string | null
         }
@@ -256,6 +505,7 @@ export type Database = {
           bed?: number | null
           bedrooms?: number | null
           building_sqf?: number | null
+          buy_box_id?: string | null
           city?: string | null
           client_email?: string | null
           created_at?: string | null
@@ -269,6 +519,8 @@ export type Database = {
           home_type?: Database["public"]["Enums"]["home_type"] | null
           id?: string
           initial_status?: string | null
+          is_new_listing?: boolean | null
+          last_scraped_at?: string | null
           last_sold_date?: string | null
           last_sold_price?: number | null
           linked_comp_1?: string | null
@@ -276,6 +528,7 @@ export type Database = {
           linked_comp_3?: string | null
           linked_comp_4?: string | null
           linked_comp_5?: string | null
+          listing_discovered_at?: string | null
           listing_url?: string | null
           living_sqf?: number | null
           lot_size?: string | null
@@ -306,10 +559,19 @@ export type Database = {
           tags?: string[] | null
           updated_at?: string | null
           url?: string | null
+          user_id?: string | null
+          workflow_state?: Database["public"]["Enums"]["workflow_state"] | null
           year_built?: number | null
           zip?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "properties_buy_box_id_fkey"
+            columns: ["buy_box_id"]
+            isOneToOne: false
+            referencedRelation: "buy_boxes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "properties_linked_comp_1_fkey"
             columns: ["linked_comp_1"]
@@ -345,6 +607,130 @@ export type Database = {
             referencedRelation: "properties"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "properties_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      property_changes: {
+        Row: {
+          changed_at: string | null
+          created_at: string | null
+          field_changed: string
+          id: string
+          new_value: string | null
+          old_value: string | null
+          property_id: string
+          user_id: string
+        }
+        Insert: {
+          changed_at?: string | null
+          created_at?: string | null
+          field_changed: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          property_id: string
+          user_id: string
+        }
+        Update: {
+          changed_at?: string | null
+          created_at?: string | null
+          field_changed?: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          property_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_changes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      property_workflow_history: {
+        Row: {
+          changed_at: string | null
+          created_at: string | null
+          from_state: string | null
+          id: string
+          notes: string | null
+          property_id: string
+          to_state: string
+          user_id: string
+        }
+        Insert: {
+          changed_at?: string | null
+          created_at?: string | null
+          from_state?: string | null
+          id?: string
+          notes?: string | null
+          property_id: string
+          to_state: string
+          user_id: string
+        }
+        Update: {
+          changed_at?: string | null
+          created_at?: string | null
+          from_state?: string | null
+          id?: string
+          notes?: string | null
+          property_id?: string
+          to_state?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_workflow_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_templates: {
+        Row: {
+          body: string
+          created_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_templates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
@@ -352,7 +738,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      trigger_daily_property_update: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       activity_status: "open" | "done" | "snoozed"
@@ -399,6 +788,18 @@ export type Database = {
         | "Not Relevant"
         | "Follow Up"
         | "Waiting for Response"
+      workflow_state:
+        | "Initial"
+        | "Reviewing"
+        | "Research"
+        | "On Progress"
+        | "Follow Up"
+        | "Negotiating"
+        | "Under Contract"
+        | "Closing"
+        | "Closed"
+        | "Not Relevant"
+        | "Archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -573,6 +974,19 @@ export const Constants = {
         "Not Relevant",
         "Follow Up",
         "Waiting for Response",
+      ],
+      workflow_state: [
+        "Initial",
+        "Reviewing",
+        "Research",
+        "On Progress",
+        "Follow Up",
+        "Negotiating",
+        "Under Contract",
+        "Closing",
+        "Closed",
+        "Not Relevant",
+        "Archived",
       ],
     },
   },

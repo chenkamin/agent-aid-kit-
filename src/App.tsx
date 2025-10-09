@@ -14,6 +14,8 @@ import PropertyForm from "./pages/PropertyForm";
 import PropertyDetail from "./pages/PropertyDetail";
 import Contacts from "./pages/Contacts";
 import Activities from "./pages/Activities";
+import Lists from "./pages/Lists";
+import Communication from "./pages/Communication";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -97,6 +99,26 @@ const App = () => (
                 <ProtectedRoute>
                   <Layout>
                     <Activities />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/lists"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Lists />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/communication"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Communication />
                   </Layout>
                 </ProtectedRoute>
               }
