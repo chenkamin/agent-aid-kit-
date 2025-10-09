@@ -30,8 +30,15 @@ export default function Properties() {
   const [editedProperty, setEditedProperty] = useState<any>(null);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [isAddingActivity, setIsAddingActivity] = useState(false);
+  const [isBulkAddingActivity, setIsBulkAddingActivity] = useState(false);
   const [isAddingProperty, setIsAddingProperty] = useState(false);
   const [activityForm, setActivityForm] = useState({
+    type: "other",
+    title: "",
+    body: "",
+    due_at: "",
+  });
+  const [bulkActivityForm, setBulkActivityForm] = useState({
     type: "other",
     title: "",
     body: "",
@@ -595,6 +602,71 @@ export default function Properties() {
       return;
     }
     addActivityMutation.mutate(activityForm);
+  };
+
+  const bulkAddActivityMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (!user?.id) throw new Error("User not authenticated");
+      if (selectedPropertyIds.length === 0) throw new Error("No properties selected");
+      
+      // Prepare activity data for each property
+      const activities = selectedPropertyIds.map(propertyId => {
+        const activityData: any = {
+          type: data.type,
+          title: data.title,
+          body: data.body,
+          property_id: propertyId,
+          user_id: user.id,
+          status: 'open',
+        };
+        
+        // Only include due_at if it's provided and not empty
+        if (data.due_at && data.due_at.trim() !== '') {
+          activityData.due_at = data.due_at;
+        }
+        
+        return activityData;
+      });
+      
+      const { error } = await supabase.from("activities").insert(activities);
+      if (error) throw error;
+      return activities.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      queryClient.invalidateQueries({ queryKey: ["activities"] });
+      toast({
+        title: "Activities created",
+        description: `Created ${count} ${count === 1 ? 'activity' : 'activities'} for ${count} ${count === 1 ? 'property' : 'properties'}`,
+      });
+      setIsBulkAddingActivity(false);
+      setBulkActivityForm({
+        type: "other",
+        title: "",
+        body: "",
+        due_at: "",
+      });
+      setSelectedPropertyIds([]);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create activities",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleBulkAddActivity = () => {
+    if (!bulkActivityForm.title) {
+      toast({
+        title: "Error",
+        description: "Please enter a title for the activity",
+        variant: "destructive",
+      });
+      return;
+    }
+    bulkAddActivityMutation.mutate(bulkActivityForm);
   };
 
   const createListMutation = useMutation({
@@ -1294,6 +1366,14 @@ export default function Properties() {
                 </Button>
               </div>
               <div className="flex items-center gap-3">
+                <Button
+                  onClick={() => setIsBulkAddingActivity(true)}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Activity
+                </Button>
                 <Label className="text-sm font-medium text-blue-900 dark:text-blue-100">
                   Change Workflow Stage:
                 </Label>
@@ -2465,6 +2545,83 @@ export default function Properties() {
             </Tabs>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Add Activity Dialog */}
+      <Dialog open={isBulkAddingActivity} onOpenChange={setIsBulkAddingActivity}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Add Activity to {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'Property' : 'Properties'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-activity-type">Activity Type</Label>
+              <Select
+                value={bulkActivityForm.type}
+                onValueChange={(value) => setBulkActivityForm(prev => ({ ...prev, type: value }))}
+              >
+                <SelectTrigger id="bulk-activity-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="call">Call</SelectItem>
+                  <SelectItem value="sms">SMS</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="site-visit">Site Visit</SelectItem>
+                  <SelectItem value="offer-sent">Offer Sent</SelectItem>
+                  <SelectItem value="comp-analysis">Comp Analysis</SelectItem>
+                  <SelectItem value="inspection">Inspection</SelectItem>
+                  <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
+                  <SelectItem value="closing">Closing</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-activity-title">Title</Label>
+              <Input
+                id="bulk-activity-title"
+                value={bulkActivityForm.title}
+                onChange={(e) => setBulkActivityForm(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="e.g., Called agent about property"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-activity-body">Details</Label>
+              <Textarea
+                id="bulk-activity-body"
+                value={bulkActivityForm.body}
+                onChange={(e) => setBulkActivityForm(prev => ({ ...prev, body: e.target.value }))}
+                placeholder="Additional details..."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-activity-due">Due Date (Optional)</Label>
+              <Input
+                id="bulk-activity-due"
+                type="datetime-local"
+                value={bulkActivityForm.due_at}
+                onChange={(e) => setBulkActivityForm(prev => ({ ...prev, due_at: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsBulkAddingActivity(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleBulkAddActivity} disabled={bulkAddActivityMutation.isPending}>
+                {bulkAddActivityMutation.isPending ? "Adding..." : "Add to All"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
