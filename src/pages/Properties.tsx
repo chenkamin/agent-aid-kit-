@@ -27,6 +27,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 export default function Properties() {
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
+  const [editedProperty, setEditedProperty] = useState<any>(null);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [isAddingActivity, setIsAddingActivity] = useState(false);
   const [isAddingProperty, setIsAddingProperty] = useState(false);
@@ -85,19 +86,15 @@ export default function Properties() {
     queryKey: ["properties", user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("properties")
-        .select(`
-          *,
-          activities!activities_property_id_fkey(
-            id,
-            type,
-            due_at,
-            status
-          )
-        `)
+        .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching properties:", error);
+      }
       
       // Log the first property to see the structure
       if (data && data.length > 0) {
@@ -114,6 +111,21 @@ export default function Properties() {
       return data || [];
     },
     enabled: !!user?.id,
+  });
+
+  // Fetch activities for selected property
+  const { data: propertyActivities } = useQuery({
+    queryKey: ["property-activities", selectedProperty?.id],
+    queryFn: async () => {
+      if (!selectedProperty?.id) return [];
+      const { data } = await supabase
+        .from("activities")
+        .select("*")
+        .eq("property_id", selectedProperty.id)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!selectedProperty?.id,
   });
 
   // Query for buy boxes (lists) for filter dropdown
@@ -616,6 +628,53 @@ export default function Properties() {
       return;
     }
     bulkUpdateWorkflowMutation.mutate({ propertyIds: selectedPropertyIds, workflowState });
+  };
+
+  // Update property mutation
+  const updatePropertyMutation = useMutation({
+    mutationFn: async (updatedData: any) => {
+      if (!selectedProperty?.id) throw new Error("No property selected");
+      
+      const { error } = await supabase
+        .from('properties')
+        .update(updatedData)
+        .eq('id', selectedProperty.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
+      toast({
+        title: "Success",
+        description: "Property updated successfully",
+      });
+      setEditedProperty(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update property",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveProperty = () => {
+    if (editedProperty) {
+      // Remove computed/generated columns that cannot be updated
+      const { price_per_sqft, ppsf, created_at, updated_at, ...updateData } = editedProperty;
+      
+      updatePropertyMutation.mutate(updateData);
+      // Update local state immediately for better UX
+      setSelectedProperty((prev: any) => ({ ...prev, ...editedProperty }));
+    }
+  };
+
+  const handlePropertyFieldChange = (field: string, value: any) => {
+    setEditedProperty((prev: any) => ({
+      ...prev,
+      [field]: value,
+    }));
   };
 
   const getActivityIcon = (type: string) => {
@@ -1263,62 +1322,62 @@ export default function Properties() {
                     />
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('address')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('address')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Address & Details
                       {getSortIcon('address')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('status')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('status')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Status
                       {getSortIcon('status')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('price')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('price')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Price
                       {getSortIcon('price')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('arv_estimate')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('arv_estimate')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       ARV
                       {getSortIcon('arv_estimate')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('workflow_state')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('workflow_state')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       State
                       {getSortIcon('workflow_state')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('city')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('city')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       City
                       {getSortIcon('city')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('living_sqf')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('living_sqf')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Sq/Ft
                       {getSortIcon('living_sqf')}
                     </Button>
                   </TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('created_at')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('created_at')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Listing Date
                       {getSortIcon('created_at')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('bedrooms')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('bedrooms')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Beds
                       {getSortIcon('bedrooms')}
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('bathrooms')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('bathrooms')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Baths
                       {getSortIcon('bathrooms')}
                     </Button>
@@ -1331,7 +1390,10 @@ export default function Properties() {
                 return (
                     <TableRow
                     key={property.id}
-                    onClick={() => setSelectedProperty(property)}
+                    onClick={() => {
+                      setSelectedProperty(property);
+                      setEditedProperty({ ...property });
+                    }}
                       className="cursor-pointer hover:bg-accent/50"
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1462,7 +1524,12 @@ export default function Properties() {
         </Card>
       )}
 
-      <Dialog open={!!selectedProperty} onOpenChange={() => setSelectedProperty(null)}>
+      <Dialog open={!!selectedProperty} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedProperty(null);
+          setEditedProperty(null);
+        }
+      }}>
         <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto" aria-describedby="property-details-description">
           <DialogHeader>
             <DialogTitle className="text-2xl">
@@ -1581,298 +1648,462 @@ export default function Properties() {
 
               {/* General Tab */}
               <TabsContent value="general" className="space-y-4 mt-4">
-                <div className="grid gap-4 md:grid-cols-2">
+                {/* Save Button */}
+                <div className="flex justify-end gap-2 pb-4 border-b">
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditedProperty({ ...selectedProperty })}
+                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    Reset Changes
+                  </Button>
+                  <Button
+                    onClick={handleSaveProperty}
+                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+
+                <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg">Financial Details</h3>
                   
-                  {selectedProperty.price && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Price</span>
-                      <div className="flex items-center font-bold">
-                        <DollarSign className="h-4 w-4" />
-                        {Number(selectedProperty.price).toLocaleString()}
-                      </div>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-price">Price</Label>
+                    <Input
+                      id="edit-price"
+                      type="number"
+                      value={editedProperty?.price || ''}
+                      onChange={(e) => handlePropertyFieldChange('price', parseFloat(e.target.value) || null)}
+                      placeholder="Enter price"
+                    />
+                  </div>
 
-                  {selectedProperty.arv_estimate && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">ARV Estimate</span>
-                      <div className="flex items-center font-semibold text-success">
-                        <DollarSign className="h-4 w-4" />
-                        {Number(selectedProperty.arv_estimate).toLocaleString()}
-                      </div>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-arv">ARV Estimate</Label>
+                    <Input
+                      id="edit-arv"
+                      type="number"
+                      value={editedProperty?.arv_estimate || ''}
+                      onChange={(e) => handlePropertyFieldChange('arv_estimate', parseFloat(e.target.value) || null)}
+                      placeholder="Enter ARV estimate"
+                    />
+                  </div>
 
-                  {selectedProperty.price_per_sqft && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Price per sqft</span>
-                      <span className="font-medium">${selectedProperty.price_per_sqft}/sqft</span>
-                    </div>
-                  )}
-
-                  {selectedProperty.mls_number && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">MLS Number</span>
-                      <span className="font-medium">{selectedProperty.mls_number}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-mls">MLS Number</Label>
+                    <Input
+                      id="edit-mls"
+                      value={editedProperty?.mls_number || ''}
+                      onChange={(e) => handlePropertyFieldChange('mls_number', e.target.value)}
+                      placeholder="Enter MLS number"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg">Property Details</h3>
 
-                  {selectedProperty.bedrooms && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Bedrooms</span>
-                      <span className="font-medium">{selectedProperty.bedrooms}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-bedrooms">Bedrooms</Label>
+                    <Input
+                      id="edit-bedrooms"
+                      type="number"
+                      value={editedProperty?.bedrooms || ''}
+                      onChange={(e) => handlePropertyFieldChange('bedrooms', parseInt(e.target.value) || null)}
+                      placeholder="Enter bedrooms"
+                    />
+                  </div>
 
-                  {selectedProperty.bathrooms && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Bathrooms</span>
-                      <span className="font-medium">{selectedProperty.bathrooms}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-bathrooms">Bathrooms</Label>
+                    <Input
+                      id="edit-bathrooms"
+                      type="number"
+                      step="0.5"
+                      value={editedProperty?.bathrooms || ''}
+                      onChange={(e) => handlePropertyFieldChange('bathrooms', parseFloat(e.target.value) || null)}
+                      placeholder="Enter bathrooms"
+                    />
+                  </div>
 
-                  {selectedProperty.square_footage && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Square Footage</span>
-                      <span className="font-medium">
-                        {selectedProperty.square_footage.toLocaleString()} sqft
-                      </span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-sqft">Square Footage</Label>
+                    <Input
+                      id="edit-sqft"
+                      type="number"
+                      value={editedProperty?.square_footage || ''}
+                      onChange={(e) => handlePropertyFieldChange('square_footage', parseInt(e.target.value) || null)}
+                      placeholder="Enter square footage"
+                    />
+                  </div>
 
-                  {selectedProperty.lot_size && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Lot Size</span>
-                      <span className="font-medium">{selectedProperty.lot_size}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-lot-size">Lot Size</Label>
+                    <Input
+                      id="edit-lot-size"
+                      value={editedProperty?.lot_size || ''}
+                      onChange={(e) => handlePropertyFieldChange('lot_size', e.target.value)}
+                      placeholder="Enter lot size"
+                    />
+                  </div>
 
-                  {selectedProperty.year_built && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Year Built</span>
-                      <span className="font-medium">{selectedProperty.year_built}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-year-built">Year Built</Label>
+                    <Input
+                      id="edit-year-built"
+                      type="number"
+                      value={editedProperty?.year_built || ''}
+                      onChange={(e) => handlePropertyFieldChange('year_built', parseInt(e.target.value) || null)}
+                      placeholder="Enter year built"
+                    />
+                  </div>
 
-                  {selectedProperty.home_type && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Home Type</span>
-                      <span className="font-medium">{selectedProperty.home_type}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-home-type">Home Type</Label>
+                    <Select
+                      value={editedProperty?.home_type || ''}
+                      onValueChange={(value) => handlePropertyFieldChange('home_type', value)}
+                    >
+                      <SelectTrigger id="edit-home-type">
+                        <SelectValue placeholder="Select home type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Single Family">Single Family</SelectItem>
+                        <SelectItem value="Multi Family">Multi Family</SelectItem>
+                        <SelectItem value="Condo">Condo</SelectItem>
+                        <SelectItem value="Townhouse">Townhouse</SelectItem>
+                        <SelectItem value="Land">Land</SelectItem>
+                        <SelectItem value="Commercial">Commercial</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                  {selectedProperty.neighborhood && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Neighborhood</span>
-                      <span className="font-medium">{selectedProperty.neighborhood}</span>
-                    </div>
-                  )}
-
-                  {selectedProperty.days_on_market && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Days on Market</span>
-                      <span className="font-medium">{selectedProperty.days_on_market} days</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {selectedProperty.description && (
-                <div className="pt-4 border-t">
-                  <h4 className="font-semibold mb-2">Description</h4>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {selectedProperty.description}
-                  </p>
-                </div>
-              )}
-
-              {selectedProperty.status && (
-                <div className="pt-4 border-t">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Status</span>
-                    <Badge className={getStatusColor(selectedProperty.status)}>
-                      {selectedProperty.status}
-                    </Badge>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-neighborhood">Neighborhood</Label>
+                    <Input
+                      id="edit-neighborhood"
+                      value={editedProperty?.neighborhood || ''}
+                      onChange={(e) => handlePropertyFieldChange('neighborhood', e.target.value)}
+                      placeholder="Enter neighborhood"
+                    />
                   </div>
                 </div>
-              )}
-
-              {selectedProperty.owner && (
-                <div className="flex justify-between pt-2">
-                  <span className="text-muted-foreground">Owner</span>
-                  <span className="font-medium">{selectedProperty.owner}</span>
                 </div>
-              )}
 
-              {selectedProperty.source && (
-                <div className="flex justify-between pt-2">
-                  <span className="text-muted-foreground">Source</span>
-                  <span className="font-medium">{selectedProperty.source}</span>
-                </div>
-              )}
+                {selectedProperty.description && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-description">Description</Label>
+                    <Textarea
+                      id="edit-description"
+                      value={editedProperty?.description || ''}
+                      onChange={(e) => handlePropertyFieldChange('description', e.target.value)}
+                      placeholder="Property description"
+                      rows={4}
+                    />
+                  </div>
+                )}
 
-              {selectedProperty.notes && (
-                <div className="pt-4 border-t">
-                  <h4 className="font-semibold mb-2">Notes</h4>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {selectedProperty.notes}
-                  </p>
-                </div>
-              )}
-            </TabsContent>
+                {selectedProperty.notes && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-notes">Notes</Label>
+                    <Textarea
+                      id="edit-notes"
+                      value={editedProperty?.notes || ''}
+                      onChange={(e) => handlePropertyFieldChange('notes', e.target.value)}
+                      placeholder="Internal notes"
+                      rows={3}
+                    />
+                  </div>
+                )}
+              </TabsContent>
 
               {/* Listing Tab */}
               <TabsContent value="listing" className="space-y-4 mt-4">
-                <div className="grid gap-4">
-                  {selectedProperty.seller_agent_name && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Agent Name</span>
-                      <span className="font-medium">{selectedProperty.seller_agent_name}</span>
-                    </div>
-                  )}
+                {/* Save Button */}
+                <div className="flex justify-end gap-2 pb-4 border-b">
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditedProperty({ ...selectedProperty })}
+                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    Reset Changes
+                  </Button>
+                  <Button
+                    onClick={handleSaveProperty}
+                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
 
-                  {selectedProperty.seller_agent_phone && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Agent Phone</span>
-                      <span className="font-medium">{selectedProperty.seller_agent_phone}</span>
-                    </div>
-                  )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-agent-name">Agent Name</Label>
+                    <Input
+                      id="edit-agent-name"
+                      value={editedProperty?.seller_agent_name || ''}
+                      onChange={(e) => handlePropertyFieldChange('seller_agent_name', e.target.value)}
+                      placeholder="Enter agent name"
+                    />
+                  </div>
 
-                  {selectedProperty.seller_agent_email && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Agent Email</span>
-                      <span className="font-medium">{selectedProperty.seller_agent_email}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-agent-phone">Agent Phone</Label>
+                    <Input
+                      id="edit-agent-phone"
+                      value={editedProperty?.seller_agent_phone || ''}
+                      onChange={(e) => handlePropertyFieldChange('seller_agent_phone', e.target.value)}
+                      placeholder="Enter agent phone"
+                    />
+                  </div>
 
-                  {selectedProperty.listing_url && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Listing URL</span>
-                      <a href={selectedProperty.listing_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                        View Listing
-                      </a>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-agent-email">Agent Email</Label>
+                    <Input
+                      id="edit-agent-email"
+                      type="email"
+                      value={editedProperty?.seller_agent_email || ''}
+                      onChange={(e) => handlePropertyFieldChange('seller_agent_email', e.target.value)}
+                      placeholder="Enter agent email"
+                    />
+                  </div>
 
-                  {selectedProperty.days_on_market && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Days on Market</span>
-                      <span className="font-medium">{selectedProperty.days_on_market} days</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-listing-url">Listing URL</Label>
+                    <Input
+                      id="edit-listing-url"
+                      value={editedProperty?.listing_url || ''}
+                      onChange={(e) => handlePropertyFieldChange('listing_url', e.target.value)}
+                      placeholder="Enter listing URL"
+                    />
+                  </div>
 
-                  {selectedProperty.description && (
-                    <div className="pt-4 border-t">
-                      <h4 className="font-semibold mb-2">Description</h4>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                        {selectedProperty.description}
-                      </p>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-days-market">Days on Market</Label>
+                    <Input
+                      id="edit-days-market"
+                      type="number"
+                      value={editedProperty?.days_on_market || ''}
+                      onChange={(e) => handlePropertyFieldChange('days_on_market', parseInt(e.target.value) || null)}
+                      placeholder="Enter days on market"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-date-listed">Date Listed</Label>
+                    <Input
+                      id="edit-date-listed"
+                      type="date"
+                      value={editedProperty?.date_listed || ''}
+                      onChange={(e) => handlePropertyFieldChange('date_listed', e.target.value)}
+                    />
+                  </div>
                 </div>
               </TabsContent>
 
               {/* Financial Tab */}
               <TabsContent value="financial" className="space-y-4 mt-4">
-                <div className="grid gap-4">
-                  {selectedProperty.price && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Price</span>
-                      <div className="flex items-center font-bold text-lg">
-                        <DollarSign className="h-4 w-4" />
-                        {Number(selectedProperty.price).toLocaleString()}
-                      </div>
-                    </div>
-                  )}
+                {/* Save Button */}
+                <div className="flex justify-end gap-2 pb-4 border-b">
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditedProperty({ ...selectedProperty })}
+                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    Reset Changes
+                  </Button>
+                  <Button
+                    onClick={handleSaveProperty}
+                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
 
-                  {selectedProperty.arv_estimate && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">ARV Estimate</span>
-                      <div className="flex items-center font-semibold text-success">
-                        <DollarSign className="h-4 w-4" />
-                        {Number(selectedProperty.arv_estimate).toLocaleString()}
-                      </div>
-                    </div>
-                  )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-price-financial">Price</Label>
+                    <Input
+                      id="edit-price-financial"
+                      type="number"
+                      value={editedProperty?.price || ''}
+                      onChange={(e) => handlePropertyFieldChange('price', parseFloat(e.target.value) || null)}
+                      placeholder="Enter price"
+                    />
+                  </div>
 
-                  {selectedProperty.price_per_sqft && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Price per sqft</span>
-                      <span className="font-medium">${selectedProperty.price_per_sqft}/sqft</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-arv-financial">ARV Estimate</Label>
+                    <Input
+                      id="edit-arv-financial"
+                      type="number"
+                      value={editedProperty?.arv_estimate || ''}
+                      onChange={(e) => handlePropertyFieldChange('arv_estimate', parseFloat(e.target.value) || null)}
+                      placeholder="Enter ARV estimate"
+                    />
+                  </div>
 
-                  {selectedProperty.rentometer_monthly_rent && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Est. Monthly Rent</span>
-                      <div className="flex items-center font-medium">
-                        <DollarSign className="h-4 w-4" />
-                        {Number(selectedProperty.rentometer_monthly_rent).toLocaleString()}
-                      </div>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-rent">Est. Monthly Rent</Label>
+                    <Input
+                      id="edit-rent"
+                      type="number"
+                      value={editedProperty?.rentometer_monthly_rent || ''}
+                      onChange={(e) => handlePropertyFieldChange('rentometer_monthly_rent', parseFloat(e.target.value) || null)}
+                      placeholder="Enter monthly rent"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-last-sold-price">Last Sold Price</Label>
+                    <Input
+                      id="edit-last-sold-price"
+                      type="number"
+                      value={editedProperty?.last_sold_price || ''}
+                      onChange={(e) => handlePropertyFieldChange('last_sold_price', parseFloat(e.target.value) || null)}
+                      placeholder="Enter last sold price"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-last-sold-date">Last Sold Date</Label>
+                    <Input
+                      id="edit-last-sold-date"
+                      type="date"
+                      value={editedProperty?.last_sold_date || ''}
+                      onChange={(e) => handlePropertyFieldChange('last_sold_date', e.target.value)}
+                    />
+                  </div>
                 </div>
               </TabsContent>
 
               {/* Details Tab */}
               <TabsContent value="details" className="space-y-4 mt-4">
-                <div className="grid gap-4">
-                  {selectedProperty.bedrooms && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Bedrooms</span>
-                      <span className="font-medium">{selectedProperty.bedrooms}</span>
-                    </div>
-                  )}
+                {/* Save Button */}
+                <div className="flex justify-end gap-2 pb-4 border-b">
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditedProperty({ ...selectedProperty })}
+                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    Reset Changes
+                  </Button>
+                  <Button
+                    onClick={handleSaveProperty}
+                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                  >
+                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
 
-                  {selectedProperty.bathrooms && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Bathrooms</span>
-                      <span className="font-medium">{selectedProperty.bathrooms}</span>
-                    </div>
-                  )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-living-sqf">Living Sq Ft</Label>
+                    <Input
+                      id="edit-living-sqf"
+                      type="number"
+                      value={editedProperty?.living_sqf || ''}
+                      onChange={(e) => handlePropertyFieldChange('living_sqf', parseInt(e.target.value) || null)}
+                      placeholder="Enter living square footage"
+                    />
+                  </div>
 
-                  {selectedProperty.square_footage && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Square Footage</span>
-                      <span className="font-medium">
-                        {selectedProperty.square_footage.toLocaleString()} sqft
-                      </span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-building-sqf">Building Sq Ft</Label>
+                    <Input
+                      id="edit-building-sqf"
+                      type="number"
+                      value={editedProperty?.building_sqf || ''}
+                      onChange={(e) => handlePropertyFieldChange('building_sqf', parseInt(e.target.value) || null)}
+                      placeholder="Enter building square footage"
+                    />
+                  </div>
 
-                  {selectedProperty.lot_size && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Lot Size</span>
-                      <span className="font-medium">{selectedProperty.lot_size}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-lot-sqf">Lot Sq Ft</Label>
+                    <Input
+                      id="edit-lot-sqf"
+                      type="number"
+                      value={editedProperty?.lot_sqf || ''}
+                      onChange={(e) => handlePropertyFieldChange('lot_sqf', parseInt(e.target.value) || null)}
+                      placeholder="Enter lot square footage"
+                    />
+                  </div>
 
-                  {selectedProperty.year_built && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Year Built</span>
-                      <span className="font-medium">{selectedProperty.year_built}</span>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-full-bath">Full Baths</Label>
+                    <Input
+                      id="edit-full-bath"
+                      type="number"
+                      value={editedProperty?.full_bath || ''}
+                      onChange={(e) => handlePropertyFieldChange('full_bath', parseInt(e.target.value) || null)}
+                      placeholder="Enter full baths"
+                    />
+                  </div>
 
-                  {selectedProperty.home_type && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Home Type</span>
-                      <span className="font-medium">{selectedProperty.home_type}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-2 pt-4">
+                    <Checkbox
+                      id="edit-basement"
+                      checked={editedProperty?.basement || false}
+                      onCheckedChange={(checked) => handlePropertyFieldChange('basement', checked)}
+                    />
+                    <Label htmlFor="edit-basement" className="cursor-pointer">Has Basement</Label>
+                  </div>
 
-                  {selectedProperty.neighborhood && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Neighborhood</span>
-                      <span className="font-medium">{selectedProperty.neighborhood}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-2 pt-4">
+                    <Checkbox
+                      id="edit-finished-basement"
+                      checked={editedProperty?.finished_basement || false}
+                      onCheckedChange={(checked) => handlePropertyFieldChange('finished_basement', checked)}
+                    />
+                    <Label htmlFor="edit-finished-basement" className="cursor-pointer">Finished Basement</Label>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-basement-sqf">Basement Sq Ft</Label>
+                    <Input
+                      id="edit-basement-sqf"
+                      type="number"
+                      value={editedProperty?.basement_sqf || ''}
+                      onChange={(e) => handlePropertyFieldChange('basement_sqf', parseInt(e.target.value) || null)}
+                      placeholder="Enter basement square footage"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-status">Property Status</Label>
+                    <Select
+                      value={editedProperty?.status || ''}
+                      onValueChange={(value) => handlePropertyFieldChange('status', value)}
+                    >
+                      <SelectTrigger id="edit-status">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="For Sale">For Sale</SelectItem>
+                        <SelectItem value="Under Contract">Under Contract</SelectItem>
+                        <SelectItem value="Sold">Sold</SelectItem>
+                        <SelectItem value="Off Market">Off Market</SelectItem>
+                        <SelectItem value="Pending">Pending</SelectItem>
+                        <SelectItem value="Tracking">Tracking</SelectItem>
+                        <SelectItem value="Not Relevant">Not Relevant</SelectItem>
+                        <SelectItem value="Follow Up">Follow Up</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-source">Source</Label>
+                    <Input
+                      id="edit-source"
+                      value={editedProperty?.source || ''}
+                      onChange={(e) => handlePropertyFieldChange('source', e.target.value)}
+                      placeholder="Enter source"
+                    />
+                  </div>
                 </div>
               </TabsContent>
 
@@ -1983,11 +2214,11 @@ export default function Properties() {
                   </Dialog>
                 </div>
 
-                {!selectedProperty.activities || selectedProperty.activities.length === 0 ? (
+                {!propertyActivities || propertyActivities.length === 0 ? (
                   <p className="text-muted-foreground text-sm italic">No activities yet</p>
                 ) : (
                   <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                    {selectedProperty.activities.map((activity: any) => (
+                    {propertyActivities.map((activity: any) => (
                       <div
                         key={activity.id}
                         className="flex gap-3 p-3 rounded-lg border bg-card"
