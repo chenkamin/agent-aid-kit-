@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -318,6 +318,195 @@ export default function Properties() {
       default:
         return 'New property, not yet reviewed';
     }
+  };
+
+  const exportToCSV = () => {
+    if (!sortedProperties || sortedProperties.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no properties matching your filters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Define CSV headers - ALL fields from properties table
+    const headers = [
+      "ID",
+      "Created At",
+      "Updated At",
+      "Address",
+      "City",
+      "State",
+      "Zip",
+      "Neighborhood",
+      "Price",
+      "Bedrooms",
+      "Bed",
+      "Bathrooms",
+      "Bath",
+      "Full Bath",
+      "Square Footage",
+      "Living Sqf",
+      "Building Sqf",
+      "Above Ground Sqf",
+      "Basement",
+      "Finished Basement",
+      "Basement Sqf",
+      "Lot Size",
+      "Lot Sqf",
+      "Year Built",
+      "Home Type",
+      "Home Sub Type",
+      "Property Type",
+      "Price Per Sqft",
+      "PPSF",
+      "Status",
+      "Initial Status",
+      "Sub Status",
+      "Source",
+      "Sub Source",
+      "Source Contact Details",
+      "Listing URL",
+      "URL",
+      "MLS Number",
+      "Description",
+      "Agent Notes",
+      "Date Listed",
+      "Days on Market",
+      "Last Sold Date",
+      "Previous Sold Date",
+      "Last Sold Price",
+      "Previous Sold Price",
+      "Offer",
+      "Deal",
+      "Seller Agent Name",
+      "Seller Agent Email",
+      "Seller Agent Phone",
+      "Owner",
+      "Owner Properties",
+      "Client Email",
+      "Rentometer Monthly Rent",
+      "Linked Comp 1",
+      "Linked Comp 2",
+      "Linked Comp 3",
+      "Linked Comp 4",
+      "Linked Comp 5",
+      "Notes",
+      "Tags",
+      "ARV Estimate",
+      "User ID",
+      "Buy Box ID",
+      "Last Scraped At",
+      "Is New Listing",
+      "Listing Discovered At",
+      "Workflow State"
+    ];
+
+    // Convert properties to CSV rows with ALL fields
+    const rows = sortedProperties.map(prop => [
+      prop.id || '',
+      prop.created_at ? format(new Date(prop.created_at), 'yyyy-MM-dd HH:mm:ss') : '',
+      prop.updated_at ? format(new Date(prop.updated_at), 'yyyy-MM-dd HH:mm:ss') : '',
+      prop.address || '',
+      prop.city || '',
+      prop.state || '',
+      prop.zip || '',
+      prop.neighborhood || '',
+      prop.price || '',
+      prop.bedrooms || '',
+      prop.bed || '',
+      prop.bathrooms || '',
+      prop.bath || '',
+      prop.full_bath || '',
+      prop.square_footage || '',
+      prop.living_sqf || '',
+      prop.building_sqf || '',
+      prop.above_ground_sqf || '',
+      prop.basement || '',
+      prop.finished_basement || '',
+      prop.basement_sqf || '',
+      prop.lot_size || '',
+      prop.lot_sqf || '',
+      prop.year_built || '',
+      prop.home_type || '',
+      prop.home_sub_type || '',
+      prop.property_type || '',
+      prop.price_per_sqft || '',
+      prop.ppsf || '',
+      prop.status || '',
+      prop.initial_status || '',
+      prop.sub_status || '',
+      prop.source || '',
+      prop.sub_source || '',
+      prop.source_contact_details || '',
+      prop.listing_url || '',
+      prop.url || '',
+      prop.mls_number || '',
+      prop.description || '',
+      prop.agent_notes || '',
+      prop.date_listed || '',
+      prop.days_on_market || '',
+      prop.last_sold_date || '',
+      prop.previous_sold_date || '',
+      prop.last_sold_price || '',
+      prop.previous_sold_price || '',
+      prop.offer ? JSON.stringify(prop.offer) : '',
+      prop.deal ? JSON.stringify(prop.deal) : '',
+      prop.seller_agent_name || '',
+      prop.seller_agent_email || '',
+      prop.seller_agent_phone || '',
+      prop.owner || '',
+      prop.owner_properties || '',
+      prop.client_email || '',
+      prop.rentometer_monthly_rent || '',
+      prop.linked_comp_1 || '',
+      prop.linked_comp_2 || '',
+      prop.linked_comp_3 || '',
+      prop.linked_comp_4 || '',
+      prop.linked_comp_5 || '',
+      prop.notes || '',
+      prop.tags ? (Array.isArray(prop.tags) ? prop.tags.join('; ') : prop.tags) : '',
+      prop.arv_estimate || '',
+      prop.user_id || '',
+      prop.buy_box_id || '',
+      prop.last_scraped_at ? format(new Date(prop.last_scraped_at), 'yyyy-MM-dd HH:mm:ss') : '',
+      prop.is_new_listing || '',
+      prop.listing_discovered_at ? format(new Date(prop.listing_discovered_at), 'yyyy-MM-dd HH:mm:ss') : '',
+      prop.workflow_state || ''
+    ]);
+
+    // Escape and quote CSV fields
+    const escapeCSVField = (field: any) => {
+      const str = String(field);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Build CSV content
+    const csvContent = [
+      headers.map(escapeCSVField).join(','),
+      ...rows.map(row => row.map(escapeCSVField).join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    const timestamp = format(new Date(), 'yyyy-MM-dd-HHmmss');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `properties-export-${timestamp}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${sortedProperties.length} ${sortedProperties.length === 1 ? 'property' : 'properties'} with all fields to CSV`,
+    });
   };
 
   const getPropertyDisplayName = (property: any) => {
@@ -1062,6 +1251,14 @@ export default function Properties() {
         </div>
         <Button
           variant="outline"
+          onClick={exportToCSV}
+          disabled={!sortedProperties || sortedProperties.length === 0}
+        >
+          <Download className="mr-2 h-4 w-4" />
+          Export to CSV
+        </Button>
+        <Button
+          variant="outline"
           onClick={() => setShowFilters(!showFilters)}
         >
           {showFilters ? (
@@ -1130,9 +1327,9 @@ export default function Properties() {
 
       {/* Filters Section - Collapsible */}
       {showFilters && (
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-7">
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-7">
             <div className="space-y-2">
               <Label htmlFor="filter-status" className="text-sm font-medium">Status</Label>
               <Select
@@ -1678,7 +1875,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('price', parseFloat(e.target.value) || null)}
                       placeholder="Enter price"
                     />
-                  </div>
+                      </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-arv">ARV Estimate</Label>
@@ -1689,7 +1886,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('arv_estimate', parseFloat(e.target.value) || null)}
                       placeholder="Enter ARV estimate"
                     />
-                  </div>
+                      </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-mls">MLS Number</Label>
@@ -1699,7 +1896,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('mls_number', e.target.value)}
                       placeholder="Enter MLS number"
                     />
-                  </div>
+                    </div>
                 </div>
 
                 <div className="space-y-4">
@@ -1714,7 +1911,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('bedrooms', parseInt(e.target.value) || null)}
                       placeholder="Enter bedrooms"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-bathrooms">Bathrooms</Label>
@@ -1726,7 +1923,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('bathrooms', parseFloat(e.target.value) || null)}
                       placeholder="Enter bathrooms"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-sqft">Square Footage</Label>
@@ -1737,7 +1934,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('square_footage', parseInt(e.target.value) || null)}
                       placeholder="Enter square footage"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-lot-size">Lot Size</Label>
@@ -1747,7 +1944,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('lot_size', e.target.value)}
                       placeholder="Enter lot size"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-year-built">Year Built</Label>
@@ -1758,7 +1955,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('year_built', parseInt(e.target.value) || null)}
                       placeholder="Enter year built"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-home-type">Home Type</Label>
@@ -1779,7 +1976,7 @@ export default function Properties() {
                         <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-neighborhood">Neighborhood</Label>
@@ -1789,11 +1986,11 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('neighborhood', e.target.value)}
                       placeholder="Enter neighborhood"
                     />
-                  </div>
+                    </div>
                 </div>
-                </div>
+              </div>
 
-                {selectedProperty.description && (
+              {selectedProperty.description && (
                   <div className="space-y-2">
                     <Label htmlFor="edit-description">Description</Label>
                     <Textarea
@@ -1803,10 +2000,10 @@ export default function Properties() {
                       placeholder="Property description"
                       rows={4}
                     />
-                  </div>
-                )}
+                </div>
+              )}
 
-                {selectedProperty.notes && (
+              {selectedProperty.notes && (
                   <div className="space-y-2">
                     <Label htmlFor="edit-notes">Notes</Label>
                     <Textarea
@@ -1816,9 +2013,9 @@ export default function Properties() {
                       placeholder="Internal notes"
                       rows={3}
                     />
-                  </div>
-                )}
-              </TabsContent>
+                </div>
+              )}
+            </TabsContent>
 
               {/* Listing Tab */}
               <TabsContent value="listing" className="space-y-4 mt-4">
@@ -1837,7 +2034,7 @@ export default function Properties() {
                   >
                     {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
-                </div>
+                    </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
@@ -1848,7 +2045,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('seller_agent_name', e.target.value)}
                       placeholder="Enter agent name"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-agent-phone">Agent Phone</Label>
@@ -1858,7 +2055,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('seller_agent_phone', e.target.value)}
                       placeholder="Enter agent phone"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-agent-email">Agent Email</Label>
@@ -1869,7 +2066,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('seller_agent_email', e.target.value)}
                       placeholder="Enter agent email"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-listing-url">Listing URL</Label>
@@ -1879,7 +2076,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('listing_url', e.target.value)}
                       placeholder="Enter listing URL"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-days-market">Days on Market</Label>
@@ -1890,7 +2087,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('days_on_market', parseInt(e.target.value) || null)}
                       placeholder="Enter days on market"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-date-listed">Date Listed</Label>
@@ -1921,7 +2118,7 @@ export default function Properties() {
                   >
                     {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
-                </div>
+                      </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
@@ -1933,7 +2130,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('price', parseFloat(e.target.value) || null)}
                       placeholder="Enter price"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-arv-financial">ARV Estimate</Label>
@@ -1944,7 +2141,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('arv_estimate', parseFloat(e.target.value) || null)}
                       placeholder="Enter ARV estimate"
                     />
-                  </div>
+                      </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-rent">Est. Monthly Rent</Label>
@@ -1955,7 +2152,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('rentometer_monthly_rent', parseFloat(e.target.value) || null)}
                       placeholder="Enter monthly rent"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-last-sold-price">Last Sold Price</Label>
@@ -1966,7 +2163,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('last_sold_price', parseFloat(e.target.value) || null)}
                       placeholder="Enter last sold price"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-last-sold-date">Last Sold Date</Label>
@@ -1976,7 +2173,7 @@ export default function Properties() {
                       value={editedProperty?.last_sold_date || ''}
                       onChange={(e) => handlePropertyFieldChange('last_sold_date', e.target.value)}
                     />
-                  </div>
+                      </div>
                 </div>
               </TabsContent>
 
@@ -1997,7 +2194,7 @@ export default function Properties() {
                   >
                     {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
-                </div>
+                    </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
@@ -2009,7 +2206,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('living_sqf', parseInt(e.target.value) || null)}
                       placeholder="Enter living square footage"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-building-sqf">Building Sq Ft</Label>
@@ -2020,7 +2217,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('building_sqf', parseInt(e.target.value) || null)}
                       placeholder="Enter building square footage"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-lot-sqf">Lot Sq Ft</Label>
@@ -2031,7 +2228,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('lot_sqf', parseInt(e.target.value) || null)}
                       placeholder="Enter lot square footage"
                     />
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-full-bath">Full Baths</Label>
@@ -2042,7 +2239,7 @@ export default function Properties() {
                       onChange={(e) => handlePropertyFieldChange('full_bath', parseInt(e.target.value) || null)}
                       placeholder="Enter full baths"
                     />
-                  </div>
+                    </div>
 
                   <div className="flex items-center space-x-2 pt-4">
                     <Checkbox
@@ -2051,7 +2248,7 @@ export default function Properties() {
                       onCheckedChange={(checked) => handlePropertyFieldChange('basement', checked)}
                     />
                     <Label htmlFor="edit-basement" className="cursor-pointer">Has Basement</Label>
-                  </div>
+                    </div>
 
                   <div className="flex items-center space-x-2 pt-4">
                     <Checkbox
@@ -2060,7 +2257,7 @@ export default function Properties() {
                       onCheckedChange={(checked) => handlePropertyFieldChange('finished_basement', checked)}
                     />
                     <Label htmlFor="edit-finished-basement" className="cursor-pointer">Finished Basement</Label>
-                  </div>
+                    </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="edit-basement-sqf">Basement Sq Ft</Label>
@@ -2191,15 +2388,15 @@ export default function Properties() {
                         </div>
 
                         {/* Optional due date for any activity type */}
-                        <div className="space-y-2">
+                          <div className="space-y-2">
                           <Label htmlFor="activity-due">Due Date (Optional)</Label>
-                          <Input
-                            id="activity-due"
-                            type="datetime-local"
-                            value={activityForm.due_at}
-                            onChange={(e) => setActivityForm(prev => ({ ...prev, due_at: e.target.value }))}
-                          />
-                        </div>
+                            <Input
+                              id="activity-due"
+                              type="datetime-local"
+                              value={activityForm.due_at}
+                              onChange={(e) => setActivityForm(prev => ({ ...prev, due_at: e.target.value }))}
+                            />
+                          </div>
 
                         <div className="flex justify-end gap-2">
                           <Button variant="outline" onClick={() => setIsAddingActivity(false)}>
@@ -2242,12 +2439,12 @@ export default function Properties() {
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             {activity.due_at && (
                               <>
-                                <span>Due: {format(new Date(activity.due_at), "MMM d, yyyy")}</span>
-                                <span>•</span>
+                              <span>Due: {format(new Date(activity.due_at), "MMM d, yyyy")}</span>
+                            <span>•</span>
                               </>
                             )}
                             {activity.created_at && (
-                              <span>{format(new Date(activity.created_at), "MMM d, yyyy")}</span>
+                            <span>{format(new Date(activity.created_at), "MMM d, yyyy")}</span>
                             )}
                           </div>
                         </div>

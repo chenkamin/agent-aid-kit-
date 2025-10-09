@@ -1,0 +1,373 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+};
+
+// Helper function to parse formatted numbers
+function parseNumber(value: any): number | null {
+  if (value === null || value === undefined || value === '' || value === 'undefined') {
+    return null;
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[$,\s]/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function parseInteger(value: any): number | null {
+  const num = parseNumber(value);
+  return num !== null ? Math.floor(num) : null;
+}
+
+function extractAddressFromUrl(url: string) {
+  try {
+    const match = url.match(/\/homedetails\/(.+?)\/(\d+)_zpid/);
+    if (match && match[1]) {
+      const parts = match[1].split('-');
+      const zip = parts[parts.length - 1];
+      const state = parts[parts.length - 2];
+      const cityParts = [];
+      const addressParts = [];
+      let foundCity = false;
+
+      for (let i = parts.length - 3; i >= 0; i--) {
+        if (!foundCity && parts[i].length > 2) {
+          cityParts.unshift(parts[i]);
+        } else {
+          foundCity = true;
+          addressParts.unshift(parts[i]);
+        }
+      }
+
+      return {
+        address: addressParts.join(' '),
+        city: cityParts.join(' '),
+        state: state,
+        zip: zip
+      };
+    }
+  } catch (e) {
+    console.error('Error extracting address from URL:', e);
+  }
+  return {
+    address: '',
+    city: '',
+    state: '',
+    zip: ''
+  };
+}
+
+function normalizeHomeType(homeType: string): string {
+  if (!homeType || homeType === 'undefined') return 'Other';
+
+  const type = homeType.toLowerCase();
+  if (type.includes('single') || type.includes('sfr')) return 'Single Family';
+  if (type.includes('multi') || type.includes('duplex')) return 'Multi Family';
+  if (type.includes('condo')) return 'Condo';
+  if (type.includes('town')) return 'Townhouse';
+  if (type.includes('land')) return 'Land';
+  if (type.includes('commercial')) return 'Commercial';
+
+  return 'Other';
+}
+
+async function recordPropertyChanges(supabase: any, updates: any[]) {
+  const changeRecords = updates.flatMap(update =>
+    update.changes.map((change: any) => ({
+      property_id: update.propertyId,
+      user_id: update.userId,
+      field_changed: change.field,
+      old_value: change.oldValue,
+      new_value: change.newValue
+    }))
+  );
+
+  if (changeRecords.length > 0) {
+    const { error } = await supabase
+      .from('property_changes')
+      .insert(changeRecords);
+
+    if (error) {
+      console.error('Error recording changes:', error);
+    }
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    console.log('🔄 Starting daily property update job...');
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const apifyToken = Deno.env.get('APIFY_API_TOKEN');
+
+    if (!apifyToken) throw new Error('APIFY_API_TOKEN not configured');
+
+    const supabase = createClient(supabaseUrl!, supabaseKey!);
+
+    // Get all active buy boxes (lists) with their users
+    const { data: buyBoxes, error: buyBoxError } = await supabase
+      .from('buy_boxes')
+      .select('id, user_id, name, zip_codes, price_max, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent')
+      .order('created_at', { ascending: true });
+
+    if (buyBoxError) throw buyBoxError;
+
+    if (!buyBoxes || buyBoxes.length === 0) {
+      console.log('No buy boxes found');
+      return new Response(
+        JSON.stringify({ message: 'No buy boxes to process' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    console.log(`📦 Processing ${buyBoxes.length} buy boxes...`);
+
+    const results = [];
+
+    for (const buyBox of buyBoxes) {
+      console.log(`\n🏠 Processing buy box: ${buyBox.name} (User: ${buyBox.user_id})`);
+
+      try {
+        // Get existing properties for this buy box
+        const { data: existingProperties } = await supabase
+          .from('properties')
+          .select('id, address, city, state, zip, listing_url, price, status')
+          .eq('buy_box_id', buyBox.id);
+
+        // Create a map of existing properties by listing URL
+        const existingPropsMap = new Map(
+          (existingProperties || []).map(p => [p.listing_url, p])
+        );
+
+        // Run Apify scrape
+        const searchConfig = {
+          zipCodes: buyBox.zip_codes || [],
+          priceMax: buyBox.price_max || undefined,
+          daysOnZillow: buyBox.days_on_zillow || '',
+          forSaleByAgent: buyBox.for_sale_by_agent ?? true,
+          forSaleByOwner: buyBox.for_sale_by_owner ?? true,
+          forRent: buyBox.for_rent ?? false,
+          sold: false
+        };
+
+        const apifyResponse = await fetch(
+          `https://api.apify.com/v2/acts/l7auNT3I30CssRrvO/runs`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apifyToken}`
+            },
+            body: JSON.stringify(searchConfig)
+          }
+        );
+
+        if (!apifyResponse.ok) {
+          throw new Error(`Apify API error: ${apifyResponse.status}`);
+        }
+
+        const runData = await apifyResponse.json();
+        const runId = runData.data.id;
+        const defaultDatasetId = runData.data.defaultDatasetId;
+
+        // Wait for completion
+        let runStatus = 'RUNNING';
+        let attempts = 0;
+        const maxAttempts = 60;
+
+        while (runStatus === 'RUNNING' && attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+
+          const statusResponse = await fetch(
+            `https://api.apify.com/v2/acts/l7auNT3I30CssRrvO/runs/${runId}`,
+            { headers: { 'Authorization': `Bearer ${apifyToken}` } }
+          );
+
+          const statusData = await statusResponse.json();
+          runStatus = statusData.data.status;
+          attempts++;
+        }
+
+        if (runStatus !== 'SUCCEEDED') {
+          throw new Error(`Apify run failed: ${runStatus}`);
+        }
+
+        // Fetch results
+        const resultsResponse = await fetch(
+          `https://api.apify.com/v2/datasets/${defaultDatasetId}/items`,
+          { headers: { 'Authorization': `Bearer ${apifyToken}` } }
+        );
+
+        if (!resultsResponse.ok) {
+          throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
+        }
+
+        const scrapedProperties = await resultsResponse.json();
+        console.log(`   ✅ Found ${scrapedProperties.length} properties from Zillow`);
+
+        const newListings = [];
+        const updatedListings = [];
+        const propertyUpdates = [];
+
+        for (const prop of scrapedProperties) {
+          const listingUrl = prop.detailUrl || prop.url || '';
+          const addressData = extractAddressFromUrl(listingUrl);
+          const scrapedPrice = parseNumber(prop.price || prop.unformattedPrice);
+          const scrapedStatus = 'For Sale';
+
+          const existingProp = existingPropsMap.get(listingUrl);
+
+          if (!existingProp) {
+            // NEW LISTING
+            newListings.push({
+              user_id: buyBox.user_id,
+              buy_box_id: buyBox.id,
+              address: addressData.address || '',
+              city: addressData.city || '',
+              state: addressData.state || '',
+              zip: addressData.zip || '',
+              price: scrapedPrice,
+              bedrooms: parseInteger(prop.beds || prop.bedrooms),
+              bed: parseInteger(prop.beds || prop.bedrooms),
+              bathrooms: parseNumber(prop.baths || prop.bathrooms),
+              bath: parseNumber(prop.baths || prop.bathrooms),
+              square_footage: parseInteger(prop.livingArea || prop.area),
+              living_sqf: parseInteger(prop.livingArea || prop.area),
+              home_type: normalizeHomeType(prop.homeType || prop.propertyType),
+              status: scrapedStatus,
+              initial_status: prop.homeStatus || prop.statusText || '',
+              days_on_market: parseInteger(prop.daysOnZillow),
+              listing_url: listingUrl,
+              url: listingUrl,
+              is_new_listing: true,
+              listing_discovered_at: new Date().toISOString(),
+              last_scraped_at: new Date().toISOString()
+            });
+          } else {
+            // EXISTING LISTING - CHECK FOR CHANGES
+            const changes = [];
+
+            if (existingProp.price !== scrapedPrice) {
+              changes.push({
+                field: 'price',
+                oldValue: String(existingProp.price || 'null'),
+                newValue: String(scrapedPrice || 'null')
+              });
+            }
+
+            if (existingProp.status !== scrapedStatus) {
+              changes.push({
+                field: 'status',
+                oldValue: existingProp.status || 'null',
+                newValue: scrapedStatus
+              });
+            }
+
+            if (changes.length > 0) {
+              propertyUpdates.push({
+                propertyId: existingProp.id,
+                userId: buyBox.user_id,
+                changes
+              });
+
+              // Update the property
+              const updateData: any = { last_scraped_at: new Date().toISOString() };
+
+              if (changes.some(c => c.field === 'price')) {
+                updateData.price = scrapedPrice;
+              }
+              if (changes.some(c => c.field === 'status')) {
+                updateData.status = scrapedStatus;
+              }
+
+              await supabase
+                .from('properties')
+                .update(updateData)
+                .eq('id', existingProp.id);
+
+              updatedListings.push(existingProp.id);
+            } else {
+              // No changes, just update last_scraped_at
+              await supabase
+                .from('properties')
+                .update({ last_scraped_at: new Date().toISOString() })
+                .eq('id', existingProp.id);
+            }
+          }
+        }
+
+        // Insert new listings
+        if (newListings.length > 0) {
+          const { error: insertError } = await supabase
+            .from('properties')
+            .insert(newListings);
+
+          if (insertError) {
+            console.error('Error inserting new listings:', insertError);
+          } else {
+            console.log(`   🆕 Added ${newListings.length} new listings`);
+          }
+        }
+
+        // Record property changes
+        if (propertyUpdates.length > 0) {
+          await recordPropertyChanges(supabase, propertyUpdates);
+          console.log(`   📊 Updated ${updatedListings.length} properties`);
+        }
+
+        results.push({
+          buyBoxId: buyBox.id,
+          buyBoxName: buyBox.name,
+          userId: buyBox.user_id,
+          totalScraped: scrapedProperties.length,
+          newListings: newListings.length,
+          updatedListings: updatedListings.length,
+          success: true
+        });
+
+      } catch (error) {
+        console.error(`   ❌ Error processing buy box ${buyBox.name}:`, error.message);
+        results.push({
+          buyBoxId: buyBox.id,
+          buyBoxName: buyBox.name,
+          userId: buyBox.user_id,
+          error: error.message,
+          success: false
+        });
+      }
+    }
+
+    console.log('\n✅ Daily update job completed');
+
+    return new Response(
+      JSON.stringify({
+        message: 'Daily update completed',
+        processedBuyBoxes: buyBoxes.length,
+        results
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+    );
+
+  } catch (error) {
+    console.error('❌ Error in daily update job:', error);
+    return new Response(
+      JSON.stringify({ error: error.message || 'An error occurred' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+    );
+  }
+});
+
+
