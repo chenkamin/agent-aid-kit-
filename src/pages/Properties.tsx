@@ -1785,7 +1785,7 @@ export default function Properties() {
                       <TableCell>
                         {property.source === 'Zillow' ? (
                           <span className="text-blue-600 font-medium">Zillow</span>
-                        ) : property.source || 'Euclid'}
+                        ) : property.source || ''}
                       </TableCell>
                       <TableCell>
                         {property.created_at ? format(new Date(property.created_at), 'MM/dd/yyyy') : '-'}
