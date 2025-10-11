@@ -61,6 +61,7 @@ export default function Properties() {
     zip: "",
     neighborhood: "",
     status: "For Sale",
+    buy_box_id: "",
     price: "",
     bedrooms: "",
     bathrooms: "",
@@ -130,6 +131,21 @@ export default function Properties() {
         .select("*")
         .eq("property_id", selectedProperty.id)
         .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!selectedProperty?.id,
+  });
+
+  // Fetch workflow history for selected property
+  const { data: workflowHistory } = useQuery({
+    queryKey: ["workflow-history", selectedProperty?.id],
+    queryFn: async () => {
+      if (!selectedProperty?.id) return [];
+      const { data } = await supabase
+        .from("property_workflow_history")
+        .select("*")
+        .eq("property_id", selectedProperty.id)
+        .order("changed_at", { ascending: false });
       return data || [];
     },
     enabled: !!selectedProperty?.id,
@@ -782,6 +798,7 @@ export default function Properties() {
         bathrooms: data.bathrooms ? parseFloat(data.bathrooms) : null,
         square_footage: data.square_footage ? parseInt(data.square_footage) : null,
         year_built: data.year_built ? parseInt(data.year_built) : null,
+        buy_box_id: data.buy_box_id || null,
       }]);
       if (error) throw error;
     },
@@ -799,6 +816,7 @@ export default function Properties() {
         zip: "",
         neighborhood: "",
         status: "For Sale",
+        buy_box_id: "",
         price: "",
         bedrooms: "",
         bathrooms: "",
@@ -1197,6 +1215,26 @@ export default function Properties() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="property-buy-box">Buy Box (Optional)</Label>
+                    <Select
+                      value={propertyForm.buy_box_id || "none"}
+                      onValueChange={(value) => setPropertyForm((prev: any) => ({ ...prev, buy_box_id: value === "none" ? "" : value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a buy box..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {buyBoxes?.map((buyBox: any) => (
+                          <SelectItem key={buyBox.id} value={buyBox.id}>
+                            {buyBox.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="property-home-type">Home Type</Label>
                     <Select
                       value={propertyForm.home_type}
@@ -1352,19 +1390,7 @@ export default function Properties() {
         <Card className="mb-6 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
           <CardContent className="py-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <p className="font-semibold text-blue-900 dark:text-blue-100">
-                  {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'property' : 'properties'} selected
-                </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedPropertyIds([])}
-                  className="text-blue-700 dark:text-blue-300"
-                >
-                  Clear Selection
-                </Button>
-              </div>
+              
               <div className="flex items-center gap-3">
                 <Button
                   onClick={() => setIsBulkAddingActivity(true)}
@@ -1399,6 +1425,19 @@ export default function Properties() {
                     <SelectItem value="Archived">📦 Archived</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center gap-4">
+                <p className="font-semibold text-blue-900 dark:text-blue-100">
+                  {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'property' : 'properties'} selected
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedPropertyIds([])}
+                  className="text-blue-700 dark:text-blue-300"
+                >
+                  Clear Selection
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -2067,34 +2106,66 @@ export default function Properties() {
                       placeholder="Enter neighborhood"
                     />
                     </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-buy-box">Buy Box (Optional)</Label>
+                    <Select
+                      value={editedProperty?.buy_box_id || "none"}
+                      onValueChange={(value) => handlePropertyFieldChange('buy_box_id', value === "none" ? null : value)}
+                    >
+                      <SelectTrigger id="edit-buy-box">
+                        <SelectValue placeholder="Select a buy box..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {buyBoxes?.map((buyBox: any) => (
+                          <SelectItem key={buyBox.id} value={buyBox.id}>
+                            {buyBox.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
-              {selectedProperty.description && (
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-description">Description</Label>
-                    <Textarea
-                      id="edit-description"
-                      value={editedProperty?.description || ''}
-                      onChange={(e) => handlePropertyFieldChange('description', e.target.value)}
-                      placeholder="Property description"
-                      rows={4}
-                    />
+              {/* Additional Information - Always Visible */}
+              <div className="space-y-4 pt-6 border-t mt-6">
+                <h3 className="font-semibold text-lg">Additional Information</h3>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={editedProperty?.description || ''}
+                    onChange={(e) => handlePropertyFieldChange('description', e.target.value)}
+                    placeholder="Property description, condition, features, etc."
+                    rows={4}
+                  />
                 </div>
-              )}
 
-              {selectedProperty.notes && (
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-notes">Notes</Label>
-                    <Textarea
-                      id="edit-notes"
-                      value={editedProperty?.notes || ''}
-                      onChange={(e) => handlePropertyFieldChange('notes', e.target.value)}
-                      placeholder="Internal notes"
-                      rows={3}
-                    />
+                <div className="space-y-2">
+                  <Label htmlFor="edit-notes">Internal Notes</Label>
+                  <Textarea
+                    id="edit-notes"
+                    value={editedProperty?.notes || ''}
+                    onChange={(e) => handlePropertyFieldChange('notes', e.target.value)}
+                    placeholder="Private notes, reminders, analysis, etc."
+                    rows={4}
+                  />
                 </div>
-              )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-agent-notes">Agent Notes</Label>
+                  <Textarea
+                    id="edit-agent-notes"
+                    value={editedProperty?.agent_notes || ''}
+                    onChange={(e) => handlePropertyFieldChange('agent_notes', e.target.value)}
+                    placeholder="Notes from agent, seller information, etc."
+                    rows={3}
+                  />
+                </div>
+              </div>
             </TabsContent>
 
               {/* Listing Tab */}
@@ -2386,27 +2457,106 @@ export default function Properties() {
 
               {/* History Tab */}
               <TabsContent value="history" className="space-y-4 mt-4">
-                <div className="grid gap-4">
-                  {selectedProperty.last_sold_price && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Last Sold Price</span>
-                      <div className="flex items-center font-medium">
-                        <DollarSign className="h-4 w-4" />
-                        {Number(selectedProperty.last_sold_price).toLocaleString()}
-                      </div>
+                {/* Workflow Status Change History */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-blue-600" />
+                    <h3 className="font-semibold text-lg">Workflow Status History</h3>
+                  </div>
+                  
+                  {workflowHistory && workflowHistory.length > 0 ? (
+                    <div className="space-y-3">
+                      {workflowHistory.map((history: any, index: number) => (
+                        <div
+                          key={history.id}
+                          className="flex gap-4 pb-4 relative"
+                        >
+                          {/* Timeline connector */}
+                          {index < workflowHistory.length - 1 && (
+                            <div className="absolute left-[15px] top-8 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
+                          )}
+                          
+                          {/* Icon */}
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center z-10">
+                            <span className="text-sm">
+                              {getWorkflowStateIcon(history.to_state)}
+                            </span>
+                          </div>
+                          
+                          {/* Content */}
+                          <div className="flex-1 bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge variant="outline" className="text-red-600 border-red-300 line-through">
+                                    {history.from_state}
+                                  </Badge>
+                                  <span className="text-muted-foreground">→</span>
+                                  <Badge variant="outline" className="text-green-600 border-green-300 font-semibold">
+                                    {history.to_state}
+                                  </Badge>
+                                </div>
+                                {history.notes && (
+                                  <p className="text-sm text-muted-foreground mt-2">
+                                    {history.notes}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm font-medium">
+                                  {history.changed_at && format(new Date(history.changed_at), "MMM d, yyyy")}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {history.changed_at && format(new Date(history.changed_at), "h:mm a")}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Clock className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                      <p>No workflow status changes yet</p>
+                      <p className="text-sm">Status changes will appear here as you move this property through your pipeline</p>
                     </div>
                   )}
-
-                  {selectedProperty.last_sold_date && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Last Sold Date</span>
-                      <span className="font-medium">
-                        {format(new Date(selectedProperty.last_sold_date), "MMM d, yyyy")}
-                      </span>
                 </div>
-              )}
 
-              <div className="pt-4 border-t">
+                {/* Sales History */}
+                <div className="pt-6 border-t">
+                  <h3 className="font-semibold text-lg mb-4">Sales History</h3>
+                  <div className="grid gap-4">
+                    {selectedProperty.last_sold_price && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Last Sold Price</span>
+                        <div className="flex items-center font-medium">
+                          <DollarSign className="h-4 w-4" />
+                          {Number(selectedProperty.last_sold_price).toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedProperty.last_sold_date && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Last Sold Date</span>
+                        <span className="font-medium">
+                          {format(new Date(selectedProperty.last_sold_date), "MMM d, yyyy")}
+                        </span>
+                      </div>
+                    )}
+
+                    {!selectedProperty.last_sold_price && !selectedProperty.last_sold_date && (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        No sales history available
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Activities Section */}
+                <div className="pt-6 border-t">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-semibold text-lg">Activities</h3>
                   <Dialog open={isAddingActivity} onOpenChange={setIsAddingActivity}>
@@ -2533,7 +2683,6 @@ export default function Properties() {
                   </div>
                 )}
               </div>
-            </div>
               </TabsContent>
 
               {/* Comps Tab */}

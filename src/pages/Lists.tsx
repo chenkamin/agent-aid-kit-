@@ -47,6 +47,7 @@ export default function Lists() {
     forSaleByAgent: true,
     forSaleByOwner: true,
     forRent: false,
+    filterByPpsf: false,
   });
   const [sortConfig, setSortConfig] = useState<{
     key: string;
@@ -199,6 +200,7 @@ export default function Lists() {
         for_sale_by_agent: data.forSaleByAgent,
         for_sale_by_owner: data.forSaleByOwner,
         for_rent: data.forRent,
+        filter_by_ppsf: data.filterByPpsf,
       };
 
       if (data.id) {
@@ -242,6 +244,7 @@ export default function Lists() {
           forSaleByAgent: true,
           forSaleByOwner: true,
           forRent: false,
+          filterByPpsf: false,
         });
         
         // Automatically trigger scraping for new lists
@@ -295,6 +298,7 @@ export default function Lists() {
           forSaleByAgent: true,
           forSaleByOwner: true,
           forRent: false,
+          filterByPpsf: false,
         });
       }
     },
@@ -392,6 +396,7 @@ export default function Lists() {
       forSaleByAgent: list.for_sale_by_agent ?? true,
       forSaleByOwner: list.for_sale_by_owner ?? true,
       forRent: list.for_rent ?? false,
+      filterByPpsf: list.filter_by_ppsf ?? false,
     });
     setIsCreatingList(true);
   };
@@ -659,16 +664,51 @@ export default function Lists() {
               />
             </div>
 
+            {/* Price Filter Type Toggle */}
+            <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-900">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <Label className="text-amber-900 dark:text-amber-100 font-semibold">
+                    Price Filter Type
+                  </Label>
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    {listForm.filterByPpsf 
+                      ? "Filtering by price per square foot. All listings will be retrieved and filtered based on calculated $/sqft."
+                      : "Filtering by total property price. Zillow will only return properties within your price range."}
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="filter-by-ppsf"
+                    checked={listForm.filterByPpsf}
+                    onCheckedChange={(checked) => 
+                      setListForm((prev) => ({ ...prev, filterByPpsf: checked as boolean }))
+                    }
+                  />
+                  <label htmlFor="filter-by-ppsf" className="text-sm font-medium cursor-pointer whitespace-nowrap">
+                    Filter by Price/SqFt
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="price-max">Maximum Price</Label>
+                <Label htmlFor="price-max">
+                  {listForm.filterByPpsf ? "Maximum Price per SqFt" : "Maximum Price"}
+                </Label>
                 <Input
                   id="price-max"
                   type="number"
-                  placeholder="150000"
+                  placeholder={listForm.filterByPpsf ? "150" : "150000"}
                   value={listForm.priceMax}
                   onChange={(e) => setListForm((prev) => ({ ...prev, priceMax: e.target.value }))}
                 />
+                {listForm.filterByPpsf && (
+                  <p className="text-xs text-muted-foreground">
+                    e.g., 150 = $150 per square foot
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

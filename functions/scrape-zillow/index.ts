@@ -185,15 +185,22 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Found ${existingByAddress.size} existing unique properties for this user`);
 
+    // If filtering by price per sqft, don't pass price filter to Apify
+    // We'll filter manually after getting all results
     const searchConfig = {
       zipCodes: buyBox.zip_codes || [],
-      priceMax: buyBox.price_max || undefined,
+      priceMax: buyBox.filter_by_ppsf ? undefined : (buyBox.price_max || undefined),
       daysOnZillow: buyBox.days_on_zillow || '',
       forSaleByAgent: buyBox.for_sale_by_agent ?? true,
       forSaleByOwner: buyBox.for_sale_by_owner ?? true,
       forRent: buyBox.for_rent ?? false,
       sold: false
     };
+
+    console.log(`💰 Price filter mode: ${buyBox.filter_by_ppsf ? 'Price per SqFt' : 'Total Price'}`);
+    if (buyBox.filter_by_ppsf && buyBox.price_max) {
+      console.log(`📏 Will filter by max price per sqft: $${buyBox.price_max}/sqft`);
+    }
 
     const apifyResponse = await fetch(
       `https://api.apify.com/v2/acts/l7auNT3I30CssRrvO/runs`,
@@ -250,13 +257,44 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
     }
 
-    const properties = await resultsResponse.json();
-    console.log(`🎯 Found ${properties.length} properties from Zillow`);
+    let properties = await resultsResponse.json();
+    console.log(`🎯 Found ${properties.length} properties from Zillow (before filtering)`);
+
+    // If filtering by price per sqft, filter properties based on calculated ppsf
+    if (buyBox.filter_by_ppsf && buyBox.price_max) {
+      const maxPpsf = parseFloat(buyBox.price_max);
+      console.log(`\n🔍 Filtering by price per sqft (max: $${maxPpsf}/sqft)...`);
+      
+      const originalCount = properties.length;
+      properties = properties.filter((prop: any) => {
+        const price = parseNumber(prop.price || prop.unformattedPrice);
+        const sqft = parseInteger(prop.livingArea || prop.area);
+        
+        // If we don't have both price and sqft, skip this property
+        if (!price || !sqft || sqft === 0) {
+          console.log(`  ⚠️ Skipping property with missing data - Price: ${price}, SqFt: ${sqft}`);
+          return false;
+        }
+        
+        const ppsf = price / sqft;
+        const passes = ppsf <= maxPpsf;
+        
+        if (passes) {
+          console.log(`  ✅ PASS - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft`);
+        } else {
+          console.log(`  ❌ FILTERED OUT - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft (exceeds $${maxPpsf}/sqft)`);
+        }
+        
+        return passes;
+      });
+      
+      console.log(`📊 After price per sqft filtering: ${properties.length} of ${originalCount} properties passed`);
+    }
 
     if (properties.length === 0) {
       return new Response(
         JSON.stringify({
-          message: 'No properties found',
+          message: 'No properties found matching criteria',
           count: 0,
           newCount: 0,
           updatedCount: 0,

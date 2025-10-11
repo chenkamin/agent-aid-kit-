@@ -86,6 +86,7 @@ export type Database = {
           cities: string[] | null
           created_at: string
           days_on_zillow: number | null
+          filter_by_ppsf: boolean
           for_rent: boolean | null
           for_sale_by_agent: boolean | null
           for_sale_by_owner: boolean | null
@@ -110,6 +111,7 @@ export type Database = {
           cities?: string[] | null
           created_at?: string
           days_on_zillow?: number | null
+          filter_by_ppsf?: boolean
           for_rent?: boolean | null
           for_sale_by_agent?: boolean | null
           for_sale_by_owner?: boolean | null
@@ -134,6 +136,7 @@ export type Database = {
           cities?: string[] | null
           created_at?: string
           days_on_zillow?: number | null
+          filter_by_ppsf?: boolean
           for_rent?: boolean | null
           for_sale_by_agent?: boolean | null
           for_sale_by_owner?: boolean | null
@@ -735,9 +738,56 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      active_cron_jobs: {
+        Row: {
+          active: boolean | null
+          database: string | null
+          execution_count: number | null
+          jobid: number | null
+          jobname: string | null
+          last_execution: string | null
+          last_status: string | null
+          schedule: string | null
+          schedule_description: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          database?: string | null
+          execution_count?: never
+          jobid?: number | null
+          jobname?: string | null
+          last_execution?: never
+          last_status?: never
+          schedule?: string | null
+          schedule_description?: never
+        }
+        Update: {
+          active?: boolean | null
+          database?: string | null
+          execution_count?: never
+          jobid?: number | null
+          jobname?: string | null
+          last_execution?: never
+          last_status?: never
+          schedule?: string | null
+          schedule_description?: never
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      get_cron_status: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          is_active: boolean
+          job_name: string
+          last_execution: string
+          last_status: string
+          next_run_estimate: string
+          schedule: string
+          total_executions: number
+        }[]
+      }
       trigger_daily_property_update: {
         Args: Record<PropertyKey, never>
         Returns: undefined

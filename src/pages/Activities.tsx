@@ -57,7 +57,7 @@ export default function Activities() {
     title: "",
     body: "",
     due_at: "",
-    property_id: "",
+    property_id: "none",
   });
   
   // Filter states
@@ -158,8 +158,8 @@ export default function Activities() {
         status: data.status || 'open',
       };
       
-      // Only include property_id if provided
-      if (data.property_id) {
+      // Only include property_id if provided and not "none"
+      if (data.property_id && data.property_id !== "none" && data.property_id !== "") {
         activityData.property_id = data.property_id;
       }
       
@@ -247,7 +247,7 @@ export default function Activities() {
       title: activity.title,
       body: activity.body || "",
       due_at: activity.due_at ? format(new Date(activity.due_at), "yyyy-MM-dd'T'HH:mm") : "",
-      property_id: activity.property_id || "",
+      property_id: activity.property_id || "none",
     });
     setIsAddingActivity(true);
   };
@@ -259,7 +259,7 @@ export default function Activities() {
       title: `${activity.title} (Copy)`,
       body: activity.body || "",
       due_at: "",
-      property_id: activity.property_id || "",
+      property_id: activity.property_id || "none",
     });
     setIsAddingActivity(true);
   };
@@ -268,7 +268,7 @@ export default function Activities() {
     setIsAddingActivity(false);
     setEditingActivity(null);
     setCloningActivity(null);
-    setActivityForm({ type: "other", title: "", body: "", due_at: "", property_id: "" });
+    setActivityForm({ type: "other", title: "", body: "", due_at: "", property_id: "none" });
   };
 
   const getStatusIcon = (status: string) => {
@@ -387,7 +387,7 @@ export default function Activities() {
                       <SelectValue placeholder="Select a property..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {properties?.map((property: any) => (
                         <SelectItem key={property.id} value={property.id}>
                           {property.address}{property.city && `, ${property.city}`}

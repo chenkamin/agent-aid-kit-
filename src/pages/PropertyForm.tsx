@@ -35,6 +35,7 @@ export default function PropertyForm() {
     notes: "",
     owner: "",
     owner_properties: "",
+    buy_box_id: "",
     
     // Listing
     date_listed: "",
@@ -99,6 +100,21 @@ export default function PropertyForm() {
     enabled: isEditing,
   });
 
+  // Fetch buy boxes for the dropdown
+  const { data: buyBoxes } = useQuery({
+    queryKey: ["buy_boxes", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data } = await supabase
+        .from("buy_boxes")
+        .select("id, name")
+        .eq("user_id", user.id)
+        .order("name");
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
   useEffect(() => {
     if (property) {
       setFormData({
@@ -114,6 +130,7 @@ export default function PropertyForm() {
         notes: property.notes || "",
         owner: property.owner || "",
         owner_properties: property.owner_properties || "",
+        buy_box_id: property.buy_box_id || "",
         
         date_listed: property.date_listed || "",
         days_on_market: property.days_on_market?.toString() || "",
@@ -313,6 +330,26 @@ export default function PropertyForm() {
                         <SelectItem value="Not Relevant">Not Relevant</SelectItem>
                         <SelectItem value="Follow Up">Follow Up</SelectItem>
                         <SelectItem value="Waiting for Response">Waiting for Response</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="buy-box">Buy Box (Optional)</Label>
+                    <Select
+                      value={formData.buy_box_id || "none"}
+                      onValueChange={(value) => handleChange("buy_box_id", value === "none" ? "" : value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a buy box..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {buyBoxes?.map((buyBox: any) => (
+                          <SelectItem key={buyBox.id} value={buyBox.id}>
+                            {buyBox.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
