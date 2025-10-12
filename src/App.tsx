@@ -18,7 +18,10 @@ import Contacts from "./pages/Contacts";
 import Activities from "./pages/Activities";
 import Lists from "./pages/Lists";
 import Communication from "./pages/Communication";
+import TeamSettings from "./pages/TeamSettings";
+import AcceptInvite from "./pages/AcceptInvite";
 import NotFound from "./pages/NotFound";
+
 
 const queryClient = new QueryClient();
 
@@ -35,6 +38,7 @@ const App = () => (
             <Route path="/signup" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/accept-invite" element={<AcceptInvite />} />
             
             {/* Protected routes */}
             <Route
@@ -123,6 +127,16 @@ const App = () => (
                 <ProtectedRoute>
                   <Layout>
                     <Communication />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/team"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <TeamSettings />
                   </Layout>
                 </ProtectedRoute>
               }

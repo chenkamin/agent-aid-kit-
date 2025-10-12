@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X } from "lucide-react";
+import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Contacts", href: "/contacts", icon: Users },
     { name: "Activities", href: "/activities", icon: Activity },
     { name: "Communication", href: "/communication", icon: MessageSquare },
+    { name: "Team", href: "/team", icon: UserCog },
   ];
 
   const getUserInitials = () => {

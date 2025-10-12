@@ -45,21 +45,37 @@ export default function BuyBox() {
     home_types: "",
   });
 
-  const { data: buyBoxes = [], isLoading } = useQuery({
-    queryKey: ["buy-boxes"],
+  // Fetch user's company first
+  const { data: userCompany } = useQuery({
+    queryKey: ["user-company-buybox"],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      if (!user) return null;
+      
+      const { data } = await supabase
+        .from("team_members")
+        .select("company_id, companies(id, name)")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+  });
+
+  const { data: buyBoxes = [], isLoading } = useQuery({
+    queryKey: ["buy-boxes", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
 
       const { data, error } = await supabase
         .from("buy_boxes")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
       return data as BuyBox[];
     },
+    enabled: !!userCompany?.company_id,
   });
 
   const saveMutation = useMutation({

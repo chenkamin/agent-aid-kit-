@@ -79,6 +79,8 @@ export default function Properties() {
     minBedrooms: "",
     homeType: "all",
     workflowState: "all",
+    urgency: "all",
+    assignedTo: "all",
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
@@ -86,39 +88,66 @@ export default function Properties() {
     key: string;
     direction: 'asc' | 'desc';
   } | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailForm, setEmailForm] = useState({
+    toEmail: "",
+    agentName: "",
+    templateId: "",
+    offerPrice: "",
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   
-  const { data: properties, isLoading } = useQuery({
-    queryKey: ["properties", user?.id],
+  // Fetch user's company first
+  const { data: userCompany } = useQuery({
+    queryKey: ["user-company", user?.id],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("team_members")
+        .select("company_id, companies(id, name)")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch team members for assignment
+  const { data: teamMembers } = useQuery({
+    queryKey: ["team-members-simple", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      const { data } = await supabase
+        .from("team_members")
+        .select("user_id, profiles(email)")
+        .eq("company_id", userCompany.company_id);
+      return data || [];
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  const { data: properties, isLoading } = useQuery({
+    queryKey: ["properties", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      
+      // Fetch all properties for the company
       const { data, error } = await supabase
         .from("properties")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false });
       
       if (error) {
         console.error("Error fetching properties:", error);
-      }
-      
-      // Log the first property to see the structure
-      if (data && data.length > 0) {
-        console.log("📊 First property data structure:", data[0]);
-        console.log("📍 Address field:", data[0].address);
-        console.log("🏠 All address-related fields:", {
-          address: data[0].address,
-          city: data[0].city,
-          state: data[0].state,
-          zip: data[0].zip,
-        });
+        throw error;
       }
       
       return data || [];
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   // Fetch activities for selected property
@@ -153,17 +182,35 @@ export default function Properties() {
 
   // Query for buy boxes (lists) for filter dropdown
   const { data: buyBoxes } = useQuery({
-    queryKey: ["buy_boxes", user?.id],
+    queryKey: ["buy_boxes", userCompany?.company_id],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!userCompany?.company_id) return [];
+      
+      // Fetch all buy boxes for the company
       const { data } = await supabase
         .from("buy_boxes")
         .select("id, name")
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
+        .order("created_at", { ascending: false});
+      
+      return data || [];
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  // Query for email templates
+  const { data: emailTemplates } = useQuery({
+    queryKey: ["email_templates", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      const { data } = await supabase
+        .from("email_templates")
+        .select("*")
+        .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false });
       return data || [];
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   // Filter properties based on selected filters
@@ -209,6 +256,16 @@ export default function Properties() {
 
     // Filter by workflow state
     if (filters.workflowState !== "all" && property.workflow_state !== filters.workflowState) {
+      return false;
+    }
+
+    // Filter by urgency
+    if (filters.urgency !== "all" && property.urgency?.toString() !== filters.urgency) {
+      return false;
+    }
+
+    // Filter by assigned user
+    if (filters.assignedTo !== "all" && property.assigned_to !== filters.assignedTo) {
       return false;
     }
 
@@ -672,6 +729,101 @@ export default function Properties() {
       });
     },
   });
+
+  // Send email mutation
+  const sendEmailMutation = useMutation({
+    mutationFn: async (data: { toEmail: string; agentName: string; templateId: string; offerPrice: string; property: any }) => {
+      if (!user?.id) throw new Error("User not authenticated");
+      
+      // Get the template
+      const template = emailTemplates?.find((t: any) => t.id === data.templateId);
+      if (!template) throw new Error("Template not found");
+      
+      // Replace variables in subject and body
+      const replaceVariables = (text: string) => {
+        return text
+          .replace(/\{\{PROPERTY\}\}/g, data.property.address || '')
+          .replace(/\{\{PRICE\}\}/g, data.offerPrice || data.property.price || '')
+          .replace(/\{\{AGENT_NAME\}\}/g, data.agentName)
+          .replace(/\{\{BEDROOMS\}\}/g, data.property.bedrooms || '')
+          .replace(/\{\{BATHROOMS\}\}/g, data.property.bathrooms || '')
+          .replace(/\{\{SQFT\}\}/g, data.property.square_footage || data.property.living_sqf || '');
+      };
+      
+      const emailContent = replaceVariables(template.body);
+      const emailSubject = replaceVariables(template.subject);
+      
+      // Send email via Make.com webhook
+      const WEBHOOK_URL = 'https://hook.eu2.make.com/xu47c7rz7ijk4eh97gjtyocv9ibug7of';
+      const response = await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          toEmail: data.toEmail,
+          agentName: data.agentName,
+          amount: data.offerPrice,
+          emailContent,
+          subject: emailSubject
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to send email');
+      }
+      
+      // Save email activity
+      const { error } = await supabase.from("activities").insert([{
+        type: 'email',
+        title: `Email sent to ${data.agentName}`,
+        body: `Subject: ${emailSubject}\n\nOffer Price: ${data.offerPrice}\n\n${emailContent}`,
+        property_id: data.property.id,
+        user_id: user.id,
+        status: 'done',
+      }]);
+      
+      if (error) throw error;
+      
+      return { success: true };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["activities", selectedProperty?.id] });
+      toast({
+        title: "Email sent",
+        description: "Your email has been sent successfully and logged as an activity.",
+      });
+      setIsSendingEmail(false);
+      setEmailForm({
+        toEmail: "",
+        agentName: "",
+        templateId: "",
+        offerPrice: "",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to send email",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSendEmail = () => {
+    if (!emailForm.toEmail || !emailForm.agentName || !emailForm.templateId) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+    sendEmailMutation.mutate({
+      ...emailForm,
+      property: selectedProperty
+    });
+  };
 
   const handleBulkAddActivity = () => {
     if (!bulkActivityForm.title) {
@@ -1569,6 +1721,45 @@ export default function Properties() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="filter-urgency" className="text-sm font-medium">Urgency</Label>
+              <Select
+                value={filters.urgency}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, urgency: value }))}
+              >
+                <SelectTrigger id="filter-urgency">
+                  <SelectValue placeholder="All Urgencies" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Urgencies</SelectItem>
+                  <SelectItem value="3">🔴 Urgent</SelectItem>
+                  <SelectItem value="2">🟡 Medium</SelectItem>
+                  <SelectItem value="1">🟢 Not Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Assigned To Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="filter-assigned-to" className="text-sm font-medium">Assigned To</Label>
+              <Select
+                value={filters.assignedTo}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, assignedTo: value }))}
+              >
+                <SelectTrigger id="filter-assigned-to">
+                  <SelectValue placeholder="All Team Members" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  {teamMembers?.map((member: any) => (
+                    <SelectItem key={member.user_id} value={member.user_id}>
+                      {member.profiles?.email || member.user_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex items-center justify-between mt-4">
@@ -1586,6 +1777,8 @@ export default function Properties() {
                 minBedrooms: "",
                 homeType: "all",
                 workflowState: "all",
+                urgency: "all",
+                assignedTo: "all",
               })}
             >
               Clear Filters
@@ -2559,13 +2752,104 @@ export default function Properties() {
                 <div className="pt-6 border-t">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-semibold text-lg">Activities</h3>
-                  <Dialog open={isAddingActivity} onOpenChange={setIsAddingActivity}>
-                    <DialogTrigger asChild>
-                      <Button size="sm">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Activity
-                      </Button>
-                    </DialogTrigger>
+                  <div className="flex gap-2">
+                    <Dialog open={isSendingEmail} onOpenChange={setIsSendingEmail}>
+                      <DialogTrigger asChild>
+                        <Button size="sm" variant="outline">
+                          <Mail className="mr-2 h-4 w-4" />
+                          Send Email
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Send Email to Realtor</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 mt-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="email-template">Email Template *</Label>
+                            <Select
+                              value={emailForm.templateId}
+                              onValueChange={(value) => setEmailForm(prev => ({ ...prev, templateId: value }))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a template..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {emailTemplates && emailTemplates.length > 0 ? (
+                                  emailTemplates.map((template: any) => (
+                                    <SelectItem key={template.id} value={template.id}>
+                                      {template.name}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="none" disabled>
+                                    No templates available - Create one in Communication
+                                  </SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="email-to">Agent Email *</Label>
+                            <Input
+                              id="email-to"
+                              type="email"
+                              value={emailForm.toEmail}
+                              onChange={(e) => setEmailForm(prev => ({ ...prev, toEmail: e.target.value }))}
+                              placeholder="agent@example.com"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="email-agent-name">Agent Name *</Label>
+                            <Input
+                              id="email-agent-name"
+                              value={emailForm.agentName}
+                              onChange={(e) => setEmailForm(prev => ({ ...prev, agentName: e.target.value }))}
+                              placeholder="John Smith"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="email-offer-price">Offer Price (Optional)</Label>
+                            <Input
+                              id="email-offer-price"
+                              value={emailForm.offerPrice}
+                              onChange={(e) => setEmailForm(prev => ({ ...prev, offerPrice: e.target.value }))}
+                              placeholder="150000"
+                            />
+                          </div>
+
+                          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                            <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                              📋 Property Info
+                            </p>
+                            <p className="text-xs text-blue-700 dark:text-blue-300">
+                              Address: {selectedProperty?.address || 'N/A'}<br />
+                              Price: ${selectedProperty?.price?.toLocaleString() || 'N/A'}<br />
+                              Beds/Baths: {selectedProperty?.bedrooms || 'N/A'} / {selectedProperty?.bathrooms || 'N/A'}
+                            </p>
+                          </div>
+
+                          <div className="flex justify-end gap-2">
+                            <Button variant="outline" onClick={() => setIsSendingEmail(false)}>
+                              Cancel
+                            </Button>
+                            <Button onClick={handleSendEmail} disabled={sendEmailMutation.isPending}>
+                              {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog open={isAddingActivity} onOpenChange={setIsAddingActivity}>
+                      <DialogTrigger asChild>
+                        <Button size="sm">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Activity
+                        </Button>
+                      </DialogTrigger>
                     <DialogContent aria-describedby="activity-form-description">
                       <DialogHeader>
                         <DialogTitle>Add New Activity</DialogTitle>
@@ -2683,6 +2967,7 @@ export default function Properties() {
                   </div>
                 )}
               </div>
+            </div>
               </TabsContent>
 
               {/* Comps Tab */}

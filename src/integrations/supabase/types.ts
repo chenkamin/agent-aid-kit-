@@ -7,8 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
   }
@@ -16,7 +14,9 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
+          assigned_to: string | null
           body: string | null
+          company_id: string | null
           completed_at: string | null
           contact_id: string | null
           created_at: string | null
@@ -30,7 +30,9 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          assigned_to?: string | null
           body?: string | null
+          company_id?: string | null
           completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
@@ -44,7 +46,9 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          assigned_to?: string | null
           body?: string | null
+          company_id?: string | null
           completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
@@ -58,6 +62,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "activities_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "activities_contact_id_fkey"
             columns: ["contact_id"]
@@ -83,7 +94,9 @@ export type Database = {
       }
       buy_boxes: {
         Row: {
+          assigned_to: string | null
           cities: string[] | null
+          company_id: string | null
           created_at: string
           days_on_zillow: number | null
           filter_by_ppsf: boolean
@@ -108,7 +121,9 @@ export type Database = {
           zip_codes: string[] | null
         }
         Insert: {
+          assigned_to?: string | null
           cities?: string[] | null
+          company_id?: string | null
           created_at?: string
           days_on_zillow?: number | null
           filter_by_ppsf?: boolean
@@ -133,7 +148,9 @@ export type Database = {
           zip_codes?: string[] | null
         }
         Update: {
+          assigned_to?: string | null
           cities?: string[] | null
+          company_id?: string | null
           created_at?: string
           days_on_zillow?: number | null
           filter_by_ppsf?: boolean
@@ -158,6 +175,13 @@ export type Database = {
           zip_codes?: string[] | null
         }
         Relationships: [
+          {
+            foreignKeyName: "buy_boxes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "buy_boxes_user_id_fkey"
             columns: ["user_id"]
@@ -217,9 +241,35 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          owner_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          owner_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          owner_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       contacts: {
         Row: {
+          assigned_to: string | null
           company: string | null
+          company_id: string | null
           created_at: string | null
           email: string | null
           full_name: string | null
@@ -233,7 +283,9 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          assigned_to?: string | null
           company?: string | null
+          company_id?: string | null
           created_at?: string | null
           email?: string | null
           full_name?: string | null
@@ -247,7 +299,9 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          assigned_to?: string | null
           company?: string | null
+          company_id?: string | null
           created_at?: string | null
           email?: string | null
           full_name?: string | null
@@ -261,6 +315,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contacts_user_id_fkey"
             columns: ["user_id"]
@@ -297,6 +358,7 @@ export type Database = {
       email_templates: {
         Row: {
           body: string
+          company_id: string | null
           created_at: string | null
           id: string
           name: string
@@ -306,6 +368,7 @@ export type Database = {
         }
         Insert: {
           body: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           name: string
@@ -315,6 +378,7 @@ export type Database = {
         }
         Update: {
           body?: string
+          company_id?: string | null
           created_at?: string | null
           id?: string
           name?: string
@@ -323,6 +387,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "email_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "email_templates_user_id_fkey"
             columns: ["user_id"]
@@ -359,6 +430,7 @@ export type Database = {
           address: string | null
           agent_notes: string | null
           arv_estimate: number | null
+          assigned_to: string | null
           basement: boolean | null
           basement_sqf: number | null
           bath: number | null
@@ -369,6 +441,7 @@ export type Database = {
           buy_box_id: string | null
           city: string | null
           client_email: string | null
+          company_id: string | null
           created_at: string | null
           date_listed: string | null
           days_on_market: number | null
@@ -419,6 +492,7 @@ export type Database = {
           sub_status: string | null
           tags: string[] | null
           updated_at: string | null
+          urgency: number | null
           url: string | null
           user_id: string | null
           workflow_state: Database["public"]["Enums"]["workflow_state"] | null
@@ -430,6 +504,7 @@ export type Database = {
           address?: string | null
           agent_notes?: string | null
           arv_estimate?: number | null
+          assigned_to?: string | null
           basement?: boolean | null
           basement_sqf?: number | null
           bath?: number | null
@@ -440,6 +515,7 @@ export type Database = {
           buy_box_id?: string | null
           city?: string | null
           client_email?: string | null
+          company_id?: string | null
           created_at?: string | null
           date_listed?: string | null
           days_on_market?: number | null
@@ -490,6 +566,7 @@ export type Database = {
           sub_status?: string | null
           tags?: string[] | null
           updated_at?: string | null
+          urgency?: number | null
           url?: string | null
           user_id?: string | null
           workflow_state?: Database["public"]["Enums"]["workflow_state"] | null
@@ -501,6 +578,7 @@ export type Database = {
           address?: string | null
           agent_notes?: string | null
           arv_estimate?: number | null
+          assigned_to?: string | null
           basement?: boolean | null
           basement_sqf?: number | null
           bath?: number | null
@@ -511,6 +589,7 @@ export type Database = {
           buy_box_id?: string | null
           city?: string | null
           client_email?: string | null
+          company_id?: string | null
           created_at?: string | null
           date_listed?: string | null
           days_on_market?: number | null
@@ -561,6 +640,7 @@ export type Database = {
           sub_status?: string | null
           tags?: string[] | null
           updated_at?: string | null
+          urgency?: number | null
           url?: string | null
           user_id?: string | null
           workflow_state?: Database["public"]["Enums"]["workflow_state"] | null
@@ -573,6 +653,13 @@ export type Database = {
             columns: ["buy_box_id"]
             isOneToOne: false
             referencedRelation: "buy_boxes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "properties_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
@@ -736,6 +823,88 @@ export type Database = {
           },
         ]
       }
+      team_invitations: {
+        Row: {
+          accepted_at: string | null
+          company_id: string
+          created_at: string | null
+          email: string
+          expires_at: string
+          id: string
+          invited_by: string
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          company_id: string
+          created_at?: string | null
+          email: string
+          expires_at: string
+          id?: string
+          invited_by: string
+          token: string
+        }
+        Update: {
+          accepted_at?: string | null
+          company_id?: string
+          created_at?: string | null
+          email?: string
+          expires_at?: string
+          id?: string
+          invited_by?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_invitations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_members: {
+        Row: {
+          accepted_at: string | null
+          company_id: string
+          created_at: string | null
+          id: string
+          invited_at: string | null
+          invited_by: string | null
+          role: string | null
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          company_id: string
+          created_at?: string | null
+          id?: string
+          invited_at?: string | null
+          invited_by?: string | null
+          role?: string | null
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          invited_at?: string | null
+          invited_by?: string | null
+          role?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       active_cron_jobs: {
@@ -774,8 +943,35 @@ export type Database = {
         }
         Relationships: []
       }
+      team_members_with_emails: {
+        Row: {
+          accepted_at: string | null
+          company_id: string | null
+          company_name: string | null
+          created_at: string | null
+          id: string | null
+          invited_at: string | null
+          invited_by: string | null
+          role: string | null
+          user_email: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      create_company_with_owner: {
+        Args: { company_name: string; owner_uuid: string }
+        Returns: string
+      }
       get_cron_status: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -788,9 +984,23 @@ export type Database = {
           total_executions: number
         }[]
       }
+      get_user_company_id: {
+        Args: { user_uuid: string }
+        Returns: string
+      }
+      get_user_company_ids: {
+        Args: { check_user_id: string }
+        Returns: {
+          company_id: string
+        }[]
+      }
       trigger_daily_property_update: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      user_is_in_company: {
+        Args: { check_company_id: string; check_user_id: string }
+        Returns: boolean
       }
     }
     Enums: {

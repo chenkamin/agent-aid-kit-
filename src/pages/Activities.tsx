@@ -44,6 +44,21 @@ export default function Activities() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
+  // Fetch user's company first
+  const { data: userCompany } = useQuery({
+    queryKey: ["user-company", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("team_members")
+        .select("company_id, companies(id, name)")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+  
   // View state
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
   
@@ -73,14 +88,14 @@ export default function Activities() {
 
   // Fetch activities
   const { data: activities, isLoading } = useQuery({
-    queryKey: ["activities", user?.id, filters],
+    queryKey: ["activities", userCompany?.company_id, filters],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!userCompany?.company_id) return [];
       
       let query = supabase
         .from("activities")
         .select("*, properties(id, address, city, buy_box_id)")
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false });
       
       // Apply filters
@@ -112,37 +127,37 @@ export default function Activities() {
       
       return filteredData;
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   // Fetch properties for dropdown
   const { data: properties } = useQuery({
-    queryKey: ["properties", user?.id],
+    queryKey: ["properties", userCompany?.company_id],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!userCompany?.company_id) return [];
       const { data } = await supabase
         .from("properties")
         .select("id, address, city")
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
         .order("address");
       return data || [];
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   // Fetch buy boxes for filter
   const { data: buyBoxes } = useQuery({
-    queryKey: ["buy_boxes", user?.id],
+    queryKey: ["buy_boxes", userCompany?.company_id],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!userCompany?.company_id) return [];
       const { data } = await supabase
         .from("buy_boxes")
         .select("id, name")
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
         .order("name");
       return data || [];
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   // Add/Update activity mutation

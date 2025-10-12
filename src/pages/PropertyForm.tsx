@@ -29,6 +29,8 @@ export default function PropertyForm() {
     zip: "",
     neighborhood: "",
     status: "For Sale",
+    urgency: "2",
+    assigned_to: user?.id || "",
     source: "",
     sub_source: "",
     source_contact_details: "",
@@ -100,19 +102,48 @@ export default function PropertyForm() {
     enabled: isEditing,
   });
 
+  // Fetch user's company
+  const { data: userCompany } = useQuery({
+    queryKey: ["user-company", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("team_members")
+        .select("company_id, companies(id, name)")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch team members for assignment
+  const { data: teamMembers } = useQuery({
+    queryKey: ["team-members-simple", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      const { data } = await supabase
+        .from("team_members")
+        .select("user_id, profiles(email)")
+        .eq("company_id", userCompany.company_id);
+      return data || [];
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
   // Fetch buy boxes for the dropdown
   const { data: buyBoxes } = useQuery({
-    queryKey: ["buy_boxes", user?.id],
+    queryKey: ["buy_boxes", userCompany?.company_id],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!userCompany?.company_id) return [];
       const { data } = await supabase
         .from("buy_boxes")
         .select("id, name")
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
         .order("name");
       return data || [];
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   useEffect(() => {
@@ -124,6 +155,8 @@ export default function PropertyForm() {
         zip: property.zip || "",
         neighborhood: property.neighborhood || "",
         status: property.status || "For Sale",
+        urgency: property.urgency?.toString() || "2",
+        assigned_to: property.assigned_to || user?.id || "",
         source: property.source || "",
         sub_source: property.sub_source || "",
         source_contact_details: property.source_contact_details || "",
@@ -227,7 +260,7 @@ export default function PropertyForm() {
     const numericFields = [
       "price", "arv_estimate", "rentometer_monthly_rent", "last_sold_price", "previous_sold_price",
       "bedrooms", "bathrooms", "full_bath", "building_sqf", "living_sqf", "above_ground_sqf",
-      "basement_sqf", "lot_sqf", "year_built", "days_on_market", "price_per_sqft"
+      "basement_sqf", "lot_sqf", "year_built", "days_on_market", "price_per_sqft", "urgency"
     ];
     
     const booleanFields = ["basement", "finished_basement"];
@@ -330,6 +363,43 @@ export default function PropertyForm() {
                         <SelectItem value="Not Relevant">Not Relevant</SelectItem>
                         <SelectItem value="Follow Up">Follow Up</SelectItem>
                         <SelectItem value="Waiting for Response">Waiting for Response</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="urgency">Urgency</Label>
+                    <Select
+                      value={formData.urgency}
+                      onValueChange={(value) => handleChange("urgency", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select urgency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="3">🔴 Urgent</SelectItem>
+                        <SelectItem value="2">🟡 Medium</SelectItem>
+                        <SelectItem value="1">🟢 Not Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="assigned-to">Assigned To</Label>
+                    <Select
+                      value={formData.assigned_to}
+                      onValueChange={(value) => handleChange("assigned_to", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select team member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teamMembers?.map((member: any) => (
+                          <SelectItem key={member.user_id} value={member.user_id}>
+                            {member.profiles?.email || member.user_id}
+                            {member.user_id === user?.id && " (You)"}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
