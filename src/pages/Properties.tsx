@@ -734,6 +734,7 @@ export default function Properties() {
   const sendEmailMutation = useMutation({
     mutationFn: async (data: { toEmail: string; agentName: string; templateId: string; offerPrice: string; property: any }) => {
       if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
       
       // Get the template
       const template = emailTemplates?.find((t: any) => t.id === data.templateId);
@@ -753,24 +754,24 @@ export default function Properties() {
       const emailContent = replaceVariables(template.body);
       const emailSubject = replaceVariables(template.subject);
       
-      // Send email via Make.com webhook
-      const WEBHOOK_URL = 'https://hook.eu2.make.com/xu47c7rz7ijk4eh97gjtyocv9ibug7of';
-      const response = await fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      // Send email via Supabase Edge Function (Nodemailer + Gmail)
+      const { data: functionData, error: functionError } = await supabase.functions.invoke('send-email-nodemailer', {
+        body: {
           toEmail: data.toEmail,
           agentName: data.agentName,
-          amount: data.offerPrice,
-          emailContent,
-          subject: emailSubject
-        })
+          subject: emailSubject,
+          emailContent: emailContent,
+          offerPrice: data.offerPrice,
+          companyId: userCompany.company_id,
+        },
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to send email');
+      if (functionError) {
+        throw new Error(functionError.message || 'Failed to send email');
+      }
+      
+      if (!functionData?.success) {
+        throw new Error(functionData?.error || 'Failed to send email');
       }
       
       // Save email activity
@@ -780,6 +781,7 @@ export default function Properties() {
         body: `Subject: ${emailSubject}\n\nOffer Price: ${data.offerPrice}\n\n${emailContent}`,
         property_id: data.property.id,
         user_id: user.id,
+        company_id: userCompany.company_id,
         status: 'done',
       }]);
       

@@ -7,6 +7,8 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
   }
@@ -16,7 +18,7 @@ export type Database = {
         Row: {
           assigned_to: string | null
           body: string | null
-          company_id: string | null
+          company_id: string
           completed_at: string | null
           contact_id: string | null
           created_at: string | null
@@ -32,7 +34,7 @@ export type Database = {
         Insert: {
           assigned_to?: string | null
           body?: string | null
-          company_id?: string | null
+          company_id: string
           completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
@@ -48,7 +50,7 @@ export type Database = {
         Update: {
           assigned_to?: string | null
           body?: string | null
-          company_id?: string | null
+          company_id?: string
           completed_at?: string | null
           contact_id?: string | null
           created_at?: string | null
@@ -96,7 +98,7 @@ export type Database = {
         Row: {
           assigned_to: string | null
           cities: string[] | null
-          company_id: string | null
+          company_id: string
           created_at: string
           days_on_zillow: number | null
           filter_by_ppsf: boolean
@@ -123,7 +125,7 @@ export type Database = {
         Insert: {
           assigned_to?: string | null
           cities?: string[] | null
-          company_id?: string | null
+          company_id: string
           created_at?: string
           days_on_zillow?: number | null
           filter_by_ppsf?: boolean
@@ -150,7 +152,7 @@ export type Database = {
         Update: {
           assigned_to?: string | null
           cities?: string[] | null
-          company_id?: string | null
+          company_id?: string
           created_at?: string
           days_on_zillow?: number | null
           filter_by_ppsf?: boolean
@@ -244,6 +246,7 @@ export type Database = {
       companies: {
         Row: {
           created_at: string | null
+          email_signature: string | null
           id: string
           name: string
           owner_id: string | null
@@ -251,6 +254,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          email_signature?: string | null
           id?: string
           name: string
           owner_id?: string | null
@@ -258,6 +262,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          email_signature?: string | null
           id?: string
           name?: string
           owner_id?: string | null
@@ -269,7 +274,7 @@ export type Database = {
         Row: {
           assigned_to: string | null
           company: string | null
-          company_id: string | null
+          company_id: string
           created_at: string | null
           email: string | null
           full_name: string | null
@@ -285,7 +290,7 @@ export type Database = {
         Insert: {
           assigned_to?: string | null
           company?: string | null
-          company_id?: string | null
+          company_id: string
           created_at?: string | null
           email?: string | null
           full_name?: string | null
@@ -301,7 +306,7 @@ export type Database = {
         Update: {
           assigned_to?: string | null
           company?: string | null
-          company_id?: string | null
+          company_id?: string
           created_at?: string | null
           email?: string | null
           full_name?: string | null
@@ -441,7 +446,7 @@ export type Database = {
           buy_box_id: string | null
           city: string | null
           client_email: string | null
-          company_id: string | null
+          company_id: string
           created_at: string | null
           date_listed: string | null
           days_on_market: number | null
@@ -515,7 +520,7 @@ export type Database = {
           buy_box_id?: string | null
           city?: string | null
           client_email?: string | null
-          company_id?: string | null
+          company_id: string
           created_at?: string | null
           date_listed?: string | null
           days_on_market?: number | null
@@ -589,7 +594,7 @@ export type Database = {
           buy_box_id?: string | null
           city?: string | null
           client_email?: string | null
-          company_id?: string | null
+          company_id?: string
           created_at?: string | null
           date_listed?: string | null
           days_on_market?: number | null

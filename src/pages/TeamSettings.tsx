@@ -4,9 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Users, UserPlus, Mail, Trash2, Shield, Crown, User as UserIcon, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,6 +35,8 @@ export default function TeamSettings() {
   const [companyName, setCompanyName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [memberToRemove, setMemberToRemove] = useState<any>(null);
+  const [emailSignature, setEmailSignature] = useState("");
+  const [isEditingSignature, setIsEditingSignature] = useState(false);
 
   // Fetch user's company
   const { data: userCompany, isLoading: companyLoading } = useQuery({
@@ -62,6 +65,13 @@ export default function TeamSettings() {
     staleTime: 0, // Always fetch fresh data
     refetchOnMount: true,
   });
+
+  // Load email signature when company loads
+  useEffect(() => {
+    if (userCompany?.email_signature) {
+      setEmailSignature(userCompany.email_signature);
+    }
+  }, [userCompany]);
 
   // Fetch team members
   const { data: teamMembers } = useQuery({
@@ -361,6 +371,35 @@ export default function TeamSettings() {
     },
   });
 
+  // Update email signature mutation
+  const updateSignatureMutation = useMutation({
+    mutationFn: async (signature: string) => {
+      if (!userCompany?.id) throw new Error("No company found");
+      
+      const { error } = await supabase
+        .from("companies")
+        .update({ email_signature: signature })
+        .eq("id", userCompany.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-company", user?.id] });
+      setIsEditingSignature(false);
+      toast({
+        title: "Email signature updated",
+        description: "Your company email signature has been saved successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error updating signature",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCreateCompany = (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyName.trim()) {
@@ -372,6 +411,10 @@ export default function TeamSettings() {
       return;
     }
     createCompanyMutation.mutate(companyName);
+  };
+
+  const handleSaveSignature = () => {
+    updateSignatureMutation.mutate(emailSignature);
   };
 
   const handleInviteTeamMember = (e: React.FormEvent) => {
@@ -488,6 +531,70 @@ export default function TeamSettings() {
             Your company workspace for collaborative property tracking
           </CardDescription>
         </CardHeader>
+      </Card>
+
+      {/* Email Signature */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Email Signature
+          </CardTitle>
+          <CardDescription>
+            Set up your company email signature for all outgoing emails
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="emailSignature">Company Email Signature</Label>
+              <Textarea
+                id="emailSignature"
+                value={emailSignature}
+                onChange={(e) => setEmailSignature(e.target.value)}
+                placeholder={`PANORAMA INVESTMENTS\nReal Estate Investments – Cleveland & Surrounding Areas\n\nAlon Kaminsky – (618) 591-2449\nChen Kaminsky – (567) 654-3624\n\nEmail - deals.cak@gmail.com`}
+                className="min-h-[200px] font-mono text-sm"
+                disabled={!isEditingSignature}
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                This signature will be automatically added to all emails sent from the Properties page.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {!isEditingSignature ? (
+                <Button onClick={() => setIsEditingSignature(true)}>
+                  Edit Signature
+                </Button>
+              ) : (
+                <>
+                  <Button 
+                    onClick={handleSaveSignature}
+                    disabled={updateSignatureMutation.isPending}
+                  >
+                    {updateSignatureMutation.isPending ? "Saving..." : "Save Signature"}
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      setEmailSignature(userCompany?.email_signature || "");
+                      setIsEditingSignature(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              )}
+            </div>
+            {emailSignature && !isEditingSignature && (
+              <div className="mt-4 p-4 bg-muted rounded-lg border">
+                <p className="text-sm font-medium mb-2">Preview:</p>
+                <pre className="whitespace-pre-wrap text-sm font-mono">
+                  {emailSignature}
+                </pre>
+              </div>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       {/* Invite Team Member */}

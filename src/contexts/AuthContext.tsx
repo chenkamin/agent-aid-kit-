@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.user) {
         toast.success("Signed in successfully!");
-        navigate("/");
+        navigate("/dashboard");
       }
 
       return { error: null };

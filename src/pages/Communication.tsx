@@ -50,6 +50,7 @@ export default function Communication() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
   const [generatingFor, setGeneratingFor] = useState<"email" | "sms" | null>(null);
+  const [editingEmailTemplateId, setEditingEmailTemplateId] = useState<string | null>(null);
 
   const [emailTemplateForm, setEmailTemplateForm] = useState({
     name: "",
@@ -72,19 +73,35 @@ export default function Communication() {
     sms_from_number: "",
   });
 
+  // Fetch user's company
+  const { data: userCompany } = useQuery({
+    queryKey: ["user-company", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("team_members")
+        .select("company_id, companies(id, name)")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
   // Fetch email templates
   const { data: emailTemplates = [] } = useQuery({
-    queryKey: ["email_templates", user?.id],
+    queryKey: ["email_templates", userCompany?.company_id],
     queryFn: async () => {
+      if (!userCompany?.company_id) return [];
       const { data, error } = await supabase
         .from("email_templates")
         .select("*")
-        .eq("user_id", user?.id)
+        .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as EmailTemplate[];
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   // Fetch SMS templates
@@ -124,20 +141,41 @@ export default function Communication() {
     }
   });
 
-  // Create email template mutation
-  const createEmailTemplateMutation = useMutation({
+  // Create or Update email template mutation
+  const saveEmailTemplateMutation = useMutation({
     mutationFn: async (data: any) => {
-      const { error } = await supabase.from("email_templates").insert([{
-        user_id: user?.id,
-        ...data,
-      }]);
-      if (error) throw error;
+      if (!userCompany?.company_id) throw new Error("No company found");
+      
+      if (editingEmailTemplateId) {
+        // Update existing template
+        const { error } = await supabase
+          .from("email_templates")
+          .update({
+            name: data.name,
+            subject: data.subject,
+            body: data.body,
+          })
+          .eq("id", editingEmailTemplateId);
+        if (error) throw error;
+      } else {
+        // Create new template
+        const { error } = await supabase.from("email_templates").insert([{
+          user_id: user?.id,
+          company_id: userCompany.company_id,
+          ...data,
+        }]);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["email_templates", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["email_templates", userCompany?.company_id] });
       setIsCreatingEmailTemplate(false);
+      setEditingEmailTemplateId(null);
       setEmailTemplateForm({ name: "", subject: "", body: "" });
-      toast({ title: "Email template created", description: "Your email template has been saved successfully." });
+      toast({ 
+        title: editingEmailTemplateId ? "Email template updated" : "Email template created", 
+        description: editingEmailTemplateId ? "Your email template has been updated successfully." : "Your email template has been saved successfully."
+      });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -171,7 +209,7 @@ export default function Communication() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["email_templates", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["email_templates", userCompany?.company_id] });
       toast({ title: "Template deleted", description: "The email template has been deleted." });
     },
   });
@@ -370,7 +408,11 @@ export default function Communication() {
             <p className="text-sm text-muted-foreground">
               {emailTemplates.length} template{emailTemplates.length !== 1 ? "s" : ""} saved
             </p>
-            <Button onClick={() => setIsCreatingEmailTemplate(true)}>
+            <Button onClick={() => {
+              setEditingEmailTemplateId(null);
+              setEmailTemplateForm({ name: "", subject: "", body: "" });
+              setIsCreatingEmailTemplate(true);
+            }}>
               <Plus className="h-4 w-4 mr-2" />
               New Email Template
             </Button>
@@ -422,7 +464,12 @@ export default function Communication() {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            setEmailTemplateForm(template);
+                            setEmailTemplateForm({
+                              name: template.name,
+                              subject: template.subject,
+                              body: template.body,
+                            });
+                            setEditingEmailTemplateId(template.id);
                             setIsCreatingEmailTemplate(true);
                           }}
                         >
@@ -551,12 +598,18 @@ export default function Communication() {
       </Tabs>
 
       {/* Create/Edit Email Template Dialog */}
-      <Dialog open={isCreatingEmailTemplate} onOpenChange={setIsCreatingEmailTemplate}>
+      <Dialog open={isCreatingEmailTemplate} onOpenChange={(open) => {
+        setIsCreatingEmailTemplate(open);
+        if (!open) {
+          setEditingEmailTemplateId(null);
+          setEmailTemplateForm({ name: "", subject: "", body: "" });
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Email Template</DialogTitle>
+            <DialogTitle>{editingEmailTemplateId ? "Edit Email Template" : "Create Email Template"}</DialogTitle>
             <DialogDescription>
-              Create or edit an email template for quick communication
+              {editingEmailTemplateId ? "Update your email template" : "Create a new email template for quick communication"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -628,14 +681,18 @@ export default function Communication() {
               </div>
             </div>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setIsCreatingEmailTemplate(false)}>
+              <Button variant="outline" onClick={() => {
+                setIsCreatingEmailTemplate(false);
+                setEditingEmailTemplateId(null);
+                setEmailTemplateForm({ name: "", subject: "", body: "" });
+              }}>
                 Cancel
               </Button>
               <Button
-                onClick={() => createEmailTemplateMutation.mutate(emailTemplateForm)}
+                onClick={() => saveEmailTemplateMutation.mutate(emailTemplateForm)}
                 disabled={!emailTemplateForm.name || !emailTemplateForm.body}
               >
-                Save Template
+                {editingEmailTemplateId ? "Update Template" : "Save Template"}
               </Button>
             </div>
           </div>
