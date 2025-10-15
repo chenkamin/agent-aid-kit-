@@ -156,11 +156,20 @@ Deno.serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) throw new Error('Unauthorized');
 
+    // Get user's company
+    const { data: userCompany, error: companyError } = await supabase
+      .from('company_members')
+      .select('company_id')
+      .eq('user_id', user.id)
+      .single();
+
+    if (companyError || !userCompany) throw new Error('No company found for user');
+
     const { data: buyBox, error: buyBoxError } = await supabase
       .from('buy_boxes')
       .select('*')
       .eq('id', buyBoxId)
-      .eq('user_id', user.id)
+      .eq('company_id', userCompany.company_id)
       .single();
 
     if (buyBoxError || !buyBox) throw new Error('Buy box not found');
@@ -168,12 +177,12 @@ Deno.serve(async (req) => {
     const apifyToken = Deno.env.get('APIFY_API_TOKEN');
     if (!apifyToken) throw new Error('APIFY_API_TOKEN not configured');
 
-    // Get existing properties for this USER (not just buy box) - CHECK BY ADDRESS + CITY
-    console.log('📊 Fetching existing properties for this user...');
+    // Get existing properties for this COMPANY (not just buy box) - CHECK BY ADDRESS + CITY
+    console.log('📊 Fetching existing properties for this company...');
     const { data: existingProperties } = await supabase
       .from('properties')
       .select('id, address, city, listing_url, price, status')
-      .eq('user_id', user.id);
+      .eq('company_id', userCompany.company_id);
 
     // Create two maps: one by address+city (for duplicate prevention), one by URL (for updates)
     const existingByAddress = new Map(
@@ -183,7 +192,7 @@ Deno.serve(async (req) => {
       (existingProperties || []).map(p => [p.listing_url, p])
     );
 
-    console.log(`✅ Found ${existingByAddress.size} existing unique properties for this user`);
+    console.log(`✅ Found ${existingByAddress.size} existing unique properties for this company`);
 
     // If filtering by price per sqft, don't pass price filter to Apify
     // We'll filter manually after getting all results
@@ -344,6 +353,7 @@ Deno.serve(async (req) => {
 
         newListings.push({
           user_id: user.id,
+          company_id: userCompany.company_id,
           buy_box_id: buyBoxId,
           address: addressData.address,
           city: addressData.city,
@@ -382,6 +392,7 @@ Deno.serve(async (req) => {
           changes.push({
             property_id: existingProp.id,
             user_id: user.id,
+            company_id: userCompany.company_id,
             field_changed: 'price',
             old_value: String(existingProp.price || 'null'),
             new_value: String(scrapedPrice)
@@ -393,6 +404,7 @@ Deno.serve(async (req) => {
           changes.push({
             property_id: existingProp.id,
             user_id: user.id,
+            company_id: userCompany.company_id,
             field_changed: 'status',
             old_value: existingProp.status || 'null',
             new_value: scrapedStatus
@@ -410,25 +422,39 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Insert new listings
+    // Insert new listings ONE AT A TIME with error handling
     if (newListings.length > 0) {
       console.log(`💾 Inserting ${newListings.length} new properties...`);
-      const { data: insertedProperties, error: insertError } = await supabase
-        .from('properties')
-        .insert(newListings)
-        .select('id, listing_url');
+      let successCount = 0;
+      let duplicateCount = 0;
+      let errorCount = 0;
 
-      if (insertError) {
-        console.error('❌ Insert error:', insertError);
-        throw new Error(`Failed to insert: ${insertError.message}`);
+      for (const listing of newListings) {
+        const { data: insertedProperty, error: insertError } = await supabase
+          .from('properties')
+          .insert(listing)
+          .select('id, listing_url')
+          .single();
+
+        if (insertError) {
+          if (insertError.code === '23505') {
+            // Unique constraint violation - duplicate property
+            console.log(`⚠️ Duplicate property skipped: ${listing.address}, ${listing.city}`);
+            duplicateCount++;
+          } else {
+            console.error(`❌ Error inserting property ${listing.address}:`, insertError.message);
+            errorCount++;
+          }
+        } else {
+          successCount++;
+          // Collect IDs for ARV estimation
+          if (insertedProperty) {
+            newPropertyIds.push({ id: insertedProperty.id, url: insertedProperty.listing_url });
+          }
+        }
       }
 
-      console.log(`✅ Successfully inserted ${insertedProperties?.length || 0} new properties`);
-
-      // Collect IDs for ARV estimation
-      if (insertedProperties) {
-        newPropertyIds.push(...insertedProperties.map(p => ({ id: p.id, url: p.listing_url })));
-      }
+      console.log(`✅ Insert complete: ${successCount} successful, ${duplicateCount} duplicates skipped, ${errorCount} errors`);
     }
 
     // Record property changes

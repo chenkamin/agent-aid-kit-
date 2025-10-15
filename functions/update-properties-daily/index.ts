@@ -84,6 +84,7 @@ async function recordPropertyChanges(supabase: any, updates: any[]) {
     update.changes.map((change: any) => ({
       property_id: update.propertyId,
       user_id: update.userId,
+      company_id: update.companyId,
       field_changed: change.field,
       old_value: change.oldValue,
       new_value: change.newValue
@@ -117,10 +118,10 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl!, supabaseKey!);
 
-    // Get all active buy boxes (lists) with their users
+    // Get all active buy boxes (lists) with their company info
     const { data: buyBoxes, error: buyBoxError } = await supabase
       .from('buy_boxes')
-      .select('id, user_id, name, zip_codes, price_max, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent')
+      .select('id, user_id, company_id, name, zip_codes, price_max, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent')
       .order('created_at', { ascending: true });
 
     if (buyBoxError) throw buyBoxError;
@@ -234,6 +235,7 @@ Deno.serve(async (req) => {
             // NEW LISTING
             newListings.push({
               user_id: buyBox.user_id,
+              company_id: buyBox.company_id,
               buy_box_id: buyBox.id,
               address: addressData.address || '',
               city: addressData.city || '',
@@ -280,6 +282,7 @@ Deno.serve(async (req) => {
               propertyUpdates.push({
                 propertyId: existingProp.id,
                 userId: buyBox.user_id,
+                companyId: buyBox.company_id,
                 changes
               });
 
@@ -309,17 +312,32 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Insert new listings
+        // Insert new listings ONE AT A TIME with error handling
         if (newListings.length > 0) {
-          const { error: insertError } = await supabase
-            .from('properties')
-            .insert(newListings);
+          let successCount = 0;
+          let duplicateCount = 0;
+          let errorCount = 0;
 
-          if (insertError) {
-            console.error('Error inserting new listings:', insertError);
-          } else {
-            console.log(`   🆕 Added ${newListings.length} new listings`);
+          for (const listing of newListings) {
+            const { error: insertError } = await supabase
+              .from('properties')
+              .insert(listing);
+
+            if (insertError) {
+              if (insertError.code === '23505') {
+                // Unique constraint violation - duplicate property
+                console.log(`   ⚠️ Duplicate property skipped: ${listing.address}, ${listing.city}`);
+                duplicateCount++;
+              } else {
+                console.error(`   ❌ Error inserting property ${listing.address}:`, insertError.message);
+                errorCount++;
+              }
+            } else {
+              successCount++;
+            }
           }
+
+          console.log(`   🆕 Added ${successCount} new listings (${duplicateCount} duplicates skipped, ${errorCount} errors)`);
         }
 
         // Record property changes
