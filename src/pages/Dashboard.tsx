@@ -4,14 +4,39 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Users, Activity, TrendingUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Dashboard() {
-  const { data: properties } = useQuery({
-    queryKey: ["properties"],
+  const { user } = useAuth();
+
+  // Fetch user's company first
+  const { data: userCompany } = useQuery({
+    queryKey: ["user-company", user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from("properties").select("*");
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("team_members")
+        .select("company_id, companies(id, name)")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const { data: properties } = useQuery({
+    queryKey: ["properties", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      // Exclude "Not Relevant" properties by default
+      const { data } = await supabase
+        .from("properties")
+        .select("*")
+        .eq("company_id", userCompany.company_id)
+        .neq("status", "Not Relevant");
       return data || [];
     },
+    enabled: !!userCompany?.company_id,
   });
 
   const { data: contacts } = useQuery({

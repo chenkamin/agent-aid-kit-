@@ -193,56 +193,6 @@ export type Database = {
           },
         ]
       }
-      communication_settings: {
-        Row: {
-          created_at: string | null
-          email_host: string | null
-          email_password: string | null
-          email_port: string | null
-          email_username: string | null
-          id: string
-          sms_api_key: string | null
-          sms_api_secret: string | null
-          sms_from_number: string | null
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          email_host?: string | null
-          email_password?: string | null
-          email_port?: string | null
-          email_username?: string | null
-          id?: string
-          sms_api_key?: string | null
-          sms_api_secret?: string | null
-          sms_from_number?: string | null
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string | null
-          email_host?: string | null
-          email_password?: string | null
-          email_port?: string | null
-          email_username?: string | null
-          id?: string
-          sms_api_key?: string | null
-          sms_api_secret?: string | null
-          sms_from_number?: string | null
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "communication_settings_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       companies: {
         Row: {
           created_at: string | null
@@ -335,99 +285,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      cron_execution_log: {
-        Row: {
-          details: Json | null
-          executed_at: string | null
-          id: string
-          job_name: string
-          status: string | null
-        }
-        Insert: {
-          details?: Json | null
-          executed_at?: string | null
-          id?: string
-          job_name: string
-          status?: string | null
-        }
-        Update: {
-          details?: Json | null
-          executed_at?: string | null
-          id?: string
-          job_name?: string
-          status?: string | null
-        }
-        Relationships: []
-      }
-      email_templates: {
-        Row: {
-          body: string
-          company_id: string | null
-          created_at: string | null
-          id: string
-          name: string
-          subject: string
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          body: string
-          company_id?: string | null
-          created_at?: string | null
-          id?: string
-          name: string
-          subject: string
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          body?: string
-          company_id?: string | null
-          created_at?: string | null
-          id?: string
-          name?: string
-          subject?: string
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "email_templates_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "email_templates_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      profiles: {
-        Row: {
-          created_at: string | null
-          email: string | null
-          id: string
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          email?: string | null
-          id: string
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          email?: string | null
-          id?: string
-          updated_at?: string | null
-        }
-        Relationships: []
       }
       properties: {
         Row: {
@@ -556,7 +413,6 @@ export type Database = {
           previous_sold_date?: string | null
           previous_sold_price?: number | null
           price?: number | null
-          price_per_sqft?: number | null
           property_type?: string | null
           rentometer_monthly_rent?: number | null
           seller_agent_email?: string | null
@@ -630,7 +486,6 @@ export type Database = {
           previous_sold_date?: string | null
           previous_sold_price?: number | null
           price?: number | null
-          price_per_sqft?: number | null
           property_type?: string | null
           rentometer_monthly_rent?: number | null
           seller_agent_email?: string | null
@@ -668,41 +523,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "properties_linked_comp_1_fkey"
-            columns: ["linked_comp_1"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "properties_linked_comp_2_fkey"
-            columns: ["linked_comp_2"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "properties_linked_comp_3_fkey"
-            columns: ["linked_comp_3"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "properties_linked_comp_4_fkey"
-            columns: ["linked_comp_4"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "properties_linked_comp_5_fkey"
-            columns: ["linked_comp_5"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "properties_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -711,302 +531,33 @@ export type Database = {
           },
         ]
       }
-      property_changes: {
+      profiles: {
         Row: {
-          changed_at: string | null
           created_at: string | null
-          field_changed: string
+          email: string | null
           id: string
-          new_value: string | null
-          old_value: string | null
-          property_id: string
-          user_id: string
-        }
-        Insert: {
-          changed_at?: string | null
-          created_at?: string | null
-          field_changed: string
-          id?: string
-          new_value?: string | null
-          old_value?: string | null
-          property_id: string
-          user_id: string
-        }
-        Update: {
-          changed_at?: string | null
-          created_at?: string | null
-          field_changed?: string
-          id?: string
-          new_value?: string | null
-          old_value?: string | null
-          property_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "property_changes_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      property_workflow_history: {
-        Row: {
-          changed_at: string | null
-          created_at: string | null
-          from_state: string | null
-          id: string
-          notes: string | null
-          property_id: string
-          to_state: string
-          user_id: string
-        }
-        Insert: {
-          changed_at?: string | null
-          created_at?: string | null
-          from_state?: string | null
-          id?: string
-          notes?: string | null
-          property_id: string
-          to_state: string
-          user_id: string
-        }
-        Update: {
-          changed_at?: string | null
-          created_at?: string | null
-          from_state?: string | null
-          id?: string
-          notes?: string | null
-          property_id?: string
-          to_state?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "property_workflow_history_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sms_templates: {
-        Row: {
-          body: string
-          created_at: string | null
-          id: string
-          name: string
           updated_at: string | null
-          user_id: string
         }
         Insert: {
-          body: string
           created_at?: string | null
-          id?: string
-          name: string
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          body?: string
-          created_at?: string | null
-          id?: string
-          name?: string
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sms_templates_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      team_invitations: {
-        Row: {
-          accepted_at: string | null
-          company_id: string
-          created_at: string | null
-          email: string
-          expires_at: string
+          email?: string | null
           id: string
-          invited_by: string
-          token: string
-        }
-        Insert: {
-          accepted_at?: string | null
-          company_id: string
-          created_at?: string | null
-          email: string
-          expires_at: string
-          id?: string
-          invited_by: string
-          token: string
+          updated_at?: string | null
         }
         Update: {
-          accepted_at?: string | null
-          company_id?: string
           created_at?: string | null
-          email?: string
-          expires_at?: string
+          email?: string | null
           id?: string
-          invited_by?: string
-          token?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "team_invitations_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      team_members: {
-        Row: {
-          accepted_at: string | null
-          company_id: string
-          created_at: string | null
-          id: string
-          invited_at: string | null
-          invited_by: string | null
-          role: string | null
-          user_id: string
-        }
-        Insert: {
-          accepted_at?: string | null
-          company_id: string
-          created_at?: string | null
-          id?: string
-          invited_at?: string | null
-          invited_by?: string | null
-          role?: string | null
-          user_id: string
-        }
-        Update: {
-          accepted_at?: string | null
-          company_id?: string
-          created_at?: string | null
-          id?: string
-          invited_at?: string | null
-          invited_by?: string | null
-          role?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "team_members_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-    }
-    Views: {
-      active_cron_jobs: {
-        Row: {
-          active: boolean | null
-          database: string | null
-          execution_count: number | null
-          jobid: number | null
-          jobname: string | null
-          last_execution: string | null
-          last_status: string | null
-          schedule: string | null
-          schedule_description: string | null
-        }
-        Insert: {
-          active?: boolean | null
-          database?: string | null
-          execution_count?: never
-          jobid?: number | null
-          jobname?: string | null
-          last_execution?: never
-          last_status?: never
-          schedule?: string | null
-          schedule_description?: never
-        }
-        Update: {
-          active?: boolean | null
-          database?: string | null
-          execution_count?: never
-          jobid?: number | null
-          jobname?: string | null
-          last_execution?: never
-          last_status?: never
-          schedule?: string | null
-          schedule_description?: never
+          updated_at?: string | null
         }
         Relationships: []
       }
-      team_members_with_emails: {
-        Row: {
-          accepted_at: string | null
-          company_id: string | null
-          company_name: string | null
-          created_at: string | null
-          id: string | null
-          invited_at: string | null
-          invited_by: string | null
-          role: string | null
-          user_email: string | null
-          user_id: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "team_members_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+    }
+    Views: {
+      [_ in never]: never
     }
     Functions: {
-      create_company_with_owner: {
-        Args: { company_name: string; owner_uuid: string }
-        Returns: string
-      }
-      get_cron_status: {
-        Args: Record<PropertyKey, never>
-        Returns: {
-          is_active: boolean
-          job_name: string
-          last_execution: string
-          last_status: string
-          next_run_estimate: string
-          schedule: string
-          total_executions: number
-        }[]
-      }
-      get_user_company_id: {
-        Args: { user_uuid: string }
-        Returns: string
-      }
-      get_user_company_ids: {
-        Args: { check_user_id: string }
-        Returns: {
-          company_id: string
-        }[]
-      }
-      trigger_daily_property_update: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
-      user_is_in_company: {
-        Args: { check_company_id: string; check_user_id: string }
-        Returns: boolean
-      }
+      [_ in never]: never
     }
     Enums: {
       activity_status: "open" | "done" | "snoozed"
@@ -1022,9 +573,6 @@ export type Database = {
         | "price-reduction-ask"
         | "closing"
         | "other"
-        | "offer"
-        | "follow_up"
-        | "viewing"
       contact_type:
         | "Agent"
         | "Seller"
@@ -1072,33 +620,27 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type PublicSchema = Database[keyof Database]
 
 export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  PublicTableNameOrOptions extends
+    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+        Database[PublicTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
+        PublicSchema["Views"])
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -1106,24 +648,20 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -1131,24 +669,20 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -1156,103 +690,14 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  PublicEnumNameOrOptions extends
+    | keyof PublicSchema["Enums"]
+    | { schema: keyof Database },
+  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+> = PublicEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
     : never
-
-export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
-
-export const Constants = {
-  public: {
-    Enums: {
-      activity_status: ["open", "done", "snoozed"],
-      activity_type: [
-        "call",
-        "sms",
-        "whatsapp",
-        "email",
-        "site-visit",
-        "offer-sent",
-        "comp-analysis",
-        "inspection",
-        "price-reduction-ask",
-        "closing",
-        "other",
-        "offer",
-        "follow_up",
-        "viewing",
-      ],
-      contact_type: [
-        "Agent",
-        "Seller",
-        "Buyer",
-        "Contractor",
-        "Wholesaler",
-        "Lender",
-        "Inspector",
-        "Title",
-        "Other",
-      ],
-      home_type: [
-        "Single Family",
-        "Multi Family",
-        "Condo",
-        "Townhouse",
-        "Land",
-        "Commercial",
-        "Other",
-      ],
-      property_status: [
-        "For Sale",
-        "Under Contract",
-        "Sold",
-        "Off Market",
-        "Pending",
-        "Tracking",
-        "Not Relevant",
-        "Follow Up",
-        "Waiting for Response",
-      ],
-      workflow_state: [
-        "Initial",
-        "Reviewing",
-        "Research",
-        "On Progress",
-        "Follow Up",
-        "Negotiating",
-        "Under Contract",
-        "Closing",
-        "Closed",
-        "Not Relevant",
-        "Archived",
-      ],
-    },
-  },
-} as const

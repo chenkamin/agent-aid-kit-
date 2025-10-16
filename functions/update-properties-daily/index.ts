@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
     // Get all active buy boxes (lists) with their company info
     const { data: buyBoxes, error: buyBoxError } = await supabase
       .from('buy_boxes')
-      .select('id, user_id, company_id, name, zip_codes, price_max, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent')
+      .select('id, user_id, company_id, name, zip_codes, price_max, filter_by_ppsf, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent')
       .order('created_at', { ascending: true });
 
     if (buyBoxError) throw buyBoxError;
@@ -142,6 +142,38 @@ Deno.serve(async (req) => {
       console.log(`\n🏠 Processing buy box: ${buyBox.name} (User: ${buyBox.user_id})`);
 
       try {
+        // Ensure buy box has company_id, if not try to get it from user's team membership
+        let companyId = buyBox.company_id;
+        
+        if (!companyId) {
+          console.log(`⚠️ Buy box ${buyBox.name} has no company_id, attempting to fetch from user...`);
+          const { data: userCompany } = await supabase
+            .from('team_members')
+            .select('company_id')
+            .eq('user_id', buyBox.user_id)
+            .single();
+          
+          if (userCompany?.company_id) {
+            companyId = userCompany.company_id;
+            // Update the buy box with the company_id
+            await supabase
+              .from('buy_boxes')
+              .update({ company_id: companyId })
+              .eq('id', buyBox.id);
+            console.log(`✅ Updated buy box ${buyBox.name} with company_id: ${companyId}`);
+          } else {
+            console.log(`❌ Skipping buy box ${buyBox.name} - no company found for user ${buyBox.user_id}`);
+            results.push({
+              buyBoxId: buyBox.id,
+              buyBoxName: buyBox.name,
+              userId: buyBox.user_id,
+              error: 'No company_id found for user',
+              success: false
+            });
+            continue;
+          }
+        }
+
         // Get existing properties for this buy box
         const { data: existingProperties } = await supabase
           .from('properties')
@@ -153,16 +185,22 @@ Deno.serve(async (req) => {
           (existingProperties || []).map(p => [p.listing_url, p])
         );
 
-        // Run Apify scrape
+        // If filtering by price per sqft, don't pass price filter to Apify
+        // We'll filter manually after getting all results
         const searchConfig = {
           zipCodes: buyBox.zip_codes || [],
-          priceMax: buyBox.price_max || undefined,
+          priceMax: buyBox.filter_by_ppsf ? undefined : (buyBox.price_max || undefined),
           daysOnZillow: buyBox.days_on_zillow || '',
           forSaleByAgent: buyBox.for_sale_by_agent ?? true,
           forSaleByOwner: buyBox.for_sale_by_owner ?? true,
           forRent: buyBox.for_rent ?? false,
           sold: false
         };
+
+        console.log(`💰 Price filter mode: ${buyBox.filter_by_ppsf ? 'Price per SqFt' : 'Total Price'}`);
+        if (buyBox.filter_by_ppsf && buyBox.price_max) {
+          console.log(`📏 Will filter by max price per sqft: $${buyBox.price_max}/sqft`);
+        }
 
         const apifyResponse = await fetch(
           `https://api.apify.com/v2/acts/l7auNT3I30CssRrvO/runs`,
@@ -216,8 +254,39 @@ Deno.serve(async (req) => {
           throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
         }
 
-        const scrapedProperties = await resultsResponse.json();
-        console.log(`   ✅ Found ${scrapedProperties.length} properties from Zillow`);
+        let scrapedProperties = await resultsResponse.json();
+        console.log(`   ✅ Found ${scrapedProperties.length} properties from Zillow (before filtering)`);
+
+        // If filtering by price per sqft, filter properties based on calculated ppsf
+        if (buyBox.filter_by_ppsf && buyBox.price_max) {
+          const maxPpsf = parseFloat(String(buyBox.price_max));
+          console.log(`   🔍 Filtering by price per sqft (max: $${maxPpsf}/sqft)...`);
+          
+          const originalCount = scrapedProperties.length;
+          scrapedProperties = scrapedProperties.filter((prop: any) => {
+            const price = parseNumber(prop.price || prop.unformattedPrice);
+            const sqft = parseInteger(prop.livingArea || prop.area);
+            
+            // If we don't have both price and sqft, skip this property
+            if (!price || !sqft || sqft === 0) {
+              console.log(`     ⚠️ Skipping property with missing data - Price: ${price}, SqFt: ${sqft}`);
+              return false;
+            }
+            
+            const ppsf = price / sqft;
+            const passes = ppsf <= maxPpsf;
+            
+            if (passes) {
+              console.log(`     ✅ PASS - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft`);
+            } else {
+              console.log(`     ❌ FILTERED OUT - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft (exceeds $${maxPpsf}/sqft)`);
+            }
+            
+            return passes;
+          });
+          
+          console.log(`   📊 After price per sqft filtering: ${scrapedProperties.length} of ${originalCount} properties passed`);
+        }
 
         const newListings = [];
         const updatedListings = [];
@@ -235,7 +304,7 @@ Deno.serve(async (req) => {
             // NEW LISTING
             newListings.push({
               user_id: buyBox.user_id,
-              company_id: buyBox.company_id,
+              company_id: companyId,
               buy_box_id: buyBox.id,
               address: addressData.address || '',
               city: addressData.city || '',
@@ -282,7 +351,7 @@ Deno.serve(async (req) => {
               propertyUpdates.push({
                 propertyId: existingProp.id,
                 userId: buyBox.user_id,
-                companyId: buyBox.company_id,
+                companyId: companyId,
                 changes
               });
 

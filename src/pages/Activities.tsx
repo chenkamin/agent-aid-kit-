@@ -135,10 +135,12 @@ export default function Activities() {
     queryKey: ["properties", userCompany?.company_id],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
+      // Exclude "Not Relevant" properties by default
       const { data } = await supabase
         .from("properties")
         .select("id, address, city")
         .eq("company_id", userCompany.company_id)
+        .neq("status", "Not Relevant")
         .order("address");
       return data || [];
     },
@@ -197,7 +199,7 @@ export default function Activities() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["activities", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["activities", userCompany?.company_id] });
       toast({
         title: "Success",
         description: editingActivity ? "Activity updated successfully" : "Activity added successfully",
@@ -219,6 +221,24 @@ export default function Activities() {
   // Update activity status mutation
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      // OPTIMISTIC UPDATE - Update UI immediately
+      queryClient.setQueryData(
+        ["activities", userCompany?.company_id, filters],
+        (oldData: any) => {
+          if (!oldData) return oldData;
+          return oldData.map((activity: any) => {
+            if (activity.id === id) {
+              const updateData = { ...activity, status };
+              if (status === 'done') {
+                updateData.completed_at = new Date().toISOString();
+              }
+              return updateData;
+            }
+            return activity;
+          });
+        }
+      );
+
       const updateData: any = { status };
       if (status === 'done') {
         updateData.completed_at = new Date().toISOString();
@@ -228,12 +248,22 @@ export default function Activities() {
         .update(updateData)
         .eq("id", id);
       if (error) throw error;
+      return { id, status };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["activities", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["activities", userCompany?.company_id] });
       toast({
         title: "Status updated",
         description: "Activity status has been updated",
+      });
+    },
+    onError: () => {
+      // ROLLBACK on error
+      queryClient.invalidateQueries({ queryKey: ["activities", userCompany?.company_id] });
+      toast({
+        title: "Error",
+        description: "Failed to update activity status",
+        variant: "destructive",
       });
     },
   });

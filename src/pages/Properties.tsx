@@ -129,16 +129,25 @@ export default function Properties() {
   });
 
   const { data: properties, isLoading } = useQuery({
-    queryKey: ["properties", userCompany?.company_id],
+    queryKey: ["properties", userCompany?.company_id, filters.status],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
       
-      // Fetch all properties for the company
-      const { data, error } = await supabase
+      // Build query - exclude "Not Relevant" by default unless explicitly selected
+      let query = supabase
         .from("properties")
         .select("*")
-        .eq("company_id", userCompany.company_id)
-        .order("created_at", { ascending: false });
+        .eq("company_id", userCompany.company_id);
+      
+      // Only fetch "Not Relevant" if user specifically selects it
+      if (filters.status === "Not Relevant") {
+        query = query.eq("status", "Not Relevant");
+      } else {
+        // Exclude "Not Relevant" by default
+        query = query.neq("status", "Not Relevant");
+      }
+      
+      const { data, error } = await query.order("created_at", { ascending: false });
       
       if (error) {
         console.error("Error fetching properties:", error);
@@ -1005,6 +1014,19 @@ export default function Properties() {
   // Bulk update workflow state mutation
   const bulkUpdateWorkflowMutation = useMutation({
     mutationFn: async ({ propertyIds, workflowState }: { propertyIds: string[]; workflowState: string }) => {
+      // OPTIMISTIC UPDATE - Update UI immediately
+      queryClient.setQueryData(
+        ["properties", userCompany?.company_id, filters.status],
+        (oldData: any) => {
+          if (!oldData) return oldData;
+          return oldData.map((prop: any) =>
+            propertyIds.includes(prop.id)
+              ? { ...prop, workflow_state: workflowState }
+              : prop
+          );
+        }
+      );
+
       const updates = propertyIds.map(id => 
         supabase
           .from('properties')
@@ -1017,16 +1039,20 @@ export default function Properties() {
       if (errors.length > 0) {
         throw new Error(`Failed to update ${errors.length} properties`);
       }
+      
+      return { propertyIds, workflowState };
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
       toast({
         title: "Success",
-        description: `Updated ${variables.propertyIds.length} properties to "${variables.workflowState}"`,
+        description: `Updated ${data.propertyIds.length} properties to "${data.workflowState}"`,
       });
       setSelectedPropertyIds([]);
     },
-    onError: (error: any) => {
+    onError: (error: any, variables) => {
+      // ROLLBACK on error
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
       toast({
         title: "Error",
         description: error.message || "Failed to update properties",
@@ -2069,15 +2095,59 @@ export default function Properties() {
                       value={selectedProperty.workflow_state || 'Initial'}
                       onValueChange={async (value) => {
                         const oldState = selectedProperty.workflow_state;
+                        const propertyId = selectedProperty.id;
+                        
+                        // OPTIMISTIC UPDATE - Update UI immediately
+                        setSelectedProperty((prev: any) => ({
+                          ...prev,
+                          workflow_state: value,
+                        }));
+                        
+                        // Update in the properties list cache immediately
+                        queryClient.setQueryData(
+                          ["properties", userCompany?.company_id, filters.status],
+                          (oldData: any) => {
+                            if (!oldData) return oldData;
+                            return oldData.map((prop: any) =>
+                              prop.id === propertyId
+                                ? { ...prop, workflow_state: value }
+                                : prop
+                            );
+                          }
+                        );
+
+                        // Show immediate feedback
+                        toast({
+                          title: "✅ Workflow updated",
+                          description: `Property moved to ${value}`,
+                        });
+
+                        // Now update database in the background
                         const { error } = await supabase
                           .from('properties')
                           .update({ workflow_state: value })
-                          .eq('id', selectedProperty.id);
+                          .eq('id', propertyId);
                         
                         if (error) {
+                          // ROLLBACK on error
+                          setSelectedProperty((prev: any) => ({
+                            ...prev,
+                            workflow_state: oldState,
+                          }));
+                          queryClient.setQueryData(
+                            ["properties", userCompany?.company_id, filters.status],
+                            (oldData: any) => {
+                              if (!oldData) return oldData;
+                              return oldData.map((prop: any) =>
+                                prop.id === propertyId
+                                  ? { ...prop, workflow_state: oldState }
+                                  : prop
+                              );
+                            }
+                          );
                           toast({
                             title: "Error",
-                            description: "Failed to update workflow state",
+                            description: "Failed to update workflow state - reverted",
                             variant: "destructive",
                           });
                           return;
@@ -2085,24 +2155,15 @@ export default function Properties() {
 
                         // Record workflow change
                         await supabase.from('property_workflow_history').insert({
-                          property_id: selectedProperty.id,
+                          property_id: propertyId,
                           user_id: user?.id,
                           from_state: oldState || 'Initial',
                           to_state: value,
                         });
 
-                        // Update local state
-                        setSelectedProperty((prev: any) => ({
-                          ...prev,
-                          workflow_state: value,
-                        }));
-
-                        queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
-
-                        toast({
-                          title: "✅ Workflow updated",
-                          description: `Property moved to ${value}`,
-                        });
+                        // Invalidate to sync with server (but UI already updated)
+                        queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
+                        queryClient.invalidateQueries({ queryKey: ["workflow-history", propertyId] });
                       }}
                     >
                       <SelectTrigger id="workflow-state" className="bg-white dark:bg-gray-900 border-2 h-11 text-base font-medium">

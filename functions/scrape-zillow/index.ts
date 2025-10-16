@@ -158,7 +158,7 @@ Deno.serve(async (req) => {
 
     // Get user's company
     const { data: userCompany, error: companyError } = await supabase
-      .from('company_members')
+      .from('team_members')
       .select('company_id')
       .eq('user_id', user.id)
       .single();
@@ -173,6 +173,12 @@ Deno.serve(async (req) => {
       .single();
 
     if (buyBoxError || !buyBox) throw new Error('Buy box not found');
+
+    // Ensure buy box has company_id (should already be set by the query above, but double check)
+    const companyId = buyBox.company_id || userCompany.company_id;
+    if (!companyId) {
+      throw new Error('No company_id found for buy box or user');
+    }
 
     const apifyToken = Deno.env.get('APIFY_API_TOKEN');
     if (!apifyToken) throw new Error('APIFY_API_TOKEN not configured');
@@ -353,7 +359,7 @@ Deno.serve(async (req) => {
 
         newListings.push({
           user_id: user.id,
-          company_id: userCompany.company_id,
+          company_id: companyId,
           buy_box_id: buyBoxId,
           address: addressData.address,
           city: addressData.city,
@@ -392,7 +398,7 @@ Deno.serve(async (req) => {
           changes.push({
             property_id: existingProp.id,
             user_id: user.id,
-            company_id: userCompany.company_id,
+            company_id: companyId,
             field_changed: 'price',
             old_value: String(existingProp.price || 'null'),
             new_value: String(scrapedPrice)
@@ -404,7 +410,7 @@ Deno.serve(async (req) => {
           changes.push({
             property_id: existingProp.id,
             user_id: user.id,
-            company_id: userCompany.company_id,
+            company_id: companyId,
             field_changed: 'status',
             old_value: existingProp.status || 'null',
             new_value: scrapedStatus

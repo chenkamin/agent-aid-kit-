@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -16,6 +17,8 @@ interface BuyBox {
   zip_codes: string[];
   min_price: number | null;
   max_price: number | null;
+  price_max: number | null;
+  filter_by_ppsf: boolean;
   min_bedrooms: number | null;
   max_bedrooms: number | null;
   min_bathrooms: number | null;
@@ -29,6 +32,7 @@ export default function BuyBox() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [filterByPpsf, setFilterByPpsf] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     cities: "",
@@ -36,6 +40,7 @@ export default function BuyBox() {
     zip_codes: "",
     min_price: "",
     max_price: "",
+    price_max: "",
     min_bedrooms: "",
     max_bedrooms: "",
     min_bathrooms: "",
@@ -91,6 +96,8 @@ export default function BuyBox() {
         zip_codes: data.zip_codes ? data.zip_codes.split(",").map(s => s.trim()) : [],
         min_price: data.min_price ? parseFloat(data.min_price) : null,
         max_price: data.max_price ? parseFloat(data.max_price) : null,
+        price_max: data.price_max ? parseFloat(data.price_max) : null,
+        filter_by_ppsf: filterByPpsf,
         min_bedrooms: data.min_bedrooms ? parseInt(data.min_bedrooms) : null,
         max_bedrooms: data.max_bedrooms ? parseInt(data.max_bedrooms) : null,
         min_bathrooms: data.min_bathrooms ? parseFloat(data.min_bathrooms) : null,
@@ -151,6 +158,7 @@ export default function BuyBox() {
 
   const handleEdit = (buyBox: BuyBox) => {
     setEditingId(buyBox.id);
+    setFilterByPpsf(buyBox.filter_by_ppsf || false);
     setFormData({
       name: buyBox.name,
       cities: buyBox.cities?.join(", ") || "",
@@ -158,6 +166,7 @@ export default function BuyBox() {
       zip_codes: buyBox.zip_codes?.join(", ") || "",
       min_price: buyBox.min_price?.toString() || "",
       max_price: buyBox.max_price?.toString() || "",
+      price_max: buyBox.price_max?.toString() || "",
       min_bedrooms: buyBox.min_bedrooms?.toString() || "",
       max_bedrooms: buyBox.max_bedrooms?.toString() || "",
       min_bathrooms: buyBox.min_bathrooms?.toString() || "",
@@ -170,6 +179,7 @@ export default function BuyBox() {
 
   const resetForm = () => {
     setEditingId(null);
+    setFilterByPpsf(false);
     setFormData({
       name: "",
       cities: "",
@@ -177,6 +187,7 @@ export default function BuyBox() {
       zip_codes: "",
       min_price: "",
       max_price: "",
+      price_max: "",
       min_bedrooms: "",
       max_bedrooms: "",
       min_bathrooms: "",
@@ -282,28 +293,61 @@ export default function BuyBox() {
 
             <div className="border-t pt-6">
               <h3 className="text-lg font-semibold mb-4">Price Range</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="min_price">Min Price</Label>
-                  <Input
-                    id="min_price"
-                    name="min_price"
-                    type="number"
-                    value={formData.min_price}
-                    onChange={handleChange}
-                    placeholder="0"
+              <div className="space-y-4">
+                <div className="flex items-center justify-between space-x-2 pb-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="filter_by_ppsf">Filter by Price per Square Foot</Label>
+                    <p className="text-xs text-muted-foreground">
+                      When enabled, the max price will be treated as price per square foot instead of total price
+                    </p>
+                  </div>
+                  <Switch
+                    id="filter_by_ppsf"
+                    checked={filterByPpsf}
+                    onCheckedChange={setFilterByPpsf}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="max_price">Max Price</Label>
-                  <Input
-                    id="max_price"
-                    name="max_price"
-                    type="number"
-                    value={formData.max_price}
-                    onChange={handleChange}
-                    placeholder="1000000"
-                  />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="min_price">Min Price</Label>
+                    <Input
+                      id="min_price"
+                      name="min_price"
+                      type="number"
+                      value={formData.min_price}
+                      onChange={handleChange}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="max_price">Max Price</Label>
+                    <Input
+                      id="max_price"
+                      name="max_price"
+                      type="number"
+                      value={formData.max_price}
+                      onChange={handleChange}
+                      placeholder="1000000"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="price_max">
+                      {filterByPpsf ? "Max Price per Square Foot" : "Max Total Price (for scraper)"}
+                    </Label>
+                    <Input
+                      id="price_max"
+                      name="price_max"
+                      type="number"
+                      value={formData.price_max}
+                      onChange={handleChange}
+                      placeholder={filterByPpsf ? "150" : "1000000"}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {filterByPpsf 
+                        ? "Properties will be filtered by calculated price per sqft (e.g., $150/sqft)" 
+                        : "Maximum price to use when scraping properties from Zillow"}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -450,10 +494,21 @@ export default function BuyBox() {
                 <div className="grid gap-2 md:grid-cols-2">
                   {(buyBox.min_price || buyBox.max_price) && (
                     <div>
-                      <span className="font-semibold">Price: </span>
+                      <span className="font-semibold">Price Range: </span>
                       <span className="text-muted-foreground">
                         ${buyBox.min_price?.toLocaleString() || "0"} - $
                         {buyBox.max_price?.toLocaleString() || "∞"}
+                      </span>
+                    </div>
+                  )}
+                  {buyBox.price_max && (
+                    <div>
+                      <span className="font-semibold">
+                        {buyBox.filter_by_ppsf ? "Max Price/SqFt: " : "Max Scraper Price: "}
+                      </span>
+                      <span className="text-muted-foreground">
+                        ${buyBox.price_max.toLocaleString()}
+                        {buyBox.filter_by_ppsf ? "/sqft" : ""}
                       </span>
                     </div>
                   )}
