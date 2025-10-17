@@ -102,6 +102,7 @@ export type Database = {
           created_at: string
           days_on_zillow: number | null
           filter_by_ppsf: boolean
+          filter_by_city_match: boolean
           for_rent: boolean | null
           for_sale_by_agent: boolean | null
           for_sale_by_owner: boolean | null
@@ -129,6 +130,7 @@ export type Database = {
           created_at?: string
           days_on_zillow?: number | null
           filter_by_ppsf?: boolean
+          filter_by_city_match?: boolean
           for_rent?: boolean | null
           for_sale_by_agent?: boolean | null
           for_sale_by_owner?: boolean | null
@@ -156,6 +158,7 @@ export type Database = {
           created_at?: string
           days_on_zillow?: number | null
           filter_by_ppsf?: boolean
+          filter_by_city_match?: boolean
           for_rent?: boolean | null
           for_sale_by_agent?: boolean | null
           for_sale_by_owner?: boolean | null

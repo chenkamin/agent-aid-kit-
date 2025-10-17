@@ -1619,9 +1619,9 @@ export default function Properties() {
 
       {/* Bulk Actions Toolbar */}
       {selectedPropertyIds.length > 0 && (
-        <Card className="mb-4 md:mb-6 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
-          <CardContent className="py-3 md:py-4">
-            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+        <Card className="mb-6 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
               
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
                 <Button
