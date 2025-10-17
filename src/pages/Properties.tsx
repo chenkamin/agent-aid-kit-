@@ -25,6 +25,16 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Checkbox } from "@/components/ui/checkbox";
 
+const PROPERTY_TYPES = [
+  { value: "Single Family", label: "Single Family Home (SFH)", icon: "🏠" },
+  { value: "Multi Family", label: "Multi Family", icon: "🏘️" },
+  { value: "Condo", label: "Condo", icon: "🏢" },
+  { value: "Townhouse", label: "Townhouse", icon: "🏘️" },
+  { value: "Lot", label: "Lot / Land", icon: "🌳" },
+  { value: "Apartment", label: "Apartment", icon: "🏛️" },
+  { value: "Commercial", label: "Commercial", icon: "🏬" },
+];
+
 export default function Properties() {
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
   const [editedProperty, setEditedProperty] = useState<any>(null);
@@ -45,6 +55,7 @@ export default function Properties() {
     due_at: "",
   });
   const [isCreatingList, setIsCreatingList] = useState(false);
+  const [selectedListHomeTypes, setSelectedListHomeTypes] = useState<string[]>([]);
   const [listForm, setListForm] = useState({
     name: "",
     zipCodes: "",
@@ -861,6 +872,7 @@ export default function Properties() {
         for_sale_by_agent: data.forSaleByAgent,
         for_sale_by_owner: data.forSaleByOwner,
         for_rent: data.forRent,
+        home_types: data.homeTypes || [],
       }]).select().single();
       
       if (error) throw error;
@@ -875,6 +887,7 @@ export default function Properties() {
       });
       
       setIsCreatingList(false);
+      setSelectedListHomeTypes([]);
       setListForm({
         name: "",
         zipCodes: "",
@@ -931,6 +944,14 @@ export default function Properties() {
     },
   });
 
+  const toggleListHomeType = (type: string) => {
+    setSelectedListHomeTypes(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    );
+  };
+
   const handleCreateList = () => {
     if (!listForm.name) {
       toast({
@@ -945,6 +966,7 @@ export default function Properties() {
     const formattedData = {
       ...listForm,
       zipCodes: listForm.zipCodes ? listForm.zipCodes.split(',').map(z => z.trim()).filter(Boolean) : [],
+      homeTypes: selectedListHomeTypes,
     };
     
     createListMutation.mutate(formattedData);
@@ -1240,6 +1262,36 @@ export default function Properties() {
                     placeholder="Leave empty for any"
                   />
                   <p className="text-xs text-muted-foreground">Filter by days listed on Zillow (optional)</p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>Property Types</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Select the types of properties you want to include. Leave empty to include all types.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PROPERTY_TYPES.map((type) => (
+                      <div key={type.value} className="flex items-center space-x-2 border rounded-lg p-2 hover:bg-accent transition-colors">
+                        <Checkbox
+                          id={`list-type-${type.value}`}
+                          checked={selectedListHomeTypes.includes(type.value)}
+                          onCheckedChange={() => toggleListHomeType(type.value)}
+                        />
+                        <label
+                          htmlFor={`list-type-${type.value}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <span>{type.icon}</span>
+                          <span className="text-xs">{type.label}</span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedListHomeTypes.length > 0 && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                      Selected: {selectedListHomeTypes.join(", ")}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-3">
@@ -1567,54 +1619,56 @@ export default function Properties() {
 
       {/* Bulk Actions Toolbar */}
       {selectedPropertyIds.length > 0 && (
-        <Card className="mb-6 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
+        <Card className="mb-4 md:mb-6 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
+          <CardContent className="py-3 md:py-4">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
               
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
                 <Button
                   onClick={() => setIsBulkAddingActivity(true)}
                   size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs w-full sm:w-auto"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                   Add Activity
                 </Button>
-                <Label className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                  Change Workflow Stage:
-                </Label>
-                <Select
-                  value=""
-                  onValueChange={handleBulkWorkflowUpdate}
-                  disabled={bulkUpdateWorkflowMutation.isPending}
-                >
-                  <SelectTrigger className="w-[200px] bg-white dark:bg-gray-950">
-                    <SelectValue placeholder="Select stage..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Initial">🆕 Initial</SelectItem>
-                    <SelectItem value="Reviewing">👀 Reviewing</SelectItem>
-                    <SelectItem value="Research">🔍 Research</SelectItem>
-                    <SelectItem value="On Progress">⚡ On Progress</SelectItem>
-                    <SelectItem value="Follow Up">📞 Follow Up</SelectItem>
-                    <SelectItem value="Negotiating">💬 Negotiating</SelectItem>
-                    <SelectItem value="Under Contract">📝 Under Contract</SelectItem>
-                    <SelectItem value="Closing">🏁 Closing</SelectItem>
-                    <SelectItem value="Closed">✅ Closed</SelectItem>
-                    <SelectItem value="Not Relevant">❌ Not Relevant</SelectItem>
-                    <SelectItem value="Archived">📦 Archived</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
+                  <Label className="text-xs sm:text-sm font-medium text-blue-900 dark:text-blue-100">
+                    Change Workflow Stage:
+                  </Label>
+                  <Select
+                    value=""
+                    onValueChange={handleBulkWorkflowUpdate}
+                    disabled={bulkUpdateWorkflowMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full sm:w-[200px] bg-white dark:bg-gray-950 text-xs sm:text-sm">
+                      <SelectValue placeholder="Select stage..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Initial">🆕 Initial</SelectItem>
+                      <SelectItem value="Reviewing">👀 Reviewing</SelectItem>
+                      <SelectItem value="Research">🔍 Research</SelectItem>
+                      <SelectItem value="On Progress">⚡ On Progress</SelectItem>
+                      <SelectItem value="Follow Up">📞 Follow Up</SelectItem>
+                      <SelectItem value="Negotiating">💬 Negotiating</SelectItem>
+                      <SelectItem value="Under Contract">📝 Under Contract</SelectItem>
+                      <SelectItem value="Closing">🏁 Closing</SelectItem>
+                      <SelectItem value="Closed">✅ Closed</SelectItem>
+                      <SelectItem value="Not Relevant">❌ Not Relevant</SelectItem>
+                      <SelectItem value="Archived">📦 Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="flex items-center gap-4">
-                <p className="font-semibold text-blue-900 dark:text-blue-100">
+              <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4 w-full lg:w-auto">
+                <p className="text-xs sm:text-sm font-semibold text-blue-900 dark:text-blue-100">
                   {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'property' : 'properties'} selected
                 </p>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setSelectedPropertyIds([])}
-                  className="text-blue-700 dark:text-blue-300"
+                  className="text-blue-700 dark:text-blue-300 text-xs sm:text-sm"
                 >
                   Clear Selection
                 </Button>
@@ -2067,9 +2121,9 @@ export default function Properties() {
           setEditedProperty(null);
         }
       }}>
-        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto" aria-describedby="property-details-description">
+        <DialogContent className="w-[95vw] max-w-5xl max-h-[90vh] overflow-y-auto" aria-describedby="property-details-description">
           <DialogHeader>
-            <DialogTitle className="text-2xl">
+            <DialogTitle className="text-lg md:text-2xl">
               {selectedProperty?.address || "Untitled Property"}
             </DialogTitle>
             {selectedProperty && (selectedProperty.city || selectedProperty.state) && (
@@ -2085,10 +2139,10 @@ export default function Properties() {
           {selectedProperty && (
             <>
               {/* Workflow Status - Always Visible at Top */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-4 rounded-lg border-2 border-blue-300 dark:border-blue-800 shadow-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1">
-                    <Label htmlFor="workflow-state" className="text-sm font-bold text-blue-900 dark:text-blue-100 mb-2 block">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-3 md:p-4 rounded-lg border-2 border-blue-300 dark:border-blue-800 shadow-sm">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 md:gap-4">
+                  <div className="flex-1 w-full sm:w-auto">
+                    <Label htmlFor="workflow-state" className="text-xs md:text-sm font-bold text-blue-900 dark:text-blue-100 mb-2 block">
                       📊 Workflow Stage
                     </Label>
                     <Select
@@ -2191,47 +2245,57 @@ export default function Properties() {
               </div>
 
             <Tabs defaultValue="general" className="mt-4">
-              <TabsList className="grid w-full grid-cols-6">
-                <TabsTrigger value="general">
-                  <Home className="h-4 w-4 mr-2" />
-                  General
+              <div className="overflow-x-auto">
+                <TabsList className="grid w-full grid-cols-6 min-w-[600px]">
+                  <TabsTrigger value="general" className="text-xs md:text-sm">
+                    <Home className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+                    <span className="hidden sm:inline">General</span>
+                    <span className="sm:hidden">Gen</span>
+                  </TabsTrigger>
+                <TabsTrigger value="listing" className="text-xs md:text-sm">
+                  <Calendar className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+                  <span className="hidden sm:inline">Listing</span>
+                  <span className="sm:hidden">List</span>
                 </TabsTrigger>
-                <TabsTrigger value="listing">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Listing
+                <TabsTrigger value="financial" className="text-xs md:text-sm">
+                  <DollarSign className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+                  <span className="hidden sm:inline">Financial</span>
+                  <span className="sm:hidden">$</span>
                 </TabsTrigger>
-                <TabsTrigger value="financial">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Financial
+                <TabsTrigger value="details" className="text-xs md:text-sm">
+                  <Building2 className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+                  <span className="hidden sm:inline">Details</span>
+                  <span className="sm:hidden">Info</span>
                 </TabsTrigger>
-                <TabsTrigger value="details">
-                  <Building2 className="h-4 w-4 mr-2" />
-                  Details
+                <TabsTrigger value="history" className="text-xs md:text-sm">
+                  <Clock className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+                  <span className="hidden sm:inline">History</span>
+                  <span className="sm:hidden">Hist</span>
                 </TabsTrigger>
-                <TabsTrigger value="history">
-                  <Clock className="h-4 w-4 mr-2" />
-                  History
-                </TabsTrigger>
-                <TabsTrigger value="comps">
-                  <Ruler className="h-4 w-4 mr-2" />
-                  Comps
+                <TabsTrigger value="comps" className="text-xs md:text-sm">
+                  <Ruler className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+                  <span className="hidden sm:inline">Comps</span>
+                  <span className="sm:hidden">Cmp</span>
                 </TabsTrigger>
               </TabsList>
+              </div>
 
               {/* General Tab */}
               <TabsContent value="general" className="space-y-4 mt-4">
                 {/* Save Button */}
-                <div className="flex justify-end gap-2 pb-4 border-b">
+                <div className="flex flex-col sm:flex-row justify-end gap-2 pb-4 border-b">
                   <Button
                     variant="outline"
                     onClick={() => setEditedProperty({ ...selectedProperty })}
                     disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
                   >
                     Reset Changes
                   </Button>
                   <Button
                     onClick={handleSaveProperty}
                     disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
                   >
                     {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
@@ -2823,11 +2887,11 @@ export default function Properties() {
                           Send Email
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="max-w-md">
+                      <DialogContent className="w-[95vw] max-w-md">
                         <DialogHeader>
-                          <DialogTitle>Send Email to Realtor</DialogTitle>
+                          <DialogTitle className="text-lg md:text-xl">Send Email to Realtor</DialogTitle>
                         </DialogHeader>
-                        <div className="space-y-4 mt-4">
+                        <div className="space-y-3 md:space-y-4 mt-4">
                           <div className="space-y-2">
                             <Label htmlFor="email-template">Email Template *</Label>
                             <Select
@@ -2895,11 +2959,11 @@ export default function Properties() {
                             </p>
                           </div>
 
-                          <div className="flex justify-end gap-2">
-                            <Button variant="outline" onClick={() => setIsSendingEmail(false)}>
+                          <div className="flex flex-col sm:flex-row justify-end gap-2">
+                            <Button variant="outline" onClick={() => setIsSendingEmail(false)} className="w-full sm:w-auto text-sm">
                               Cancel
                             </Button>
-                            <Button onClick={handleSendEmail} disabled={sendEmailMutation.isPending}>
+                            <Button onClick={handleSendEmail} disabled={sendEmailMutation.isPending} className="w-full sm:w-auto text-sm">
                               {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
                             </Button>
                           </div>
@@ -2913,11 +2977,11 @@ export default function Properties() {
                           Add Activity
                         </Button>
                       </DialogTrigger>
-                    <DialogContent aria-describedby="activity-form-description">
+                    <DialogContent className="w-[95vw] max-w-md" aria-describedby="activity-form-description">
                       <DialogHeader>
-                        <DialogTitle>Add New Activity</DialogTitle>
+                        <DialogTitle className="text-lg md:text-xl">Add New Activity</DialogTitle>
                       </DialogHeader>
-                      <div className="space-y-4 mt-4">
+                      <div className="space-y-3 md:space-y-4 mt-4">
                         <div className="space-y-2">
                           <Label htmlFor="activity-type">Type</Label>
                           <Select
@@ -2975,11 +3039,11 @@ export default function Properties() {
                             />
                           </div>
 
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" onClick={() => setIsAddingActivity(false)}>
+                        <div className="flex flex-col sm:flex-row justify-end gap-2">
+                          <Button variant="outline" onClick={() => setIsAddingActivity(false)} className="w-full sm:w-auto text-sm">
                             Cancel
                           </Button>
-                          <Button onClick={handleAddActivity} disabled={addActivityMutation.isPending}>
+                          <Button onClick={handleAddActivity} disabled={addActivityMutation.isPending} className="w-full sm:w-auto text-sm">
                             {addActivityMutation.isPending ? "Adding..." : "Add Activity"}
                           </Button>
                         </div>
@@ -3047,9 +3111,9 @@ export default function Properties() {
 
       {/* Bulk Add Activity Dialog */}
       <Dialog open={isBulkAddingActivity} onOpenChange={setIsBulkAddingActivity}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-lg md:text-xl">
               Add Activity to {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'Property' : 'Properties'}
             </DialogTitle>
           </DialogHeader>
@@ -3110,11 +3174,11 @@ export default function Properties() {
               />
             </div>
 
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsBulkAddingActivity(false)}>
+            <div className="flex flex-col sm:flex-row justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsBulkAddingActivity(false)} className="w-full sm:w-auto text-sm">
                 Cancel
               </Button>
-              <Button onClick={handleBulkAddActivity} disabled={bulkAddActivityMutation.isPending}>
+              <Button onClick={handleBulkAddActivity} disabled={bulkAddActivityMutation.isPending} className="w-full sm:w-auto text-sm">
                 {bulkAddActivityMutation.isPending ? "Adding..." : "Add to All"}
               </Button>
             </div>

@@ -95,13 +95,17 @@ function normalizeHomeType(homeType: string): string {
     console.log('  ➜ Matched: Townhouse');
     return 'Townhouse';
   }
-  if (type.includes('land')) {
-    console.log('  ➜ Matched: Land');
-    return 'Land';
+  if (type.includes('land') || type.includes('lot')) {
+    console.log('  ➜ Matched: Land/Lot');
+    return 'Lot';
   }
   if (type.includes('commercial')) {
     console.log('  ➜ Matched: Commercial');
     return 'Commercial';
+  }
+  if (type.includes('apartment')) {
+    console.log('  ➜ Matched: Apartment');
+    return 'Apartment';
   }
 
   console.log('  ➜ No match found - Returning "Other"');
@@ -304,6 +308,65 @@ Deno.serve(async (req) => {
       });
       
       console.log(`📊 After price per sqft filtering: ${properties.length} of ${originalCount} properties passed`);
+    }
+
+    // Filter by home types if specified
+    if (buyBox.home_types && Array.isArray(buyBox.home_types) && buyBox.home_types.length > 0) {
+      console.log(`🏠 Filtering by property types: ${buyBox.home_types.join(', ')}`);
+      const beforeTypeFilter = properties.length;
+      
+      properties = properties.filter(prop => {
+        const homeType = normalizeHomeType(prop.homeType || prop.propertyType);
+        const matches = buyBox.home_types.includes(homeType);
+        
+        if (!matches) {
+          console.log(`  ❌ FILTERED OUT - ${homeType} not in allowed types`);
+        } else {
+          console.log(`  ✅ PASS - ${homeType} is an allowed type`);
+        }
+        
+        return matches;
+      });
+      
+      console.log(`📊 After home type filtering: ${properties.length} of ${beforeTypeFilter} properties passed`);
+    }
+
+    // Filter by city/neighborhood match if specified
+    if (buyBox.filter_by_city_match && (buyBox.cities?.length > 0 || buyBox.neighborhoods?.length > 0)) {
+      console.log(`🎯 Filtering by city/neighborhood match`);
+      console.log(`   Cities: ${buyBox.cities?.join(', ') || 'none'}`);
+      console.log(`   Neighborhoods: ${buyBox.neighborhoods?.join(', ') || 'none'}`);
+      
+      const beforeCityFilter = properties.length;
+      
+      // Normalize cities and neighborhoods to lowercase for comparison
+      const allowedCities = (buyBox.cities || []).map(c => c.toLowerCase().trim());
+      const allowedNeighborhoods = (buyBox.neighborhoods || []).map(n => n.toLowerCase().trim());
+      
+      properties = properties.filter(prop => {
+        const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
+        const propCity = (addressData.city || '').toLowerCase().trim();
+        const propNeighborhood = (prop.neighborhood || '').toLowerCase().trim();
+        
+        // Check if city matches
+        const cityMatches = allowedCities.length === 0 || allowedCities.includes(propCity);
+        // Check if neighborhood matches
+        const neighborhoodMatches = allowedNeighborhoods.length === 0 || allowedNeighborhoods.includes(propNeighborhood);
+        
+        // Property passes if it matches either city OR neighborhood (when both are specified)
+        // If only cities specified, must match city. If only neighborhoods specified, must match neighborhood.
+        const passes = (allowedCities.length > 0 && cityMatches) || (allowedNeighborhoods.length > 0 && neighborhoodMatches);
+        
+        if (!passes) {
+          console.log(`  ❌ FILTERED OUT - City: "${propCity}", Neighborhood: "${propNeighborhood}" - No match`);
+        } else {
+          console.log(`  ✅ PASS - City: "${propCity}", Neighborhood: "${propNeighborhood}" - Match found`);
+        }
+        
+        return passes;
+      });
+      
+      console.log(`📊 After city/neighborhood filtering: ${properties.length} of ${beforeCityFilter} properties passed`);
     }
 
     if (properties.length === 0) {

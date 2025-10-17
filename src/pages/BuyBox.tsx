@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 interface BuyBox {
   id: string;
@@ -19,6 +21,7 @@ interface BuyBox {
   max_price: number | null;
   price_max: number | null;
   filter_by_ppsf: boolean;
+  filter_by_city_match: boolean;
   min_bedrooms: number | null;
   max_bedrooms: number | null;
   min_bathrooms: number | null;
@@ -28,11 +31,23 @@ interface BuyBox {
   home_types: string[];
 }
 
+const PROPERTY_TYPES = [
+  { value: "Single Family", label: "Single Family Home (SFH)", icon: "🏠" },
+  { value: "Multi Family", label: "Multi Family", icon: "🏘️" },
+  { value: "Condo", label: "Condo", icon: "🏢" },
+  { value: "Townhouse", label: "Townhouse", icon: "🏘️" },
+  { value: "Lot", label: "Lot / Land", icon: "🌳" },
+  { value: "Apartment", label: "Apartment", icon: "🏛️" },
+  { value: "Commercial", label: "Commercial", icon: "🏬" },
+];
+
 export default function BuyBox() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filterByPpsf, setFilterByPpsf] = useState(false);
+  const [filterByCityMatch, setFilterByCityMatch] = useState(false);
+  const [selectedHomeTypes, setSelectedHomeTypes] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     cities: "",
@@ -47,7 +62,6 @@ export default function BuyBox() {
     max_bathrooms: "",
     min_square_footage: "",
     max_square_footage: "",
-    home_types: "",
   });
 
   // Fetch user's company first
@@ -98,13 +112,14 @@ export default function BuyBox() {
         max_price: data.max_price ? parseFloat(data.max_price) : null,
         price_max: data.price_max ? parseFloat(data.price_max) : null,
         filter_by_ppsf: filterByPpsf,
+        filter_by_city_match: filterByCityMatch,
         min_bedrooms: data.min_bedrooms ? parseInt(data.min_bedrooms) : null,
         max_bedrooms: data.max_bedrooms ? parseInt(data.max_bedrooms) : null,
         min_bathrooms: data.min_bathrooms ? parseFloat(data.min_bathrooms) : null,
         max_bathrooms: data.max_bathrooms ? parseFloat(data.max_bathrooms) : null,
         min_square_footage: data.min_square_footage ? parseInt(data.min_square_footage) : null,
         max_square_footage: data.max_square_footage ? parseInt(data.max_square_footage) : null,
-        home_types: data.home_types ? data.home_types.split(",").map(s => s.trim()) : [],
+        home_types: selectedHomeTypes,
       };
 
       if (editingId) {
@@ -159,6 +174,8 @@ export default function BuyBox() {
   const handleEdit = (buyBox: BuyBox) => {
     setEditingId(buyBox.id);
     setFilterByPpsf(buyBox.filter_by_ppsf || false);
+    setFilterByCityMatch(buyBox.filter_by_city_match || false);
+    setSelectedHomeTypes(buyBox.home_types || []);
     setFormData({
       name: buyBox.name,
       cities: buyBox.cities?.join(", ") || "",
@@ -173,13 +190,14 @@ export default function BuyBox() {
       max_bathrooms: buyBox.max_bathrooms?.toString() || "",
       min_square_footage: buyBox.min_square_footage?.toString() || "",
       max_square_footage: buyBox.max_square_footage?.toString() || "",
-      home_types: buyBox.home_types?.join(", ") || "",
     });
   };
 
   const resetForm = () => {
     setEditingId(null);
     setFilterByPpsf(false);
+    setFilterByCityMatch(false);
+    setSelectedHomeTypes([]);
     setFormData({
       name: "",
       cities: "",
@@ -194,8 +212,15 @@ export default function BuyBox() {
       max_bathrooms: "",
       min_square_footage: "",
       max_square_footage: "",
-      home_types: "",
     });
+  };
+
+  const toggleHomeType = (type: string) => {
+    setSelectedHomeTypes(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    );
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -273,21 +298,68 @@ export default function BuyBox() {
                   name="zip_codes"
                   value={formData.zip_codes}
                   onChange={handleChange}
-                  placeholder="e.g., 78701, 78702, 78703"
+                  placeholder="e.g., 44105, 44125, 44128"
                 />
                 <p className="text-xs text-muted-foreground">Separate multiple zip codes with commas</p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="home_types">Home Types</Label>
-                <Input
-                  id="home_types"
-                  name="home_types"
-                  value={formData.home_types}
-                  onChange={handleChange}
-                  placeholder="e.g., Single Family, Condo, Multi-Family"
-                />
-                <p className="text-xs text-muted-foreground">Separate multiple types with commas</p>
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex items-center justify-between space-x-2 p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                  <div className="space-y-0.5 flex-1">
+                    <Label htmlFor="filter_by_city_match" className="font-semibold">
+                      🎯 Filter by City/Neighborhood Match
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      When enabled, only properties matching your specified cities or neighborhoods will be included.
+                      Useful when zip codes span multiple cities (e.g., 44105 includes both Garfield Heights and Cleveland).
+                      {formData.cities || formData.neighborhoods ? (
+                        <span className="block mt-1 font-medium text-blue-700 dark:text-blue-300">
+                          Will filter for: {[formData.cities, formData.neighborhoods].filter(Boolean).join(", ")}
+                        </span>
+                      ) : (
+                        <span className="block mt-1 text-orange-600 dark:text-orange-400">
+                          ⚠️ Add cities or neighborhoods above to use this filter
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <Switch
+                    id="filter_by_city_match"
+                    checked={filterByCityMatch}
+                    onCheckedChange={setFilterByCityMatch}
+                    disabled={!formData.cities && !formData.neighborhoods}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3 md:col-span-2">
+                <Label>Property Types</Label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Select the types of properties you want to include. Leave empty to include all types.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {PROPERTY_TYPES.map((type) => (
+                    <div key={type.value} className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent transition-colors">
+                      <Checkbox
+                        id={`type-${type.value}`}
+                        checked={selectedHomeTypes.includes(type.value)}
+                        onCheckedChange={() => toggleHomeType(type.value)}
+                      />
+                      <label
+                        htmlFor={`type-${type.value}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center gap-2"
+                      >
+                        <span>{type.icon}</span>
+                        <span>{type.label}</span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                {selectedHomeTypes.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Selected: {selectedHomeTypes.join(", ")}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -491,6 +563,16 @@ export default function BuyBox() {
                     <span className="text-muted-foreground">{buyBox.zip_codes.join(", ")}</span>
                   </div>
                 )}
+                {buyBox.filter_by_city_match && (
+                  <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <span className="font-semibold text-blue-700 dark:text-blue-300">
+                      🎯 City/Neighborhood Filter: Enabled
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Only properties matching specified cities or neighborhoods will be included
+                    </p>
+                  </div>
+                )}
                 <div className="grid gap-2 md:grid-cols-2">
                   {(buyBox.min_price || buyBox.max_price) && (
                     <div>
@@ -540,8 +622,17 @@ export default function BuyBox() {
                 </div>
                 {buyBox.home_types && buyBox.home_types.length > 0 && (
                   <div>
-                    <span className="font-semibold">Home Types: </span>
-                    <span className="text-muted-foreground">{buyBox.home_types.join(", ")}</span>
+                    <span className="font-semibold mb-2 block">Property Types:</span>
+                    <div className="flex flex-wrap gap-2">
+                      {buyBox.home_types.map(type => {
+                        const typeConfig = PROPERTY_TYPES.find(t => t.value === type);
+                        return (
+                          <Badge key={type} variant="secondary" className="text-sm">
+                            {typeConfig?.icon} {type}
+                          </Badge>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </CardContent>

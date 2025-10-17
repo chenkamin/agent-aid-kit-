@@ -28,6 +28,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useState } from "react";
+import { Switch } from "@/components/ui/switch";
+
+const PROPERTY_TYPES = [
+  { value: "Single Family", label: "SFH", icon: "🏠" },
+  { value: "Multi Family", label: "Multi Family", icon: "🏘️" },
+  { value: "Condo", label: "Condo", icon: "🏢" },
+  { value: "Townhouse", label: "Townhouse", icon: "🏘️" },
+  { value: "Lot", label: "Lot/Land", icon: "🌳" },
+  { value: "Apartment", label: "Apartment", icon: "🏛️" },
+  { value: "Commercial", label: "Commercial", icon: "🏬" },
+];
 
 export default function Lists() {
   const { toast } = useToast();
@@ -39,6 +50,10 @@ export default function Lists() {
   const [locationInput, setLocationInput] = useState("");
   const [isLookingUpZips, setIsLookingUpZips] = useState(false);
   const [scrapingListId, setScrapingListId] = useState<string | null>(null);
+  const [selectedHomeTypes, setSelectedHomeTypes] = useState<string[]>([]);
+  const [filterByCityMatch, setFilterByCityMatch] = useState(false);
+  const [cities, setCities] = useState("");
+  const [neighborhoods, setNeighborhoods] = useState("");
   const [listForm, setListForm] = useState({
     name: "",
     zipCodes: "",
@@ -195,12 +210,16 @@ export default function Lists() {
         user_id: user.id,
         name: data.name,
         zip_codes: data.zipCodes.split(",").map((z: string) => z.trim()).filter(Boolean),
+        cities: data.cities ? data.cities.split(",").map((c: string) => c.trim()).filter(Boolean) : [],
+        neighborhoods: data.neighborhoods ? data.neighborhoods.split(",").map((n: string) => n.trim()).filter(Boolean) : [],
         price_max: data.priceMax ? parseFloat(data.priceMax) : null,
         days_on_zillow: data.daysOnZillow ? parseInt(data.daysOnZillow) : null,
         for_sale_by_agent: data.forSaleByAgent,
         for_sale_by_owner: data.forSaleByOwner,
         for_rent: data.forRent,
         filter_by_ppsf: data.filterByPpsf,
+        filter_by_city_match: data.filterByCityMatch,
+        home_types: data.homeTypes || [],
       };
 
       if (data.id) {
@@ -236,6 +255,10 @@ export default function Lists() {
         
         setIsCreatingList(false);
         setEditingList(null);
+        setSelectedHomeTypes([]);
+        setFilterByCityMatch(false);
+        setCities("");
+        setNeighborhoods("");
         setListForm({
           name: "",
           zipCodes: "",
@@ -290,6 +313,10 @@ export default function Lists() {
         });
         setIsCreatingList(false);
         setEditingList(null);
+        setSelectedHomeTypes([]);
+        setFilterByCityMatch(false);
+        setCities("");
+        setNeighborhoods("");
         setListForm({
           name: "",
           zipCodes: "",
@@ -388,6 +415,10 @@ export default function Lists() {
 
   const handleEdit = (list: any) => {
     setEditingList(list);
+    setSelectedHomeTypes(list.home_types || []);
+    setFilterByCityMatch(list.filter_by_city_match ?? false);
+    setCities(list.cities ? list.cities.join(", ") : "");
+    setNeighborhoods(list.neighborhoods ? list.neighborhoods.join(", ") : "");
     setListForm({
       name: list.name,
       zipCodes: list.zip_codes ? list.zip_codes.join(", ") : "",
@@ -399,6 +430,14 @@ export default function Lists() {
       filterByPpsf: list.filter_by_ppsf ?? false,
     });
     setIsCreatingList(true);
+  };
+
+  const toggleHomeType = (type: string) => {
+    setSelectedHomeTypes(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    );
   };
 
   const handleDelete = (listId: string) => {
@@ -580,6 +619,10 @@ export default function Lists() {
         setIsCreatingList(open);
         if (!open) {
           setEditingList(null);
+          setSelectedHomeTypes([]);
+          setFilterByCityMatch(false);
+          setCities("");
+          setNeighborhoods("");
           setListForm({
             name: "",
             zipCodes: "",
@@ -588,26 +631,30 @@ export default function Lists() {
             forSaleByAgent: true,
             forSaleByOwner: true,
             forRent: false,
+            filterByPpsf: false,
           });
         }
       }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingList ? "Edit Buy Box" : "Create New Buy Box"}</DialogTitle>
+            <DialogTitle className="text-2xl">{editingList ? "Edit Buy Box" : "Create New Buy Box"}</DialogTitle>
+            <p className="text-sm text-muted-foreground">Configure your property search criteria and filtering options</p>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-6 py-4">
+            {/* Buy Box Name - Full Width */}
             <div className="space-y-2">
-              <Label htmlFor="list-name">Buy Box Name *</Label>
+              <Label htmlFor="list-name" className="text-base font-semibold">Buy Box Name *</Label>
               <Input
                 id="list-name"
                 placeholder="e.g., Cleveland Investment Properties"
                 value={listForm.name}
                 onChange={(e) => setListForm((prev) => ({ ...prev, name: e.target.value }))}
+                className="text-base"
               />
             </div>
 
-            {/* AI Location to Zip Codes */}
-            <div className="space-y-2 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-900">
+            {/* AI Location to Zip Codes - Full Width */}
+            <div className="space-y-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-lg border border-blue-200 dark:border-blue-900 shadow-sm">
               <div className="flex items-start gap-2">
                 <Sparkles className="h-5 w-5 text-blue-600 mt-0.5" />
                 <div className="flex-1">
@@ -653,80 +700,186 @@ export default function Lists() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="zip-codes">Zip Codes * (comma separated)</Label>
-              <Textarea
-                id="zip-codes"
-                placeholder="e.g., 44105, 44106, 44107"
-                value={listForm.zipCodes}
-                onChange={(e) => setListForm((prev) => ({ ...prev, zipCodes: e.target.value }))}
-                rows={3}
-              />
-            </div>
-
-            {/* Price Filter Type Toggle */}
-            <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-900">
-              <div className="flex items-start justify-between">
-                <div className="space-y-1">
-                  <Label className="text-amber-900 dark:text-amber-100 font-semibold">
-                    Price Filter Type
-                  </Label>
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    {listForm.filterByPpsf 
-                      ? "Filtering by price per square foot. All listings will be retrieved and filtered based on calculated $/sqft."
-                      : "Filtering by total property price. Zillow will only return properties within your price range."}
-                  </p>
+            {/* Location Criteria - Two Columns */}
+            <div className="border rounded-lg p-5 bg-card">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                📍 Location Criteria
+              </h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* Left Column */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="zip-codes" className="text-sm font-semibold">Zip Codes *</Label>
+                    <Textarea
+                      id="zip-codes"
+                      placeholder="e.g., 44105, 44106, 44107"
+                      value={listForm.zipCodes}
+                      onChange={(e) => setListForm((prev) => ({ ...prev, zipCodes: e.target.value }))}
+                      rows={3}
+                      className="resize-none"
+                    />
+                    <p className="text-xs text-muted-foreground">Comma-separated zip codes to search</p>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="filter-by-ppsf"
-                    checked={listForm.filterByPpsf}
-                    onCheckedChange={(checked) => 
-                      setListForm((prev) => ({ ...prev, filterByPpsf: checked as boolean }))
-                    }
-                  />
-                  <label htmlFor="filter-by-ppsf" className="text-sm font-medium cursor-pointer whitespace-nowrap">
-                    Filter by Price/SqFt
-                  </label>
+
+                {/* Right Column */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cities" className="text-sm font-semibold">Cities (Optional)</Label>
+                    <Input
+                      id="cities"
+                      placeholder="e.g., Garfield Heights, Cleveland"
+                      value={cities}
+                      onChange={(e) => setCities(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">For city-specific filtering</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="neighborhoods" className="text-sm font-semibold">Neighborhoods (Optional)</Label>
+                    <Input
+                      id="neighborhoods"
+                      placeholder="e.g., Downtown, Tremont"
+                      value={neighborhoods}
+                      onChange={(e) => setNeighborhoods(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">For neighborhood filtering</p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="price-max">
-                  {listForm.filterByPpsf ? "Maximum Price per SqFt" : "Maximum Price"}
-                </Label>
-                <Input
-                  id="price-max"
-                  type="number"
-                  placeholder={listForm.filterByPpsf ? "150" : "150000"}
-                  value={listForm.priceMax}
-                  onChange={(e) => setListForm((prev) => ({ ...prev, priceMax: e.target.value }))}
-                />
-                {listForm.filterByPpsf && (
-                  <p className="text-xs text-muted-foreground">
-                    e.g., 150 = $150 per square foot
-                  </p>
-                )}
+            {/* City/Neighborhood Match Filter */}
+            {(cities || neighborhoods) && (
+              <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-900">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1 flex-1">
+                    <Label className="text-blue-900 dark:text-blue-100 font-semibold">
+                      🎯 Filter by City/Neighborhood Match
+                    </Label>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                      Only include properties where city or neighborhood matches your list above. 
+                      Useful when zip codes span multiple cities (e.g., 44105 includes both Garfield Heights and Cleveland).
+                    </p>
+                    <p className="text-xs font-medium text-blue-800 dark:text-blue-200 mt-2">
+                      Will filter for: {[cities, neighborhoods].filter(Boolean).join(", ")}
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2 ml-4">
+                    <Switch
+                      id="filter-by-city-match"
+                      checked={filterByCityMatch}
+                      onCheckedChange={setFilterByCityMatch}
+                    />
+                  </div>
+                </div>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <Label htmlFor="days-zillow">Max Days on Zillow</Label>
-                <Input
-                  id="days-zillow"
-                  type="number"
-                  placeholder="30"
-                  value={listForm.daysOnZillow}
-                  onChange={(e) => setListForm((prev) => ({ ...prev, daysOnZillow: e.target.value }))}
-                />
+            {/* Property & Price Filters - Two Columns */}
+            <div className="border rounded-lg p-5 bg-card">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                🏠 Property & Price Filters
+              </h3>
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* Left Column - Property Types */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Property Types (Optional)</Label>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Leave empty to include all types
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {PROPERTY_TYPES.map((type) => (
+                        <div key={type.value} className="flex items-center space-x-2 border rounded-md p-2 hover:bg-accent transition-colors">
+                          <Checkbox
+                            id={`type-${type.value}`}
+                            checked={selectedHomeTypes.includes(type.value)}
+                            onCheckedChange={() => toggleHomeType(type.value)}
+                          />
+                          <label
+                            htmlFor={`type-${type.value}`}
+                            className="text-xs font-medium cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span>{type.icon}</span>
+                            <span>{type.label}</span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedHomeTypes.length > 0 && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-medium">
+                        Selected: {selectedHomeTypes.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column - Price & Days */}
+                <div className="space-y-4">
+                  {/* Price Filter Type */}
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-900">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1 flex-1">
+                        <Label className="text-amber-900 dark:text-amber-100 font-semibold text-sm">
+                          Price Filter Type
+                        </Label>
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          {listForm.filterByPpsf 
+                            ? "Filter by $/sqft (more accurate)"
+                            : "Filter by total price"}
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="filter-by-ppsf"
+                          checked={listForm.filterByPpsf}
+                          onCheckedChange={(checked) => 
+                            setListForm((prev) => ({ ...prev, filterByPpsf: checked as boolean }))
+                          }
+                        />
+                        <label htmlFor="filter-by-ppsf" className="text-xs font-medium cursor-pointer whitespace-nowrap">
+                          Price/SqFt
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="price-max" className="text-sm font-semibold">
+                      {listForm.filterByPpsf ? "Max Price per SqFt" : "Maximum Price"}
+                    </Label>
+                    <Input
+                      id="price-max"
+                      type="number"
+                      placeholder={listForm.filterByPpsf ? "150" : "150000"}
+                      value={listForm.priceMax}
+                      onChange={(e) => setListForm((prev) => ({ ...prev, priceMax: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {listForm.filterByPpsf ? "e.g., 150 = $150/sqft" : "e.g., 150000 = $150,000"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="days-zillow" className="text-sm font-semibold">Max Days on Zillow</Label>
+                    <Input
+                      id="days-zillow"
+                      type="number"
+                      placeholder="30"
+                      value={listForm.daysOnZillow}
+                      onChange={(e) => setListForm((prev) => ({ ...prev, daysOnZillow: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Leave empty for any duration</p>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label>Listing Types</Label>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
+            {/* Listing Types - Full Width */}
+            <div className="border rounded-lg p-5 bg-card">
+              <h3 className="text-lg font-semibold mb-3">🏷️ Listing Types</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent transition-colors">
                   <Checkbox
                     id="for-sale-by-agent"
                     checked={listForm.forSaleByAgent}
@@ -739,7 +892,7 @@ export default function Lists() {
                   </label>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent transition-colors">
                   <Checkbox
                     id="for-sale-by-owner"
                     checked={listForm.forSaleByOwner}
@@ -752,7 +905,7 @@ export default function Lists() {
                   </label>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent transition-colors">
                   <Checkbox
                     id="for-rent"
                     checked={listForm.forRent}
@@ -768,10 +921,14 @@ export default function Lists() {
             </div>
           </div>
 
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-3 pt-4 border-t mt-6">
             <Button variant="outline" onClick={() => {
               setIsCreatingList(false);
               setEditingList(null);
+              setSelectedHomeTypes([]);
+              setFilterByCityMatch(false);
+              setCities("");
+              setNeighborhoods("");
               setListForm({
                 name: "",
                 zipCodes: "",
@@ -780,12 +937,23 @@ export default function Lists() {
                 forSaleByAgent: true,
                 forSaleByOwner: true,
                 forRent: false,
+                filterByPpsf: false,
               });
             }}>
               Cancel
             </Button>
             <Button 
-              onClick={() => createListMutation.mutate(editingList ? { ...listForm, id: editingList.id } : listForm)}
+              onClick={() => {
+                const dataToSave = {
+                  ...listForm,
+                  cities,
+                  neighborhoods,
+                  homeTypes: selectedHomeTypes,
+                  filterByCityMatch,
+                  ...(editingList && { id: editingList.id })
+                };
+                createListMutation.mutate(dataToSave);
+              }}
               disabled={!listForm.name || !listForm.zipCodes || createListMutation.isPending}
             >
               {createListMutation.isPending ? (
