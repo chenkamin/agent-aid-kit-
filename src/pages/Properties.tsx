@@ -1160,14 +1160,19 @@ export default function Properties() {
         .eq('id', selectedProperty.id);
       
       if (error) throw error;
+      return updatedData;
     },
-    onSuccess: () => {
+    onSuccess: (updatedData) => {
+      // Update selectedProperty with the saved values immediately
+      setSelectedProperty((prev: any) => ({ ...prev, ...updatedData }));
+      // Reset editedProperty to match selectedProperty
+      setEditedProperty((prev: any) => ({ ...prev, ...updatedData }));
+      
       queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
       toast({
         title: "Success",
         description: "Property updated successfully",
       });
-      setEditedProperty(null);
     },
     onError: (error: any) => {
       toast({
@@ -1184,8 +1189,6 @@ export default function Properties() {
       const { price_per_sqft, ppsf, created_at, updated_at, ...updateData } = editedProperty;
       
       updatePropertyMutation.mutate(updateData);
-      // Update local state immediately for better UX
-      setSelectedProperty((prev: any) => ({ ...prev, ...editedProperty }));
     }
   };
 
