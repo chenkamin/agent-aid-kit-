@@ -754,6 +754,7 @@ export default function Properties() {
   const addActivityMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
       
       // Prepare activity data - exclude due_at if empty
       const activityData: any = {
@@ -762,6 +763,7 @@ export default function Properties() {
         body: data.body,
         property_id: selectedProperty?.id,
         user_id: user.id,
+        company_id: userCompany.company_id,
         status: 'open',
       };
       
@@ -806,6 +808,7 @@ export default function Properties() {
   const bulkAddActivityMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
       if (selectedPropertyIds.length === 0) throw new Error("No properties selected");
       
       // Prepare activity data for each property
@@ -816,6 +819,7 @@ export default function Properties() {
           body: data.body,
           property_id: propertyId,
           user_id: user.id,
+          company_id: userCompany.company_id,
           status: 'open',
         };
         

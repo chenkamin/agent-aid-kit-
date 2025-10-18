@@ -73,6 +73,7 @@ export default function Activities() {
     body: "",
     due_at: "",
     property_id: "none",
+    assigned_to: "unassigned",
   });
   
   // Filter states
@@ -83,6 +84,7 @@ export default function Activities() {
     dateTo: "",
     propertyId: "all",
     buyBoxId: "all",
+    assignedTo: "all",
   });
   const [showFilters, setShowFilters] = useState(false);
 
@@ -91,6 +93,8 @@ export default function Activities() {
     queryKey: ["activities", userCompany?.company_id, filters],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
+      
+      console.log("🔍 Fetching activities for company_id:", userCompany.company_id);
       
       let query = supabase
         .from("activities")
@@ -114,8 +118,22 @@ export default function Activities() {
       if (filters.propertyId !== "all") {
         query = query.eq("property_id", filters.propertyId);
       }
+      if (filters.assignedTo !== "all") {
+        if (filters.assignedTo === "unassigned") {
+          query = query.is("assigned_to", null);
+        } else {
+          query = query.eq("assigned_to", filters.assignedTo);
+        }
+      }
       
-      const { data } = await query;
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error("❌ Error fetching activities:", error);
+        return [];
+      }
+      
+      console.log("✅ Activities fetched:", data?.length, "activities");
       
       // Client-side filter for buy_box_id since it's nested
       let filteredData = data || [];
@@ -124,6 +142,8 @@ export default function Activities() {
           (activity: any) => activity.properties?.buy_box_id === filters.buyBoxId
         );
       }
+      
+      console.log("📊 After filtering:", filteredData.length, "activities");
       
       return filteredData;
     },
@@ -162,17 +182,74 @@ export default function Activities() {
     enabled: !!userCompany?.company_id,
   });
 
+  // Fetch team members for assigned_to dropdown
+  const { data: teamMembers } = useQuery({
+    queryKey: ["team-members-with-profiles", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      
+      // First get team members
+      const { data: members, error: membersError } = await supabase
+        .from("team_members")
+        .select("id, user_id, role")
+        .eq("company_id", userCompany.company_id);
+      
+      if (membersError) {
+        console.error("Error fetching team members:", membersError);
+        return [];
+      }
+
+      if (!members || members.length === 0) return [];
+
+      // Then get profiles for each member
+      const userIds = members.map(m => m.user_id);
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, email, full_name")
+        .in("id", userIds);
+      
+      if (profilesError) {
+        console.error("Error fetching profiles:", profilesError);
+        return [];
+      }
+
+      // Combine the data
+      const membersWithProfiles = members.map(member => {
+        const profile = profiles?.find(p => p.id === member.user_id);
+        return {
+          ...member,
+          profiles: profile
+        };
+      });
+
+      // Sort by role (owner/admin first)
+      membersWithProfiles.sort((a, b) => {
+        if (a.role === "owner") return -1;
+        if (b.role === "owner") return 1;
+        if (a.role === "admin") return -1;
+        if (b.role === "admin") return 1;
+        return 0;
+      });
+      
+      return membersWithProfiles;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
   // Add/Update activity mutation
   const saveActivityMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
       
       const activityData: any = {
         type: data.type,
         title: data.title,
         body: data.body,
         user_id: user.id,
+        company_id: userCompany.company_id,
         status: data.status || 'open',
+        assigned_to: data.assigned_to === "unassigned" ? null : data.assigned_to || null,
       };
       
       // Only include property_id if provided and not "none"
@@ -293,6 +370,7 @@ export default function Activities() {
       body: activity.body || "",
       due_at: activity.due_at ? format(new Date(activity.due_at), "yyyy-MM-dd'T'HH:mm") : "",
       property_id: activity.property_id || "none",
+      assigned_to: activity.assigned_to || "unassigned",
     });
     setIsAddingActivity(true);
   };
@@ -305,6 +383,7 @@ export default function Activities() {
       body: activity.body || "",
       due_at: "",
       property_id: activity.property_id || "none",
+      assigned_to: activity.assigned_to || "unassigned",
     });
     setIsAddingActivity(true);
   };
@@ -313,7 +392,17 @@ export default function Activities() {
     setIsAddingActivity(false);
     setEditingActivity(null);
     setCloningActivity(null);
-    setActivityForm({ type: "other", title: "", body: "", due_at: "", property_id: "none" });
+    setActivityForm({ type: "other", title: "", body: "", due_at: "", property_id: "none", assigned_to: "unassigned" });
+  };
+
+  // Helper function to get team member display name
+  const getTeamMemberDisplayName = (userId: string | null) => {
+    if (!userId) return "Unassigned";
+    const member = teamMembers?.find((m: any) => m.user_id === userId);
+    if (!member) return "Unknown";
+    const displayName = member.profiles?.full_name || member.profiles?.email || "Unknown";
+    const roleText = member.role && member.role !== "member" ? ` (${member.role})` : "";
+    return `${displayName}${roleText}`;
   };
 
   const getStatusIcon = (status: string) => {
@@ -464,6 +553,26 @@ export default function Activities() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="activity-assigned-to">Assigned To</Label>
+                  <Select
+                    value={activityForm.assigned_to || "unassigned"}
+                    onValueChange={(value) => setActivityForm(prev => ({ ...prev, assigned_to: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select assignee..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {teamMembers?.map((member: any) => (
+                        <SelectItem key={member.user_id} value={member.user_id}>
+                          {member.profiles?.full_name || member.profiles?.email || "Unknown"} {member.role && member.role !== "member" && `(${member.role})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="activity-due">Due Date (Optional)</Label>
                   <Input
                     id="activity-due"
@@ -577,6 +686,27 @@ export default function Activities() {
               </div>
 
               <div className="space-y-2">
+                <Label>Assigned To</Label>
+                <Select
+                  value={filters.assignedTo}
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, assignedTo: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Team Members</SelectItem>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {teamMembers?.map((member: any) => (
+                      <SelectItem key={member.user_id} value={member.user_id}>
+                        {member.profiles?.full_name || member.profiles?.email || "Unknown"} {member.role && member.role !== "member" && `(${member.role})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Date From</Label>
                 <Input
                   type="date"
@@ -605,6 +735,7 @@ export default function Activities() {
                   dateTo: "",
                   propertyId: "all",
                   buyBoxId: "all",
+                  assignedTo: "all",
                 })}
               >
                 Clear Filters
@@ -675,6 +806,11 @@ export default function Activities() {
                         <span>
                           📍 {activity.properties.address || "Unknown property"}
                           {activity.properties.city && `, ${activity.properties.city}`}
+                        </span>
+                      )}
+                      {activity.assigned_to && (
+                        <span>
+                          👤 {getTeamMemberDisplayName(activity.assigned_to)}
                         </span>
                       )}
                       {activity.due_at && (
@@ -795,6 +931,11 @@ export default function Activities() {
                         {activity.properties && (
                           <span>
                             {activity.properties.address}
+                          </span>
+                        )}
+                        {activity.assigned_to && (
+                          <span>
+                            👤 {getTeamMemberDisplayName(activity.assigned_to)}
                           </span>
                         )}
                         {activity.due_at && (

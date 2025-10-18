@@ -76,21 +76,53 @@ export default function Lists() {
     name: string;
   } | null>(null);
   
-  const { data: lists, isLoading } = useQuery({
-    queryKey: ["buy_boxes", user?.id],
+  // Get user's company
+  const { data: userCompany } = useQuery({
+    queryKey: ["user-company", user?.id],
     queryFn: async () => {
-      if (!user?.id) return [];
-      const { data } = await supabase
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from("team_members")
+        .select("company_id, role")
+        .eq("user_id", user.id)
+        .single();
+      
+      if (error) {
+        console.error("Error fetching user company:", error);
+        return null;
+      }
+      
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const { data: lists, isLoading } = useQuery({
+    queryKey: ["buy_boxes", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      
+      console.log("🔍 Fetching buy boxes for company_id:", userCompany.company_id);
+      
+      const { data, error } = await supabase
         .from("buy_boxes")
         .select(`
           *,
           properties!properties_buy_box_id_fkey(count)
         `)
-        .eq("user_id", user.id)
+        .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false });
+      
+      if (error) {
+        console.error("❌ Error fetching buy boxes:", error);
+        return [];
+      }
+      
+      console.log("✅ Buy boxes fetched:", data?.length, "buy boxes");
+      
       return data || [];
     },
-    enabled: !!user?.id,
+    enabled: !!userCompany?.company_id,
   });
 
   // Sort lists
@@ -212,9 +244,11 @@ export default function Lists() {
   const createListMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
       
       const listData = {
         user_id: user.id,
+        company_id: userCompany.company_id,
         name: data.name,
         zip_codes: data.zipCodes.split(",").map((z: string) => z.trim()).filter(Boolean),
         cities: data.cities ? data.cities.split(",").map((c: string) => c.trim()).filter(Boolean) : [],
@@ -235,7 +269,7 @@ export default function Lists() {
           .from("buy_boxes")
           .update(listData)
           .eq("id", data.id)
-          .eq("user_id", user.id)
+          .eq("company_id", userCompany.company_id)
           .select()
           .single();
         if (error) throw error;
@@ -252,7 +286,7 @@ export default function Lists() {
       }
     },
     onSuccess: async (result) => {
-      queryClient.invalidateQueries({ queryKey: ["buy_boxes", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["buy_boxes", userCompany?.company_id] });
       
       if (result.isNew) {
         toast({
@@ -300,7 +334,7 @@ export default function Lists() {
           }
 
           const data = await response.json();
-          queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
+          queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
           
           toast({
             title: "Scraping completed!",
@@ -371,8 +405,8 @@ export default function Lists() {
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["buy_boxes", user?.id] });
-      queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["buy_boxes", userCompany?.company_id] });
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
       toast({
         title: "Scraping completed!",
         description: `Found and saved ${data.count} properties from ${data.buyBoxName}`,
@@ -392,15 +426,16 @@ export default function Lists() {
   const deleteListMutation = useMutation({
     mutationFn: async (listId: string) => {
       if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
       const { error } = await supabase
         .from("buy_boxes")
         .delete()
         .eq("id", listId)
-        .eq("user_id", user.id);
+        .eq("company_id", userCompany.company_id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["buy_boxes", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["buy_boxes", userCompany?.company_id] });
       toast({
         title: "Buy Box deleted",
         description: "The buy box has been deleted successfully.",

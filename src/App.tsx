@@ -19,7 +19,6 @@ import Contacts from "./pages/Contacts";
 import Activities from "./pages/Activities";
 import Lists from "./pages/Lists";
 import Communication from "./pages/Communication";
-import TeamSettings from "./pages/TeamSettings";
 import UserSettings from "./pages/UserSettings";
 import AcceptInvite from "./pages/AcceptInvite";
 import NotFound from "./pages/NotFound";
@@ -130,16 +129,6 @@ const App = () => (
                 <ProtectedRoute>
                   <Layout>
                     <Communication />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/team"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <TeamSettings />
                   </Layout>
                 </ProtectedRoute>
               }
