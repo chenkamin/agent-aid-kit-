@@ -133,6 +133,8 @@ export default function Properties() {
     zillow_link: "",
     price: "",
   });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -230,26 +232,111 @@ export default function Properties() {
     enabled: !!userCompany?.company_id,
   });
 
+  // Helper function to apply all filters to a query
+  const applyFiltersToQuery = (query: any) => {
+    // Filter by search query (address search)
+    if (searchQuery.trim() !== "") {
+      query = query.ilike("address", `%${searchQuery}%`);
+    }
+    
+    // Filter by status
+    if (filters.status !== "all") {
+      query = query.eq("status", filters.status);
+    }
+    
+    // Filter by buy box
+    if (filters.buyBoxId !== "all") {
+      query = query.eq("buy_box_id", filters.buyBoxId);
+    }
+    
+    // Filter by workflow state
+    if (filters.workflowState !== "all") {
+      query = query.eq("workflow_state", filters.workflowState);
+    }
+    
+    // Filter by home type
+    if (filters.homeType !== "all") {
+      query = query.eq("home_type", filters.homeType);
+    }
+    
+    // Filter by urgency
+    if (filters.urgency !== "all") {
+      query = query.eq("urgency", parseInt(filters.urgency));
+    }
+    
+    // Filter by assigned user
+    if (filters.assignedTo !== "all") {
+      if (filters.assignedTo === "unassigned") {
+        query = query.is("assigned_to", null);
+      } else {
+        query = query.eq("assigned_to", filters.assignedTo);
+      }
+    }
+    
+    // Filter by price range
+    if (filters.minPrice) {
+      query = query.gte("price", parseFloat(filters.minPrice));
+    }
+    if (filters.maxPrice) {
+      query = query.lte("price", parseFloat(filters.maxPrice));
+    }
+    
+    // Filter by bedroom range
+    if (filters.minBedrooms) {
+      query = query.gte("bedrooms", parseInt(filters.minBedrooms));
+    }
+    if (filters.maxBedrooms) {
+      query = query.lte("bedrooms", parseInt(filters.maxBedrooms));
+    }
+    
+    return query;
+  };
+
+  // Get total count of properties for pagination
+  const { data: totalCount } = useQuery({
+    queryKey: ["properties-count", userCompany?.company_id, filters, searchQuery],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return 0;
+      
+      let query = supabase
+        .from("properties")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", userCompany.company_id);
+      
+      // Apply all filters
+      query = applyFiltersToQuery(query);
+      
+      const { count, error } = await query;
+      
+      if (error) {
+        console.error("Error fetching count:", error);
+        return 0;
+      }
+      
+      return count || 0;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
   const { data: properties, isLoading } = useQuery({
-    queryKey: ["properties", userCompany?.company_id, filters.status],
+    queryKey: ["properties", userCompany?.company_id, filters, searchQuery, currentPage, itemsPerPage],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
       
-      // Build query - exclude "Not Relevant" by default unless explicitly selected
+      const from = (currentPage - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+      
       let query = supabase
         .from("properties")
         .select("*")
         .eq("company_id", userCompany.company_id);
       
-      // Only fetch "Not Relevant" if user specifically selects it
-      if (filters.status === "Not Relevant") {
-        query = query.eq("status", "Not Relevant");
-      } else {
-        // Exclude "Not Relevant" by default
-        query = query.neq("status", "Not Relevant");
-      }
+      // Apply all filters
+      query = applyFiltersToQuery(query);
       
-      const { data, error } = await query.order("created_at", { ascending: false });
+      const { data, error } = await query
+        .order("created_at", { ascending: false })
+        .range(from, to);
       
       if (error) {
         console.error("Error fetching properties:", error);
@@ -260,6 +347,11 @@ export default function Properties() {
     },
     enabled: !!userCompany?.company_id,
   });
+
+  // Reset to page 1 when filters, search query, or items per page change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, searchQuery, itemsPerPage]);
 
   // Fetch activities for selected property
   const { data: propertyActivities } = useQuery({
@@ -324,79 +416,8 @@ export default function Properties() {
     enabled: !!userCompany?.company_id,
   });
 
-  // Filter properties based on selected filters
-  const filteredProperties = properties?.filter((property) => {
-    // Filter by search query (addresses only)
-    if (searchQuery.trim() !== "") {
-      const query = searchQuery.toLowerCase();
-      const address = (property.address || "").toLowerCase();
-      if (!address.includes(query)) {
-        return false;
-      }
-    }
-
-    // Filter by status
-    if (filters.status !== "all" && property.status !== filters.status) {
-      return false;
-    }
-
-    // Filter by buy box (list)
-    if (filters.buyBoxId !== "all" && property.buy_box_id !== filters.buyBoxId) {
-      return false;
-    }
-
-    // Filter by min price
-    if (filters.minPrice && property.price && property.price < parseFloat(filters.minPrice)) {
-      return false;
-    }
-
-    // Filter by max price
-    if (filters.maxPrice && property.price && property.price > parseFloat(filters.maxPrice)) {
-      return false;
-    }
-
-    // Filter by min bedrooms
-    if (filters.minBedrooms && property.bedrooms && property.bedrooms < parseInt(filters.minBedrooms)) {
-      return false;
-    }
-
-    // Filter by max bedrooms
-    if (filters.maxBedrooms && property.bedrooms && property.bedrooms > parseInt(filters.maxBedrooms)) {
-      return false;
-    }
-
-    // Filter by home type
-    if (filters.homeType !== "all" && property.home_type !== filters.homeType) {
-      return false;
-    }
-
-    // Filter by workflow state
-    if (filters.workflowState !== "all" && property.workflow_state !== filters.workflowState) {
-      return false;
-    }
-
-    // Filter by urgency
-    if (filters.urgency !== "all" && property.urgency?.toString() !== filters.urgency) {
-      return false;
-    }
-
-    // Filter by assigned user
-    if (filters.assignedTo !== "all") {
-      if (filters.assignedTo === "unassigned") {
-        // Show only unassigned properties
-        if (property.assigned_to !== null) {
-          return false;
-        }
-      } else {
-        // Show properties assigned to specific user
-        if (property.assigned_to !== filters.assignedTo) {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  });
+  // All filtering is now done at the database level, so we just use properties directly
+  const filteredProperties = properties;
 
   // Sort properties
   const sortedProperties = filteredProperties ? [...filteredProperties].sort((a, b) => {
@@ -2375,6 +2396,125 @@ export default function Properties() {
               </TableBody>
             </Table>
           </CardContent>
+          
+          {/* Pagination Controls */}
+          {sortedProperties && sortedProperties.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Items per page:</span>
+                <Select
+                  value={itemsPerPage.toString()}
+                  onValueChange={(value) => setItemsPerPage(Number(value))}
+                >
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground ml-2 sm:ml-4">
+                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} properties
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  First
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {(() => {
+                    const totalPages = Math.ceil((totalCount || 0) / itemsPerPage);
+                    const pages = [];
+                    const showPages = 5; // Show 5 page numbers at a time
+                    let startPage = Math.max(1, currentPage - Math.floor(showPages / 2));
+                    const endPage = Math.min(totalPages, startPage + showPages - 1);
+                    
+                    if (endPage - startPage < showPages - 1) {
+                      startPage = Math.max(1, endPage - showPages + 1);
+                    }
+                    
+                    if (startPage > 1) {
+                      pages.push(
+                        <Button
+                          key="ellipsis-start"
+                          variant="ghost"
+                          size="sm"
+                          disabled
+                          className="cursor-default"
+                        >
+                          ...
+                        </Button>
+                      );
+                    }
+                    
+                    for (let i = startPage; i <= endPage; i++) {
+                      pages.push(
+                        <Button
+                          key={i}
+                          variant={currentPage === i ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(i)}
+                        >
+                          {i}
+                        </Button>
+                      );
+                    }
+                    
+                    if (endPage < totalPages) {
+                      pages.push(
+                        <Button
+                          key="ellipsis-end"
+                          variant="ghost"
+                          size="sm"
+                          disabled
+                          className="cursor-default"
+                        >
+                          ...
+                        </Button>
+                      );
+                    }
+                    
+                    return pages;
+                  })()}
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil((totalCount || 0) / itemsPerPage), prev + 1))}
+                  disabled={currentPage >= Math.ceil((totalCount || 0) / itemsPerPage)}
+                >
+                  Next
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(Math.ceil((totalCount || 0) / itemsPerPage))}
+                  disabled={currentPage >= Math.ceil((totalCount || 0) / itemsPerPage)}
+                >
+                  Last
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
       )}
 
