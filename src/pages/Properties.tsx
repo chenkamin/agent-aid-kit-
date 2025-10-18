@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -127,6 +127,12 @@ export default function Properties() {
     id: string;
     name: string;
   } | null>(null);
+  const [isAddingComp, setIsAddingComp] = useState(false);
+  const [compForm, setCompForm] = useState({
+    address: "",
+    zillow_link: "",
+    price: "",
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -158,16 +164,68 @@ export default function Properties() {
     enabled: !!user?.id,
   });
 
-  // Fetch team members for assignment
+  // Fetch team members for assignment - JOIN with profiles table
   const { data: teamMembers } = useQuery({
-    queryKey: ["team-members-simple", userCompany?.company_id],
+    queryKey: ["team-members-with-profiles", userCompany?.company_id],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
-      const { data } = await supabase
+      
+      // First get team members
+      const { data: members, error: membersError } = await supabase
         .from("team_members")
-        .select("user_id, profiles(email)")
+        .select("id, user_id, role")
         .eq("company_id", userCompany.company_id);
-      return data || [];
+      
+      if (membersError) {
+        console.error("Error fetching team members:", membersError);
+        return [];
+      }
+
+      if (!members || members.length === 0) {
+        console.log("No team members found");
+        return [];
+      }
+
+      // Then get profiles for each member
+      const userIds = members.map(m => m.user_id);
+      console.log("🔍 Fetching profiles for user IDs:", userIds);
+      
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, email, full_name")
+        .in("id", userIds);
+      
+      if (profilesError) {
+        console.error("❌ Error fetching profiles:", profilesError);
+        return [];
+      }
+
+      console.log("✅ Profiles fetched:", profiles?.length, "out of", userIds.length);
+      profiles?.forEach(p => console.log("  - Profile:", p.email, "(", p.id, ")"));
+
+      // Combine the data
+      const membersWithProfiles = members.map(member => {
+        const profile = profiles?.find(p => p.id === member.user_id);
+        if (!profile) {
+          console.warn("⚠️ No profile found for team member:", member.user_id, "role:", member.role);
+        }
+        return {
+          ...member,
+          profiles: profile
+        };
+      });
+
+      // Sort by role (owner/admin first)
+      membersWithProfiles.sort((a, b) => {
+        if (a.role === "owner") return -1;
+        if (b.role === "owner") return 1;
+        if (a.role === "admin") return -1;
+        if (b.role === "admin") return 1;
+        return 0;
+      });
+      
+      console.log("Team members loaded:", membersWithProfiles.length, membersWithProfiles);
+      return membersWithProfiles;
     },
     enabled: !!userCompany?.company_id,
   });
@@ -323,8 +381,18 @@ export default function Properties() {
     }
 
     // Filter by assigned user
-    if (filters.assignedTo !== "all" && property.assigned_to !== filters.assignedTo) {
-      return false;
+    if (filters.assignedTo !== "all") {
+      if (filters.assignedTo === "unassigned") {
+        // Show only unassigned properties
+        if (property.assigned_to !== null) {
+          return false;
+        }
+      } else {
+        // Show properties assigned to specific user
+        if (property.assigned_to !== filters.assignedTo) {
+          return false;
+        }
+      }
     }
 
     return true;
@@ -1199,6 +1267,101 @@ export default function Properties() {
     }));
   };
 
+  const addCompMutation = useMutation({
+    mutationFn: async (comp: { address: string; zillow_link: string; price: string }) => {
+      if (!selectedProperty?.id) throw new Error("No property selected");
+      
+      // Get existing comps from the property
+      const existingComps = selectedProperty.comps || [];
+      
+      // Add new comp to the array
+      const updatedComps = [...existingComps, { ...comp, id: Date.now().toString() }];
+      
+      const { error } = await supabase
+        .from('properties')
+        .update({ comps: updatedComps })
+        .eq('id', selectedProperty.id);
+      
+      if (error) throw error;
+      return updatedComps;
+    },
+    onSuccess: (updatedComps) => {
+      setSelectedProperty((prev: any) => ({ ...prev, comps: updatedComps }));
+      setEditedProperty((prev: any) => ({ ...prev, comps: updatedComps }));
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
+      toast({
+        title: "Success",
+        description: "Comp added successfully",
+      });
+      setIsAddingComp(false);
+      setCompForm({ address: "", zillow_link: "", price: "" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add comp",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteCompMutation = useMutation({
+    mutationFn: async (compId: string) => {
+      if (!selectedProperty?.id) throw new Error("No property selected");
+      
+      // Get existing comps and filter out the one to delete
+      const existingComps = selectedProperty.comps || [];
+      const updatedComps = existingComps.filter((comp: any) => comp.id !== compId);
+      
+      const { error } = await supabase
+        .from('properties')
+        .update({ comps: updatedComps })
+        .eq('id', selectedProperty.id);
+      
+      if (error) throw error;
+      return updatedComps;
+    },
+    onSuccess: (updatedComps) => {
+      setSelectedProperty((prev: any) => ({ ...prev, comps: updatedComps }));
+      setEditedProperty((prev: any) => ({ ...prev, comps: updatedComps }));
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
+      toast({
+        title: "Success",
+        description: "Comp deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete comp",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAddComp = () => {
+    if (!compForm.address || !compForm.price) {
+      toast({
+        title: "Error",
+        description: "Please enter at least address and price",
+        variant: "destructive",
+      });
+      return;
+    }
+    addCompMutation.mutate(compForm);
+  };
+
+  // Helper function to get team member display name
+  const getTeamMemberDisplayName = (userId: string | null) => {
+    if (!userId) return "Unassigned";
+    const member = teamMembers?.find((m: any) => m.user_id === userId);
+    if (!member) return "Unknown";
+    // Prioritize full_name, fallback to email
+    const displayName = member.profiles?.full_name || member.profiles?.email || "Unknown";
+    const roleText = member.role && member.role !== "member" ? ` (${member.role})` : "";
+    return `${displayName}${roleText}`;
+  };
+
   const getActivityIcon = (type: string) => {
     switch (type) {
       case "call":
@@ -1924,10 +2087,11 @@ export default function Properties() {
                   <SelectValue placeholder="All Team Members" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="all">All Team Members</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {teamMembers?.map((member: any) => (
                     <SelectItem key={member.user_id} value={member.user_id}>
-                      {member.profiles?.email || member.user_id}
+                      {member.profiles?.full_name || member.profiles?.email || "Unknown"} {member.role && member.role !== "member" && `(${member.role})`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -2330,6 +2494,77 @@ export default function Properties() {
                         <SelectItem value="Closed">✅ Closed</SelectItem>
                         <SelectItem value="Not Relevant">❌ Not Relevant</SelectItem>
                         <SelectItem value="Archived">📦 Archived</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Assigned To Dropdown */}
+                  <div className="w-full lg:w-auto lg:min-w-[200px] lg:max-w-[280px]">
+                    <Label htmlFor="assigned-to" className="text-xs md:text-sm font-bold text-blue-900 dark:text-blue-100 mb-2 block">
+                      👤 Assigned To
+                    </Label>
+                    <Select
+                      value={selectedProperty.assigned_to || "unassigned"}
+                      onValueChange={async (value) => {
+                        const propertyId = selectedProperty.id;
+                        const assignedValue = value === "unassigned" ? null : value;
+                        
+                        // OPTIMISTIC UPDATE - Update UI immediately
+                        setSelectedProperty((prev: any) => ({
+                          ...prev,
+                          assigned_to: assignedValue,
+                        }));
+                        
+                        // Update in the properties list cache immediately
+                        queryClient.setQueryData(
+                          ["properties", userCompany?.company_id, filters.status],
+                          (oldData: any) => {
+                            if (!oldData) return oldData;
+                            return oldData.map((prop: any) =>
+                              prop.id === propertyId
+                                ? { ...prop, assigned_to: assignedValue }
+                                : prop
+                            );
+                          }
+                        );
+
+                        // Show immediate feedback
+                        toast({
+                          title: "✅ Assignment updated",
+                          description: assignedValue ? "Property assigned successfully" : "Property unassigned",
+                        });
+
+                        // Now update database in the background
+                        const { error } = await supabase
+                          .from('properties')
+                          .update({ assigned_to: assignedValue })
+                          .eq('id', propertyId);
+                        
+                        if (error) {
+                          toast({
+                            title: "Error",
+                            description: "Failed to update assignment",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+
+                        // Invalidate to sync with server (but UI already updated)
+                        queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
+                      }}
+                    >
+                      <SelectTrigger id="assigned-to" className="bg-white dark:bg-gray-900 border-2 h-11 text-base font-medium">
+                        <SelectValue>
+                          {getTeamMemberDisplayName(selectedProperty.assigned_to)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        {teamMembers?.map((member: any) => (
+                          <SelectItem key={member.user_id} value={member.user_id}>
+                            {member.profiles?.full_name || member.profiles?.email || "Unknown"} {member.role && member.role !== "member" && `(${member.role})`}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -3322,9 +3557,139 @@ export default function Properties() {
 
               {/* Comps Tab */}
               <TabsContent value="comps" className="space-y-4 mt-4">
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Comparable properties feature coming soon</p>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-lg">Comparable Properties</h3>
+                  <Button 
+                    size="sm" 
+                    onClick={() => setIsAddingComp(true)}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Comp
+                  </Button>
                 </div>
+
+                {/* Add Comp Form Dialog */}
+                <Dialog open={isAddingComp} onOpenChange={setIsAddingComp}>
+                  <DialogContent className="w-[95vw] max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="text-lg md:text-xl">Add Comparable Property</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-address">Address *</Label>
+                        <Input
+                          id="comp-address"
+                          value={compForm.address}
+                          onChange={(e) => setCompForm(prev => ({ ...prev, address: e.target.value }))}
+                          placeholder="123 Main St, City, State"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-zillow-link">Zillow Link</Label>
+                        <Input
+                          id="comp-zillow-link"
+                          type="url"
+                          value={compForm.zillow_link}
+                          onChange={(e) => setCompForm(prev => ({ ...prev, zillow_link: e.target.value }))}
+                          placeholder="https://www.zillow.com/..."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-price">Price *</Label>
+                        <Input
+                          id="comp-price"
+                          type="number"
+                          value={compForm.price}
+                          onChange={(e) => setCompForm(prev => ({ ...prev, price: e.target.value }))}
+                          placeholder="150000"
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => {
+                            setIsAddingComp(false);
+                            setCompForm({ address: "", zillow_link: "", price: "" });
+                          }}
+                          className="w-full sm:w-auto text-sm"
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={handleAddComp} 
+                          disabled={addCompMutation.isPending}
+                          className="w-full sm:w-auto text-sm"
+                        >
+                          {addCompMutation.isPending ? "Adding..." : "Add Comp"}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Comps List */}
+                {!selectedProperty?.comps || selectedProperty.comps.length === 0 ? (
+                  <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                    <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground mb-4">No comparable properties added yet</p>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setIsAddingComp(true)}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Your First Comp
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedProperty.comps.map((comp: any, index: number) => (
+                      <Card key={comp.id || index} className="border-l-4 border-l-blue-500">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-start gap-2">
+                                <MapPin className="h-4 w-4 text-muted-foreground mt-1 flex-shrink-0" />
+                                <div>
+                                  <p className="font-semibold text-sm">{comp.address}</p>
+                                  {comp.zillow_link && (
+                                    <a
+                                      href={comp.zillow_link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 mt-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      View on Zillow
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                                <span className="font-semibold text-green-600 dark:text-green-400">
+                                  ${parseFloat(comp.price).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteCompMutation.mutate(comp.id)}
+                              disabled={deleteCompMutation.isPending}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
             </>

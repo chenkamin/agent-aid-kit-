@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, UserCog } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, UserCog, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
@@ -126,6 +127,10 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer">
+                <Settings className="mr-2 h-4 w-4" />
+                <span>Settings</span>
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer">
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Sign out</span>
