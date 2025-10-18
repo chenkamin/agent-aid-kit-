@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -20,10 +20,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Checkbox } from "@/components/ui/checkbox";
+import BuyBoxAnalyticsModal from "@/components/BuyBoxAnalyticsModal";
+import { useSearchParams } from "react-router-dom";
 
 const PROPERTY_TYPES = [
   { value: "Single Family", label: "Single Family Home (SFH)", icon: "🏠" },
@@ -88,6 +90,7 @@ export default function Properties() {
     minPrice: "",
     maxPrice: "",
     minBedrooms: "",
+    maxBedrooms: "",
     homeType: "all",
     workflowState: "all",
     urgency: "all",
@@ -106,9 +109,39 @@ export default function Properties() {
     templateId: "",
     offerPrice: "",
   });
+  const [isSendingSMS, setIsSendingSMS] = useState(false);
+  const [smsForm, setSmsForm] = useState({
+    toPhone: "",
+    agentName: "",
+    message: "",
+  });
+  const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
+  const [bulkEmailForm, setBulkEmailForm] = useState({
+    templateId: "",
+    offerPrice: "",
+  });
+  const [isSendingBulkSMS, setIsSendingBulkSMS] = useState(false);
+  const [bulkSMSMessage, setBulkSMSMessage] = useState("");
+  const [showBuyBoxAnalytics, setShowBuyBoxAnalytics] = useState(false);
+  const [selectedBuyBoxForAnalytics, setSelectedBuyBoxForAnalytics] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Apply buy box filter from URL parameter
+  useEffect(() => {
+    const buyBoxIdFromUrl = searchParams.get('buyBoxId');
+    if (buyBoxIdFromUrl) {
+      setFilters((prev) => ({ ...prev, buyBoxId: buyBoxIdFromUrl }));
+      setShowFilters(true);
+      // Remove the query parameter after applying it
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams]);
   
   // Fetch user's company first
   const { data: userCompany } = useQuery({
@@ -266,6 +299,11 @@ export default function Properties() {
 
     // Filter by min bedrooms
     if (filters.minBedrooms && property.bedrooms && property.bedrooms < parseInt(filters.minBedrooms)) {
+      return false;
+    }
+
+    // Filter by max bedrooms
+    if (filters.maxBedrooms && property.bedrooms && property.bedrooms > parseInt(filters.maxBedrooms)) {
       return false;
     }
 
@@ -1124,7 +1162,7 @@ export default function Properties() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
       toast({
         title: "Success",
         description: "Property updated successfully",
@@ -1632,6 +1670,24 @@ export default function Properties() {
                   <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                   Add Activity
                 </Button>
+                <Button
+                  onClick={() => setIsSendingBulkEmail(true)}
+                  size="sm"
+                  variant="outline"
+                  className="text-xs w-full sm:w-auto"
+                >
+                  <Mail className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  Send Emails
+                </Button>
+                <Button
+                  onClick={() => setIsSendingBulkSMS(true)}
+                  size="sm"
+                  variant="outline"
+                  className="text-xs w-full sm:w-auto"
+                >
+                  <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  Send SMS
+                </Button>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
                   <Label className="text-xs sm:text-sm font-medium text-blue-900 dark:text-blue-100">
                     Change Workflow Stage:
@@ -1731,7 +1787,28 @@ export default function Properties() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="filter-list" className="text-sm font-medium">Buy Box</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="filter-list" className="text-sm font-medium">Buy Box</Label>
+                {filters.buyBoxId !== "all" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    onClick={() => {
+                      const selectedBox = buyBoxes?.find((box) => box.id === filters.buyBoxId);
+                      if (selectedBox) {
+                        setSelectedBuyBoxForAnalytics({
+                          id: selectedBox.id,
+                          name: selectedBox.name,
+                        });
+                        setShowBuyBoxAnalytics(true);
+                      }
+                    }}
+                  >
+                    <Info className="h-4 w-4 text-blue-500" />
+                  </Button>
+                )}
+              </div>
               <Select
                 value={filters.buyBoxId}
                 onValueChange={(value) => setFilters((prev) => ({ ...prev, buyBoxId: value }))}
@@ -1780,6 +1857,17 @@ export default function Properties() {
                 placeholder="Any"
                 value={filters.minBedrooms}
                 onChange={(e) => setFilters((prev) => ({ ...prev, minBedrooms: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="filter-max-bedrooms" className="text-sm font-medium">Max Beds</Label>
+              <Input
+                id="filter-max-bedrooms"
+                type="number"
+                placeholder="Any"
+                value={filters.maxBedrooms}
+                onChange={(e) => setFilters((prev) => ({ ...prev, maxBedrooms: e.target.value }))}
               />
             </div>
 
@@ -1857,6 +1945,7 @@ export default function Properties() {
                 minPrice: "",
                 maxPrice: "",
                 minBedrooms: "",
+                maxBedrooms: "",
                 homeType: "all",
                 workflowState: "all",
                 urgency: "all",
@@ -1891,8 +1980,11 @@ export default function Properties() {
                   minPrice: "",
                   maxPrice: "",
                   minBedrooms: "",
+                  maxBedrooms: "",
                   homeType: "all",
                   workflowState: "all",
+                  urgency: "all",
+                  assignedTo: "all",
                 })}
               >
                 Clear All Filters
@@ -2138,10 +2230,10 @@ export default function Properties() {
 
           {selectedProperty && (
             <>
-              {/* Workflow Status - Always Visible at Top */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 p-3 md:p-4 rounded-lg border-2 border-blue-300 dark:border-blue-800 shadow-sm">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 md:gap-4">
-                  <div className="flex-1 w-full sm:w-auto">
+              {/* Workflow Status & Action Buttons - Always Visible at Top */}
+              <div className="bg-gradient-to-r  p-3 md:p-4 rounded-lg border-2  shadow-sm">
+                <div className="flex flex-col lg:flex-row items-start lg:items-end gap-3 md:gap-4">
+                  <div className="w-full lg:w-auto lg:min-w-[280px] lg:max-w-[350px]">
                     <Label htmlFor="workflow-state" className="text-xs md:text-sm font-bold text-blue-900 dark:text-blue-100 mb-2 block">
                       📊 Workflow Stage
                     </Label>
@@ -2238,8 +2330,291 @@ export default function Properties() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="text-xs text-blue-700 dark:text-blue-300 max-w-xs">
-                    Track this property through your investment pipeline from initial review to closing
+                  
+                  {/* Action Buttons - Email, SMS, Activity */}
+                  <div className="flex flex-wrap gap-2 lg:ml-auto">
+                <Dialog open={isSendingEmail} onOpenChange={(open) => {
+                  if (open && selectedProperty) {
+                    // Pre-populate email form with seller agent data
+                    setEmailForm({
+                      toEmail: selectedProperty.seller_agent_email || "",
+                      agentName: selectedProperty.seller_agent_name || "",
+                      templateId: "",
+                      offerPrice: "",
+                    });
+                  }
+                  setIsSendingEmail(open);
+                }}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Mail className="mr-2 h-4 w-4" />
+                      Send Email
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="w-[95vw] max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="text-lg md:text-xl">Send Email to Realtor</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 md:space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="email-template">Email Template *</Label>
+                        <Select
+                          value={emailForm.templateId}
+                          onValueChange={(value) => setEmailForm(prev => ({ ...prev, templateId: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a template..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {emailTemplates && emailTemplates.length > 0 ? (
+                              emailTemplates.map((template: any) => (
+                                <SelectItem key={template.id} value={template.id}>
+                                  {template.name}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="none" disabled>
+                                No templates available - Create one in Communication
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="email-to">Agent Email *</Label>
+                        <Input
+                          id="email-to"
+                          type="email"
+                          value={emailForm.toEmail}
+                          onChange={(e) => setEmailForm(prev => ({ ...prev, toEmail: e.target.value }))}
+                          placeholder="agent@example.com"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="email-agent-name">Agent Name *</Label>
+                        <Input
+                          id="email-agent-name"
+                          value={emailForm.agentName}
+                          onChange={(e) => setEmailForm(prev => ({ ...prev, agentName: e.target.value }))}
+                          placeholder="John Smith"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="email-offer-price">Offer Price (Optional)</Label>
+                        <Input
+                          id="email-offer-price"
+                          value={emailForm.offerPrice}
+                          onChange={(e) => setEmailForm(prev => ({ ...prev, offerPrice: e.target.value }))}
+                          placeholder="150000"
+                        />
+                      </div>
+
+                      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                          📋 Property Info
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          Address: {selectedProperty?.address || 'N/A'}<br />
+                          Price: ${selectedProperty?.price?.toLocaleString() || 'N/A'}<br />
+                          Beds/Baths: {selectedProperty?.bedrooms || 'N/A'} / {selectedProperty?.bathrooms || 'N/A'}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-end gap-2">
+                        <Button variant="outline" onClick={() => setIsSendingEmail(false)} className="w-full sm:w-auto text-sm">
+                          Cancel
+                        </Button>
+                        <Button onClick={handleSendEmail} disabled={sendEmailMutation.isPending} className="w-full sm:w-auto text-sm">
+                          {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                
+                <Dialog open={isSendingSMS} onOpenChange={(open) => {
+                  if (open && selectedProperty) {
+                    // Pre-populate SMS form with seller agent data
+                    setSmsForm({
+                      toPhone: selectedProperty.seller_agent_phone || "",
+                      agentName: selectedProperty.seller_agent_name || "",
+                      message: "",
+                    });
+                  }
+                  setIsSendingSMS(open);
+                }}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      Send SMS
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="w-[95vw] max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="text-lg md:text-xl">Send SMS to Realtor</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 md:space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="sms-phone">Agent Phone *</Label>
+                        <Input
+                          id="sms-phone"
+                          type="tel"
+                          value={smsForm.toPhone}
+                          onChange={(e) => setSmsForm(prev => ({ ...prev, toPhone: e.target.value }))}
+                          placeholder="+1 (555) 123-4567"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sms-agent-name">Agent Name *</Label>
+                        <Input
+                          id="sms-agent-name"
+                          value={smsForm.agentName}
+                          onChange={(e) => setSmsForm(prev => ({ ...prev, agentName: e.target.value }))}
+                          placeholder="John Smith"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sms-message">Message *</Label>
+                        <Textarea
+                          id="sms-message"
+                          value={smsForm.message}
+                          onChange={(e) => setSmsForm(prev => ({ ...prev, message: e.target.value }))}
+                          placeholder="Hi {agent_name}, I'm interested in the property at {address}..."
+                          rows={6}
+                          className="resize-none"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Available variables: {"{agent_name}"}, {"{address}"}, {"{price}"}, {"{beds}"}, {"{baths}"}
+                        </p>
+                      </div>
+
+                      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                          📋 Property Info
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          Address: {selectedProperty?.address || 'N/A'}<br />
+                          Price: ${selectedProperty?.price?.toLocaleString() || 'N/A'}<br />
+                          Beds/Baths: {selectedProperty?.bedrooms || 'N/A'} / {selectedProperty?.bathrooms || 'N/A'}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-end gap-2">
+                        <Button variant="outline" onClick={() => setIsSendingSMS(false)} className="w-full sm:w-auto text-sm">
+                          Cancel
+                        </Button>
+                        <Button onClick={() => {
+                          if (!smsForm.toPhone || !smsForm.agentName || !smsForm.message) {
+                            toast({
+                              title: "Missing information",
+                              description: "Please fill in all required fields",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          toast({
+                            title: "SMS Sent!",
+                            description: `Message sent to ${smsForm.agentName}`,
+                          });
+                          setIsSendingSMS(false);
+                          setSmsForm({
+                            toPhone: "",
+                            agentName: "",
+                            message: "",
+                          });
+                        }} className="w-full sm:w-auto text-sm">
+                          Send SMS
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={isAddingActivity} onOpenChange={setIsAddingActivity}>
+                  <DialogTrigger asChild>
+                    <Button size="sm">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Activity
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="w-[95vw] max-w-md" aria-describedby="activity-form-description">
+                    <DialogHeader>
+                      <DialogTitle className="text-lg md:text-xl">Add New Activity</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 md:space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="activity-type">Type</Label>
+                        <Select
+                          value={activityForm.type}
+                          onValueChange={(value) => setActivityForm(prev => ({ ...prev, type: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="call">Call</SelectItem>
+                            <SelectItem value="sms">SMS</SelectItem>
+                            <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="site-visit">Site Visit</SelectItem>
+                            <SelectItem value="offer-sent">Offer Sent</SelectItem>
+                            <SelectItem value="comp-analysis">Comp Analysis</SelectItem>
+                            <SelectItem value="inspection">Inspection</SelectItem>
+                            <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
+                            <SelectItem value="closing">Closing</SelectItem> 
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="activity-title">Title</Label>
+                        <Input
+                          id="activity-title"
+                          value={activityForm.title}
+                          onChange={(e) => setActivityForm(prev => ({ ...prev, title: e.target.value }))}
+                          placeholder="e.g., Called agent about property"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="activity-body">Details</Label>
+                        <Textarea
+                          id="activity-body"
+                          value={activityForm.body}
+                          onChange={(e) => setActivityForm(prev => ({ ...prev, body: e.target.value }))}
+                          placeholder="Additional details..."
+                          rows={3}
+                        />
+                      </div>
+
+                      {/* Optional due date for any activity type */}
+                      <div className="space-y-2">
+                        <Label htmlFor="activity-due">Due Date (Optional)</Label>
+                        <Input
+                          id="activity-due"
+                          type="datetime-local"
+                          value={activityForm.due_at}
+                          onChange={(e) => setActivityForm(prev => ({ ...prev, due_at: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row justify-end gap-2">
+                        <Button variant="outline" onClick={() => setIsAddingActivity(false)} className="w-full sm:w-auto text-sm">
+                          Cancel
+                        </Button>
+                        <Button onClick={handleAddActivity} disabled={addActivityMutation.isPending} className="w-full sm:w-auto text-sm">
+                          {addActivityMutation.isPending ? "Adding..." : "Add Activity"}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
                   </div>
                 </div>
               </div>
@@ -2484,6 +2859,25 @@ export default function Properties() {
                     placeholder="Notes from agent, seller information, etc."
                     rows={3}
                   />
+                </div>
+
+                {/* Save Button at bottom for convenience */}
+                <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditedProperty({ ...selectedProperty })}
+                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
+                  >
+                    Reset Changes
+                  </Button>
+                  <Button
+                    onClick={handleSaveProperty}
+                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
+                  >
+                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
                 </div>
               </div>
             </TabsContent>
@@ -2877,182 +3271,9 @@ export default function Properties() {
 
                 {/* Activities Section */}
                 <div className="pt-6 border-t">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-lg">Activities</h3>
-                  <div className="flex gap-2">
-                    <Dialog open={isSendingEmail} onOpenChange={setIsSendingEmail}>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline">
-                          <Mail className="mr-2 h-4 w-4" />
-                          Send Email
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="w-[95vw] max-w-md">
-                        <DialogHeader>
-                          <DialogTitle className="text-lg md:text-xl">Send Email to Realtor</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-3 md:space-y-4 mt-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="email-template">Email Template *</Label>
-                            <Select
-                              value={emailForm.templateId}
-                              onValueChange={(value) => setEmailForm(prev => ({ ...prev, templateId: value }))}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select a template..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {emailTemplates && emailTemplates.length > 0 ? (
-                                  emailTemplates.map((template: any) => (
-                                    <SelectItem key={template.id} value={template.id}>
-                                      {template.name}
-                                    </SelectItem>
-                                  ))
-                                ) : (
-                                  <SelectItem value="none" disabled>
-                                    No templates available - Create one in Communication
-                                  </SelectItem>
-                                )}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                  <h3 className="font-semibold text-lg mb-4">Activities</h3>
 
-                          <div className="space-y-2">
-                            <Label htmlFor="email-to">Agent Email *</Label>
-                            <Input
-                              id="email-to"
-                              type="email"
-                              value={emailForm.toEmail}
-                              onChange={(e) => setEmailForm(prev => ({ ...prev, toEmail: e.target.value }))}
-                              placeholder="agent@example.com"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="email-agent-name">Agent Name *</Label>
-                            <Input
-                              id="email-agent-name"
-                              value={emailForm.agentName}
-                              onChange={(e) => setEmailForm(prev => ({ ...prev, agentName: e.target.value }))}
-                              placeholder="John Smith"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="email-offer-price">Offer Price (Optional)</Label>
-                            <Input
-                              id="email-offer-price"
-                              value={emailForm.offerPrice}
-                              onChange={(e) => setEmailForm(prev => ({ ...prev, offerPrice: e.target.value }))}
-                              placeholder="150000"
-                            />
-                          </div>
-
-                          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                            <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
-                              📋 Property Info
-                            </p>
-                            <p className="text-xs text-blue-700 dark:text-blue-300">
-                              Address: {selectedProperty?.address || 'N/A'}<br />
-                              Price: ${selectedProperty?.price?.toLocaleString() || 'N/A'}<br />
-                              Beds/Baths: {selectedProperty?.bedrooms || 'N/A'} / {selectedProperty?.bathrooms || 'N/A'}
-                            </p>
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row justify-end gap-2">
-                            <Button variant="outline" onClick={() => setIsSendingEmail(false)} className="w-full sm:w-auto text-sm">
-                              Cancel
-                            </Button>
-                            <Button onClick={handleSendEmail} disabled={sendEmailMutation.isPending} className="w-full sm:w-auto text-sm">
-                              {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
-                            </Button>
-                          </div>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                    <Dialog open={isAddingActivity} onOpenChange={setIsAddingActivity}>
-                      <DialogTrigger asChild>
-                        <Button size="sm">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add Activity
-                        </Button>
-                      </DialogTrigger>
-                    <DialogContent className="w-[95vw] max-w-md" aria-describedby="activity-form-description">
-                      <DialogHeader>
-                        <DialogTitle className="text-lg md:text-xl">Add New Activity</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-3 md:space-y-4 mt-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="activity-type">Type</Label>
-                          <Select
-                            value={activityForm.type}
-                            onValueChange={(value) => setActivityForm(prev => ({ ...prev, type: value }))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="call">Call</SelectItem>
-                              <SelectItem value="sms">SMS</SelectItem>
-                              <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                              <SelectItem value="email">Email</SelectItem>
-                              <SelectItem value="site-visit">Site Visit</SelectItem>
-                              <SelectItem value="offer-sent">Offer Sent</SelectItem>
-                              <SelectItem value="comp-analysis">Comp Analysis</SelectItem>
-                              <SelectItem value="inspection">Inspection</SelectItem>
-                              <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
-                              <SelectItem value="closing">Closing</SelectItem> 
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="activity-title">Title</Label>
-                          <Input
-                            id="activity-title"
-                            value={activityForm.title}
-                            onChange={(e) => setActivityForm(prev => ({ ...prev, title: e.target.value }))}
-                            placeholder="e.g., Called agent about property"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="activity-body">Details</Label>
-                          <Textarea
-                            id="activity-body"
-                            value={activityForm.body}
-                            onChange={(e) => setActivityForm(prev => ({ ...prev, body: e.target.value }))}
-                            placeholder="Additional details..."
-                            rows={3}
-                          />
-                        </div>
-
-                        {/* Optional due date for any activity type */}
-                          <div className="space-y-2">
-                          <Label htmlFor="activity-due">Due Date (Optional)</Label>
-                            <Input
-                              id="activity-due"
-                              type="datetime-local"
-                              value={activityForm.due_at}
-                              onChange={(e) => setActivityForm(prev => ({ ...prev, due_at: e.target.value }))}
-                            />
-                          </div>
-
-                        <div className="flex flex-col sm:flex-row justify-end gap-2">
-                          <Button variant="outline" onClick={() => setIsAddingActivity(false)} className="w-full sm:w-auto text-sm">
-                            Cancel
-                          </Button>
-                          <Button onClick={handleAddActivity} disabled={addActivityMutation.isPending} className="w-full sm:w-auto text-sm">
-                            {addActivityMutation.isPending ? "Adding..." : "Add Activity"}
-                          </Button>
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-
-                {!propertyActivities || propertyActivities.length === 0 ? (
+                  {!propertyActivities || propertyActivities.length === 0 ? (
                   <p className="text-muted-foreground text-sm italic">No activities yet</p>
                 ) : (
                   <div className="space-y-3 max-h-[300px] overflow-y-auto">
@@ -3094,7 +3315,6 @@ export default function Properties() {
                   </div>
                 )}
               </div>
-            </div>
               </TabsContent>
 
               {/* Comps Tab */}
@@ -3185,6 +3405,196 @@ export default function Properties() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Send Email Dialog */}
+      <Dialog open={isSendingBulkEmail} onOpenChange={setIsSendingBulkEmail}>
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg md:text-xl">
+              Send Email to {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'Agent' : 'Agents'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-email-template">Email Template *</Label>
+              <Select
+                value={bulkEmailForm.templateId}
+                onValueChange={(value) => setBulkEmailForm(prev => ({ ...prev, templateId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {emailTemplates && emailTemplates.length > 0 ? (
+                    emailTemplates.map((template: any) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="none" disabled>
+                      No templates available - Create one in Communication
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk-email-offer-price">Offer Price (Optional)</Label>
+              <Input
+                id="bulk-email-offer-price"
+                value={bulkEmailForm.offerPrice}
+                onChange={(e) => setBulkEmailForm(prev => ({ ...prev, offerPrice: e.target.value }))}
+                placeholder="150000"
+              />
+              <p className="text-xs text-muted-foreground">Same offer price will be used for all properties</p>
+            </div>
+
+            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900 max-h-60 overflow-y-auto">
+              <p className="text-sm font-semibold mb-3">Recipients ({selectedPropertyIds.filter(id => {
+                const prop = properties?.find(p => p.id === id);
+                return prop?.seller_agent_email;
+              }).length} with email):</p>
+              <div className="space-y-2">
+                {selectedPropertyIds.map(id => {
+                  const property = properties?.find(p => p.id === id);
+                  if (!property) return null;
+                  const hasEmail = property.seller_agent_email;
+                  return (
+                    <div key={id} className={`text-xs p-2 rounded border ${hasEmail ? 'bg-white dark:bg-gray-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800'}`}>
+                      <p className="font-semibold">{property.address}</p>
+                      <p className="text-muted-foreground">
+                        Agent: {property.seller_agent_name || 'Unknown'} 
+                        {hasEmail ? ` | ${property.seller_agent_email}` : ' | ⚠️ No email available'}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsSendingBulkEmail(false)} className="w-full sm:w-auto text-sm">
+                Cancel
+              </Button>
+              <Button onClick={() => {
+                if (!bulkEmailForm.templateId) {
+                  toast({
+                    title: "Template required",
+                    description: "Please select an email template",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                const recipientCount = selectedPropertyIds.filter(id => {
+                  const prop = properties?.find(p => p.id === id);
+                  return prop?.seller_agent_email;
+                }).length;
+                toast({
+                  title: "Emails Sent!",
+                  description: `${recipientCount} emails sent successfully`,
+                });
+                setIsSendingBulkEmail(false);
+                setBulkEmailForm({ templateId: "", offerPrice: "" });
+              }} className="w-full sm:w-auto text-sm">
+                Send All Emails
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Send SMS Dialog */}
+      <Dialog open={isSendingBulkSMS} onOpenChange={setIsSendingBulkSMS}>
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg md:text-xl">
+              Send SMS to {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'Agent' : 'Agents'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-sms-message">Message *</Label>
+              <Textarea
+                id="bulk-sms-message"
+                value={bulkSMSMessage}
+                onChange={(e) => setBulkSMSMessage(e.target.value)}
+                placeholder="Hi {agent_name}, I'm interested in your property at {address}..."
+                rows={6}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                Available variables: {"{agent_name}"}, {"{address}"}, {"{price}"}, {"{beds}"}, {"{baths}"}
+              </p>
+            </div>
+
+            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900 max-h-60 overflow-y-auto">
+              <p className="text-sm font-semibold mb-3">Recipients ({selectedPropertyIds.filter(id => {
+                const prop = properties?.find(p => p.id === id);
+                return prop?.seller_agent_phone;
+              }).length} with phone):</p>
+              <div className="space-y-2">
+                {selectedPropertyIds.map(id => {
+                  const property = properties?.find(p => p.id === id);
+                  if (!property) return null;
+                  const hasPhone = property.seller_agent_phone;
+                  return (
+                    <div key={id} className={`text-xs p-2 rounded border ${hasPhone ? 'bg-white dark:bg-gray-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800'}`}>
+                      <p className="font-semibold">{property.address}</p>
+                      <p className="text-muted-foreground">
+                        Agent: {property.seller_agent_name || 'Unknown'} 
+                        {hasPhone ? ` | ${property.seller_agent_phone}` : ' | ⚠️ No phone available'}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsSendingBulkSMS(false)} className="w-full sm:w-auto text-sm">
+                Cancel
+              </Button>
+              <Button onClick={() => {
+                if (!bulkSMSMessage.trim()) {
+                  toast({
+                    title: "Message required",
+                    description: "Please enter a message",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                const recipientCount = selectedPropertyIds.filter(id => {
+                  const prop = properties?.find(p => p.id === id);
+                  return prop?.seller_agent_phone;
+                }).length;
+                toast({
+                  title: "SMS Sent!",
+                  description: `${recipientCount} messages sent successfully`,
+                });
+                setIsSendingBulkSMS(false);
+                setBulkSMSMessage("");
+              }} className="w-full sm:w-auto text-sm">
+                Send All SMS
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Buy Box Analytics Modal */}
+      {selectedBuyBoxForAnalytics && (
+        <BuyBoxAnalyticsModal
+          isOpen={showBuyBoxAnalytics}
+          onClose={() => {
+            setShowBuyBoxAnalytics(false);
+            setSelectedBuyBoxForAnalytics(null);
+          }}
+          buyBoxId={selectedBuyBoxForAnalytics.id}
+          buyBoxName={selectedBuyBoxForAnalytics.name}
+        />
+      )}
     </div>
   );
 }

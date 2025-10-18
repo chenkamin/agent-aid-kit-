@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, List, Loader2, Trash2, Play, ArrowUpDown, ArrowUp, ArrowDown, Sparkles, Edit } from "lucide-react";
+import { Plus, List, Loader2, Trash2, Play, ArrowUpDown, ArrowUp, ArrowDown, Sparkles, Edit, BarChart, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import BuyBoxAnalyticsModal from "@/components/BuyBoxAnalyticsModal";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
+import { Link } from "react-router-dom";
 
 const PROPERTY_TYPES = [
   { value: "Single Family", label: "SFH", icon: "🏠" },
@@ -67,6 +69,11 @@ export default function Lists() {
   const [sortConfig, setSortConfig] = useState<{
     key: string;
     direction: 'asc' | 'desc';
+  } | null>(null);
+  const [showBuyBoxAnalytics, setShowBuyBoxAnalytics] = useState(false);
+  const [selectedBuyBoxForAnalytics, setSelectedBuyBoxForAnalytics] = useState<{
+    id: string;
+    name: string;
   } | null>(null);
   
   const { data: lists, isLoading } = useQuery({
@@ -510,7 +517,6 @@ export default function Lists() {
                       {getSortIcon('price_max')}
                     </Button>
                   </TableHead>
-                  <TableHead>Days on Zillow</TableHead>
                   <TableHead>Listing Types</TableHead>
                   <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('created_at')} className="font-semibold p-0 h-auto hover:bg-transparent">
@@ -548,13 +554,6 @@ export default function Lists() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {list.days_on_zillow ? (
-                        <Badge variant="outline">{list.days_on_zillow} days</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
                       <div className="flex items-center gap-1 flex-wrap">
                         {list.for_sale_by_agent && (
                           <Badge variant="outline" className="text-xs">Agent</Badge>
@@ -572,6 +571,27 @@ export default function Lists() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <Link to={`/properties?buyBoxId=${list.id}`}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                          >
+                            <Filter className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedBuyBoxForAnalytics({
+                              id: list.id,
+                              name: list.name,
+                            });
+                            setShowBuyBoxAnalytics(true);
+                          }}
+                        >
+                          <BarChart className="h-4 w-4" />
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
@@ -989,6 +1009,19 @@ export default function Lists() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Buy Box Analytics Modal */}
+      {selectedBuyBoxForAnalytics && (
+        <BuyBoxAnalyticsModal
+          isOpen={showBuyBoxAnalytics}
+          onClose={() => {
+            setShowBuyBoxAnalytics(false);
+            setSelectedBuyBoxForAnalytics(null);
+          }}
+          buyBoxId={selectedBuyBoxForAnalytics.id}
+          buyBoxName={selectedBuyBoxForAnalytics.name}
+        />
+      )}
     </div>
   );
 }
