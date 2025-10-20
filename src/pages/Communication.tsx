@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Mail, MessageSquare, Plus, Trash2, Edit, Sparkles, Loader2, Save } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface EmailTemplate {
   id: string;
@@ -34,9 +35,9 @@ interface CommunicationSettings {
   email_port?: string;
   email_username?: string;
   email_password?: string;
+  sms_provider?: 'openphone' | 'twilio' | '';
   sms_api_key?: string;
-  sms_api_secret?: string;
-  sms_from_number?: string;
+  sms_phone_number?: string;
 }
 
 export default function Communication() {
@@ -47,6 +48,7 @@ export default function Communication() {
   const [isCreatingEmailTemplate, setIsCreatingEmailTemplate] = useState(false);
   const [isCreatingSMSTemplate, setIsCreatingSMSTemplate] = useState(false);
   const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [isSendingSMS, setIsSendingSMS] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
   const [generatingFor, setGeneratingFor] = useState<"email" | "sms" | null>(null);
@@ -63,14 +65,20 @@ export default function Communication() {
     body: "",
   });
 
+  const [sendSMSForm, setSendSMSForm] = useState({
+    recipientName: "",
+    phoneNumber: "",
+    message: "",
+  });
+
   const [settingsForm, setSettingsForm] = useState<CommunicationSettings>({
     email_host: "",
     email_port: "",
     email_username: "",
     email_password: "",
+    sms_provider: "",
     sms_api_key: "",
-    sms_api_secret: "",
-    sms_from_number: "",
+    sms_phone_number: "",
   });
 
   // Fetch user's company
@@ -119,7 +127,7 @@ export default function Communication() {
     enabled: !!user?.id,
   });
 
-  // Fetch communication settings
+  // Fetch email communication settings
   const { data: settings } = useQuery({
     queryKey: ["communication_settings", user?.id],
     queryFn: async () => {
@@ -134,12 +142,36 @@ export default function Communication() {
     enabled: !!user?.id,
   });
 
-  // Load settings into form when data is fetched
-  useState(() => {
-    if (settings) {
-      setSettingsForm(settings);
-    }
+  // Fetch SMS settings from company
+  const { data: companyData } = useQuery({
+    queryKey: ["company", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return null;
+      const { data, error } = await supabase
+        .from("companies")
+        .select("sms_provider, sms_api_key, sms_phone_number")
+        .eq("id", userCompany.company_id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!userCompany?.company_id,
   });
+
+  // Load settings into form when data is fetched
+  useEffect(() => {
+    if (settings || companyData) {
+      setSettingsForm({
+        email_host: settings?.email_host || "",
+        email_port: settings?.email_port || "",
+        email_username: settings?.email_username || "",
+        email_password: settings?.email_password || "",
+        sms_provider: companyData?.sms_provider || "",
+        sms_api_key: companyData?.sms_api_key || "",
+        sms_phone_number: companyData?.sms_phone_number || "",
+      });
+    }
+  }, [settings, companyData]);
 
   // Create or Update email template mutation
   const saveEmailTemplateMutation = useMutation({
@@ -226,19 +258,67 @@ export default function Communication() {
     },
   });
 
+  // Send SMS mutation
+  const sendSMSMutation = useMutation({
+    mutationFn: async (data: { to: string; message: string }) => {
+      const { data: result, error } = await supabase.functions.invoke('send-sms', {
+        body: {
+          type: 'single',
+          to: data.to,
+          message: data.message
+        }
+      });
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: (data) => {
+      setIsSendingSMS(false);
+      setSendSMSForm({ recipientName: "", phoneNumber: "", message: "" });
+      toast({ 
+        title: "SMS sent successfully!", 
+        description: `Your message was delivered to ${sendSMSForm.recipientName || sendSMSForm.phoneNumber}.`
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to send SMS", 
+        description: error.message || "An error occurred while sending the SMS",
+        variant: "destructive" 
+      });
+    },
+  });
+
   // Save communication settings mutation
   const saveSettingsMutation = useMutation({
     mutationFn: async (data: CommunicationSettings) => {
-      const { error } = await supabase
+      if (!userCompany?.company_id) throw new Error("No company found");
+      
+      // Save email settings to communication_settings
+      const { error: emailError } = await supabase
         .from("communication_settings")
         .upsert({
           user_id: user?.id,
-          ...data,
+          email_host: data.email_host,
+          email_port: data.email_port,
+          email_username: data.email_username,
+          email_password: data.email_password,
         }, { onConflict: "user_id" });
-      if (error) throw error;
+      if (emailError) throw emailError;
+
+      // Save SMS settings to companies table
+      const { error: smsError } = await supabase
+        .from("companies")
+        .update({
+          sms_provider: data.sms_provider || null,
+          sms_api_key: data.sms_api_key || null,
+          sms_phone_number: data.sms_phone_number || null,
+        })
+        .eq("id", userCompany.company_id);
+      if (smsError) throw smsError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["communication_settings", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["company", userCompany?.company_id] });
       setIsEditingSettings(false);
       toast({ title: "Settings saved", description: "Your communication settings have been updated." });
     },
@@ -325,10 +405,16 @@ export default function Communication() {
             Manage your email and SMS communication templates
           </p>
         </div>
-        <Button onClick={() => setIsEditingSettings(true)} variant="outline">
-          <Save className="h-4 w-4 mr-2" />
-          Connection Settings
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsSendingSMS(true)} variant="default">
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Send SMS
+          </Button>
+          <Button onClick={() => setIsEditingSettings(true)} variant="outline">
+            <Save className="h-4 w-4 mr-2" />
+            Connection Settings
+          </Button>
+        </div>
       </div>
 
       {/* AI Template Generator */}
@@ -784,6 +870,103 @@ export default function Communication() {
         </DialogContent>
       </Dialog>
 
+      {/* Send SMS Dialog */}
+      <Dialog open={isSendingSMS} onOpenChange={setIsSendingSMS}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send SMS</DialogTitle>
+            <DialogDescription>
+              Send a text message to a recipient
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="recipient-name">Recipient Name (Optional)</Label>
+              <Input
+                id="recipient-name"
+                value={sendSMSForm.recipientName}
+                onChange={(e) =>
+                  setSendSMSForm({ ...sendSMSForm, recipientName: e.target.value })
+                }
+                placeholder="John Doe"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                For your reference only
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="phone-number">Phone Number *</Label>
+              <Input
+                id="phone-number"
+                value={sendSMSForm.phoneNumber}
+                onChange={(e) =>
+                  setSendSMSForm({ ...sendSMSForm, phoneNumber: e.target.value })
+                }
+                placeholder="+12345678900"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Include country code (e.g., +1 for US)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="message">Message *</Label>
+              <Textarea
+                id="message"
+                value={sendSMSForm.message}
+                onChange={(e) =>
+                  setSendSMSForm({ ...sendSMSForm, message: e.target.value })
+                }
+                placeholder="Your message here..."
+                className="min-h-[120px]"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {sendSMSForm.message.length} characters
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end mt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsSendingSMS(false);
+                setSendSMSForm({ recipientName: "", phoneNumber: "", message: "" });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!sendSMSForm.phoneNumber || !sendSMSForm.message) {
+                  toast({
+                    title: "Missing information",
+                    description: "Please enter a phone number and message",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+                sendSMSMutation.mutate({
+                  to: sendSMSForm.phoneNumber,
+                  message: sendSMSForm.message
+                });
+              }}
+              disabled={sendSMSMutation.isPending}
+            >
+              {sendSMSMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Send SMS
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Connection Settings Dialog */}
       <Dialog open={isEditingSettings} onOpenChange={setIsEditingSettings}>
         <DialogContent className="max-w-2xl max-h-[80vh]">
@@ -849,42 +1032,70 @@ export default function Communication() {
 
               {/* SMS Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">SMS Configuration (Twilio)</h3>
+                <h3 className="text-lg font-semibold">SMS Configuration</h3>
                 <div className="grid gap-4">
                   <div>
-                    <Label htmlFor="sms-api-key">Twilio Account SID</Label>
-                    <Input
-                      id="sms-api-key"
-                      value={settingsForm.sms_api_key}
-                      onChange={(e) =>
-                        setSettingsForm({ ...settingsForm, sms_api_key: e.target.value })
+                    <Label htmlFor="sms-provider">SMS Provider</Label>
+                    <Select
+                      value={settingsForm.sms_provider}
+                      onValueChange={(value: 'openphone' | 'twilio') =>
+                        setSettingsForm({ ...settingsForm, sms_provider: value })
                       }
-                      placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    />
+                    >
+                      <SelectTrigger id="sms-provider">
+                        <SelectValue placeholder="Select SMS provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="openphone">OpenPhone</SelectItem>
+                        <SelectItem value="twilio">Twilio</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Choose your SMS service provider
+                    </p>
                   </div>
-                  <div>
-                    <Label htmlFor="sms-api-secret">Twilio Auth Token</Label>
-                    <Input
-                      id="sms-api-secret"
-                      type="password"
-                      value={settingsForm.sms_api_secret}
-                      onChange={(e) =>
-                        setSettingsForm({ ...settingsForm, sms_api_secret: e.target.value })
-                      }
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="sms-from-number">Twilio Phone Number</Label>
-                    <Input
-                      id="sms-from-number"
-                      value={settingsForm.sms_from_number}
-                      onChange={(e) =>
-                        setSettingsForm({ ...settingsForm, sms_from_number: e.target.value })
-                      }
-                      placeholder="+1234567890"
-                    />
-                  </div>
+                  
+                  {settingsForm.sms_provider && (
+                    <>
+                      <div>
+                        <Label htmlFor="sms-api-key">
+                          {settingsForm.sms_provider === 'openphone' ? 'OpenPhone API Key' : 'Twilio Credentials'}
+                        </Label>
+                        <Input
+                          id="sms-api-key"
+                          type="password"
+                          value={settingsForm.sms_api_key}
+                          onChange={(e) =>
+                            setSettingsForm({ ...settingsForm, sms_api_key: e.target.value })
+                          }
+                          placeholder={
+                            settingsForm.sms_provider === 'openphone'
+                              ? 'Your OpenPhone API key'
+                              : 'AccountSid:AuthToken'
+                          }
+                        />
+                        {settingsForm.sms_provider === 'twilio' && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Format: AccountSid:AuthToken (colon-separated)
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label htmlFor="sms-phone-number">SMS Phone Number</Label>
+                        <Input
+                          id="sms-phone-number"
+                          value={settingsForm.sms_phone_number}
+                          onChange={(e) =>
+                            setSettingsForm({ ...settingsForm, sms_phone_number: e.target.value })
+                          }
+                          placeholder="+12345678900"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Your {settingsForm.sms_provider === 'openphone' ? 'OpenPhone' : 'Twilio'} phone number (include country code)
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

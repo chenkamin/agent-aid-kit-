@@ -55,10 +55,11 @@ export default function Lists() {
   const [selectedHomeTypes, setSelectedHomeTypes] = useState<string[]>([]);
   const [filterByCityMatch, setFilterByCityMatch] = useState(false);
   const [cities, setCities] = useState("");
-  const [neighborhoods, setNeighborhoods] = useState("");
   const [listForm, setListForm] = useState({
     name: "",
+    description: "",
     zipCodes: "",
+    priceMin: "",
     priceMax: "",
     daysOnZillow: "",
     forSaleByAgent: true,
@@ -250,9 +251,10 @@ export default function Lists() {
         user_id: user.id,
         company_id: userCompany.company_id,
         name: data.name,
+        description: data.description || null,
         zip_codes: data.zipCodes.split(",").map((z: string) => z.trim()).filter(Boolean),
         cities: data.cities ? data.cities.split(",").map((c: string) => c.trim()).filter(Boolean) : [],
-        neighborhoods: data.neighborhoods ? data.neighborhoods.split(",").map((n: string) => n.trim()).filter(Boolean) : [],
+        price_min: data.priceMin ? parseFloat(data.priceMin) : null,
         price_max: data.priceMax ? parseFloat(data.priceMax) : null,
         days_on_zillow: data.daysOnZillow ? parseInt(data.daysOnZillow) : null,
         for_sale_by_agent: data.forSaleByAgent,
@@ -299,10 +301,11 @@ export default function Lists() {
         setSelectedHomeTypes([]);
         setFilterByCityMatch(false);
         setCities("");
-        setNeighborhoods("");
         setListForm({
           name: "",
+          description: "",
           zipCodes: "",
+          priceMin: "",
           priceMax: "",
           daysOnZillow: "",
           forSaleByAgent: true,
@@ -357,10 +360,11 @@ export default function Lists() {
         setSelectedHomeTypes([]);
         setFilterByCityMatch(false);
         setCities("");
-        setNeighborhoods("");
         setListForm({
           name: "",
+          description: "",
           zipCodes: "",
+          priceMin: "",
           priceMax: "",
           daysOnZillow: "",
           forSaleByAgent: true,
@@ -460,10 +464,11 @@ export default function Lists() {
     setSelectedHomeTypes(list.home_types || []);
     setFilterByCityMatch(list.filter_by_city_match ?? false);
     setCities(list.cities ? list.cities.join(", ") : "");
-    setNeighborhoods(list.neighborhoods ? list.neighborhoods.join(", ") : "");
     setListForm({
       name: list.name,
+      description: list.description || "",
       zipCodes: list.zip_codes ? list.zip_codes.join(", ") : "",
+      priceMin: list.price_min ? list.price_min.toString() : "",
       priceMax: list.price_max ? list.price_max.toString() : "",
       daysOnZillow: list.days_on_zillow ? list.days_on_zillow.toString() : "",
       forSaleByAgent: list.for_sale_by_agent ?? true,
@@ -548,7 +553,7 @@ export default function Lists() {
                   <TableHead>Zip Codes</TableHead>
                   <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('price_max')} className="font-semibold p-0 h-auto hover:bg-transparent">
-                      Max Price
+                      Price Range
                       {getSortIcon('price_max')}
                     </Button>
                   </TableHead>
@@ -582,8 +587,13 @@ export default function Lists() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {list.price_max ? (
-                        <span className="font-semibold">${Number(list.price_max).toLocaleString()}</span>
+                      {(list.price_min || list.price_max) ? (
+                        <div className="text-sm">
+                          <div className="font-semibold">
+                            ${list.price_min ? Number(list.price_min).toLocaleString() : "0"} - ${list.price_max ? Number(list.price_max).toLocaleString() : "∞"}
+                          </div>
+                          {list.filter_by_ppsf && <div className="text-xs text-muted-foreground">per sqft</div>}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
                       )}
@@ -677,7 +687,6 @@ export default function Lists() {
           setSelectedHomeTypes([]);
           setFilterByCityMatch(false);
           setCities("");
-          setNeighborhoods("");
           setListForm({
             name: "",
             zipCodes: "",
@@ -706,6 +715,22 @@ export default function Lists() {
                 onChange={(e) => setListForm((prev) => ({ ...prev, name: e.target.value }))}
                 className="text-base"
               />
+            </div>
+
+            {/* Description - Full Width */}
+            <div className="space-y-2">
+              <Label htmlFor="list-description" className="text-base font-semibold">Description</Label>
+              <Textarea
+                id="list-description"
+                placeholder="Add notes or description for this buy box (optional)"
+                value={listForm.description}
+                onChange={(e) => setListForm((prev) => ({ ...prev, description: e.target.value }))}
+                className="text-base min-h-[80px]"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                Add any notes, strategy, or criteria details for this buy box
+              </p>
             </div>
 
             {/* AI Location to Zip Codes - Full Width */}
@@ -787,36 +812,26 @@ export default function Lists() {
                       value={cities}
                       onChange={(e) => setCities(e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">For city-specific filtering</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="neighborhoods" className="text-sm font-semibold">Neighborhoods (Optional)</Label>
-                    <Input
-                      id="neighborhoods"
-                      placeholder="e.g., Downtown, Tremont"
-                      value={neighborhoods}
-                      onChange={(e) => setNeighborhoods(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">For neighborhood filtering</p>
+                    <p className="text-xs text-muted-foreground">Comma-separated list of cities for filtering</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* City/Neighborhood Match Filter */}
-            {(cities || neighborhoods) && (
+            {/* City Match Filter */}
+            {cities && (
               <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-900">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1 flex-1">
                     <Label className="text-blue-900 dark:text-blue-100 font-semibold">
-                      🎯 Filter by City/Neighborhood Match
+                      🎯 Filter by City Match
                     </Label>
                     <p className="text-xs text-blue-700 dark:text-blue-300">
-                      Only include properties where city or neighborhood matches your list above. 
+                      Only include properties where the city matches your list above. 
                       Useful when zip codes span multiple cities (e.g., 44105 includes both Garfield Heights and Cleveland).
                     </p>
                     <p className="text-xs font-medium text-blue-800 dark:text-blue-200 mt-2">
-                      Will filter for: {[cities, neighborhoods].filter(Boolean).join(", ")}
+                      Will filter for: {cities}
                     </p>
                   </div>
                   <div className="flex items-center space-x-2 ml-4">
@@ -897,6 +912,22 @@ export default function Lists() {
                         </label>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="price-min" className="text-sm font-semibold">
+                      {listForm.filterByPpsf ? "Min Price per SqFt" : "Minimum Price"}
+                    </Label>
+                    <Input
+                      id="price-min"
+                      type="number"
+                      placeholder={listForm.filterByPpsf ? "0" : "0"}
+                      value={listForm.priceMin}
+                      onChange={(e) => setListForm((prev) => ({ ...prev, priceMin: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {listForm.filterByPpsf ? "e.g., 50 = $50/sqft minimum" : "e.g., 50000 = $50,000 minimum"}
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -983,7 +1014,6 @@ export default function Lists() {
               setSelectedHomeTypes([]);
               setFilterByCityMatch(false);
               setCities("");
-              setNeighborhoods("");
               setListForm({
                 name: "",
                 zipCodes: "",
@@ -1002,7 +1032,6 @@ export default function Lists() {
                 const dataToSave = {
                   ...listForm,
                   cities,
-                  neighborhoods,
                   homeTypes: selectedHomeTypes,
                   filterByCityMatch,
                   ...(editingList && { id: editingList.id })

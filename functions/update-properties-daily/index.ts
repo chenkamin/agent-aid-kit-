@@ -73,7 +73,7 @@ function normalizeHomeType(homeType: string): string {
   if (type.includes('multi') || type.includes('duplex')) return 'Multi Family';
   if (type.includes('condo')) return 'Condo';
   if (type.includes('town')) return 'Townhouse';
-  if (type.includes('land') || type.includes('lot')) return 'Lot';
+  if (type.includes('land') || type.includes('lot')) return 'Land';
   if (type.includes('commercial')) return 'Commercial';
   if (type.includes('apartment')) return 'Apartment';
 
@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
     // Get all active buy boxes (lists) with their company info
     const { data: buyBoxes, error: buyBoxError } = await supabase
       .from('buy_boxes')
-      .select('id, user_id, company_id, name, zip_codes, price_max, filter_by_ppsf, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent')
+      .select('id, user_id, company_id, name, zip_codes, price_min, price_max, filter_by_ppsf, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent, home_types, filter_by_city_match, cities')
       .order('created_at', { ascending: true });
 
     if (buyBoxError) throw buyBoxError;
@@ -175,13 +175,16 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Get existing properties for this buy box
+        // Get existing properties for this buy box (allow duplicates across different buy boxes)
         const { data: existingProperties } = await supabase
           .from('properties')
           .select('id, address, city, state, zip, listing_url, price, status')
           .eq('buy_box_id', buyBox.id);
 
-        // Create a map of existing properties by listing URL
+        // Create maps by address+city and by URL for duplicate detection within this buy box
+        const existingByAddress = new Map(
+          (existingProperties || []).map(p => [`${p.address}|${p.city}`.toLowerCase(), p])
+        );
         const existingPropsMap = new Map(
           (existingProperties || []).map(p => [p.listing_url, p])
         );
@@ -190,6 +193,7 @@ Deno.serve(async (req) => {
         // We'll filter manually after getting all results
         const searchConfig = {
           zipCodes: buyBox.zip_codes || [],
+          priceMin: buyBox.filter_by_ppsf ? undefined : (buyBox.price_min || undefined),
           priceMax: buyBox.filter_by_ppsf ? undefined : (buyBox.price_max || undefined),
           daysOnZillow: buyBox.days_on_zillow || '',
           forSaleByAgent: buyBox.for_sale_by_agent ?? true,
@@ -199,8 +203,14 @@ Deno.serve(async (req) => {
         };
 
         console.log(`💰 Price filter mode: ${buyBox.filter_by_ppsf ? 'Price per SqFt' : 'Total Price'}`);
-        if (buyBox.filter_by_ppsf && buyBox.price_max) {
-          console.log(`📏 Will filter by max price per sqft: $${buyBox.price_max}/sqft`);
+        if (buyBox.filter_by_ppsf) {
+          if (buyBox.price_min || buyBox.price_max) {
+            console.log(`📏 Will filter by price per sqft range: $${buyBox.price_min || 0}/sqft - $${buyBox.price_max || '∞'}/sqft`);
+          }
+        } else {
+          if (buyBox.price_min || buyBox.price_max) {
+            console.log(`📏 Zillow scraper price range: $${buyBox.price_min || 0} - $${buyBox.price_max || '∞'}`);
+          }
         }
 
         const apifyResponse = await fetch(
@@ -259,9 +269,10 @@ Deno.serve(async (req) => {
         console.log(`   ✅ Found ${scrapedProperties.length} properties from Zillow (before filtering)`);
 
         // If filtering by price per sqft, filter properties based on calculated ppsf
-        if (buyBox.filter_by_ppsf && buyBox.price_max) {
-          const maxPpsf = parseFloat(String(buyBox.price_max));
-          console.log(`   🔍 Filtering by price per sqft (max: $${maxPpsf}/sqft)...`);
+        if (buyBox.filter_by_ppsf && (buyBox.price_min || buyBox.price_max)) {
+          const minPpsf = buyBox.price_min ? parseFloat(String(buyBox.price_min)) : 0;
+          const maxPpsf = buyBox.price_max ? parseFloat(String(buyBox.price_max)) : Infinity;
+          console.log(`   🔍 Filtering by price per sqft range: $${minPpsf}/sqft - $${maxPpsf === Infinity ? '∞' : maxPpsf}/sqft...`);
           
           const originalCount = scrapedProperties.length;
           scrapedProperties = scrapedProperties.filter((prop: any) => {
@@ -275,12 +286,12 @@ Deno.serve(async (req) => {
             }
             
             const ppsf = price / sqft;
-            const passes = ppsf <= maxPpsf;
+            const passes = ppsf >= minPpsf && ppsf <= maxPpsf;
             
             if (passes) {
               console.log(`     ✅ PASS - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft`);
             } else {
-              console.log(`     ❌ FILTERED OUT - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft (exceeds $${maxPpsf}/sqft)`);
+              console.log(`     ❌ FILTERED OUT - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft (outside $${minPpsf}-$${maxPpsf}/sqft range)`);
             }
             
             return passes;
@@ -294,43 +305,44 @@ Deno.serve(async (req) => {
           console.log(`   🏠 Filtering by property types: ${buyBox.home_types.join(', ')}`);
           const beforeTypeFilter = scrapedProperties.length;
           
+          // Normalize the buy box filter values (e.g., "Lot" -> "Land") to match our normalizeHomeType output
+          const normalizedFilterTypes = buyBox.home_types.map((type: string) => normalizeHomeType(type));
+          console.log(`   🏠 Normalized filter types: ${normalizedFilterTypes.join(', ')}`);
+          
           scrapedProperties = scrapedProperties.filter((prop: any) => {
             const homeType = normalizeHomeType(prop.homeType || prop.propertyType);
-            return buyBox.home_types.includes(homeType);
+            return normalizedFilterTypes.includes(homeType);
           });
           
           console.log(`   📊 After home type filtering: ${scrapedProperties.length} of ${beforeTypeFilter} properties passed`);
         }
 
-        // Filter by city/neighborhood match if specified
-        if (buyBox.filter_by_city_match && (buyBox.cities?.length > 0 || buyBox.neighborhoods?.length > 0)) {
-          console.log(`   🎯 Filtering by city/neighborhood match`);
-          console.log(`      Cities: ${buyBox.cities?.join(', ') || 'none'}`);
-          console.log(`      Neighborhoods: ${buyBox.neighborhoods?.join(', ') || 'none'}`);
+        // Filter by city match if specified
+        if (buyBox.filter_by_city_match && buyBox.cities?.length > 0) {
+          console.log(`   🎯 Filtering by city match`);
+          console.log(`      Cities: ${buyBox.cities.join(', ')}`);
           
           const beforeCityFilter = scrapedProperties.length;
           
-          // Normalize cities and neighborhoods to lowercase for comparison
-          const allowedCities = (buyBox.cities || []).map((c: string) => c.toLowerCase().trim());
-          const allowedNeighborhoods = (buyBox.neighborhoods || []).map((n: string) => n.toLowerCase().trim());
+          // Normalize cities to lowercase for comparison
+          const allowedCities = buyBox.cities.map((c: string) => c.toLowerCase().trim());
           
           scrapedProperties = scrapedProperties.filter((prop: any) => {
             const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
             const propCity = (addressData.city || '').toLowerCase().trim();
-            const propNeighborhood = (prop.neighborhood || '').toLowerCase().trim();
             
-            const cityMatches = allowedCities.length === 0 || allowedCities.includes(propCity);
-            const neighborhoodMatches = allowedNeighborhoods.length === 0 || allowedNeighborhoods.includes(propNeighborhood);
+            const cityMatches = allowedCities.includes(propCity);
             
-            return (allowedCities.length > 0 && cityMatches) || (allowedNeighborhoods.length > 0 && neighborhoodMatches);
+            return cityMatches;
           });
           
-          console.log(`   📊 After city/neighborhood filtering: ${scrapedProperties.length} of ${beforeCityFilter} properties passed`);
+          console.log(`   📊 After city filtering: ${scrapedProperties.length} of ${beforeCityFilter} properties passed`);
         }
 
         const newListings = [];
         const updatedListings = [];
         const propertyUpdates = [];
+        let skippedCount = 0;
 
         for (const prop of scrapedProperties) {
           const listingUrl = prop.detailUrl || prop.url || '';
@@ -341,15 +353,21 @@ Deno.serve(async (req) => {
           const existingProp = existingPropsMap.get(listingUrl);
 
           if (!existingProp) {
-            // NEW LISTING
+            // NEW LISTING - Skip if address is incomplete
+            if (!addressData.address || !addressData.city) {
+              console.log(`⚠️ Skipping property with incomplete address: ${listingUrl}`);
+              skippedCount++;
+              continue;
+            }
+
             newListings.push({
               user_id: buyBox.user_id,
               company_id: companyId,
               buy_box_id: buyBox.id,
-              address: addressData.address || '',
-              city: addressData.city || '',
-              state: addressData.state || '',
-              zip: addressData.zip || '',
+              address: addressData.address,
+              city: addressData.city,
+              state: addressData.state,
+              zip: addressData.zip,
               price: scrapedPrice,
               bedrooms: parseInteger(prop.beds || prop.bedrooms),
               bed: parseInteger(prop.beds || prop.bedrooms),
@@ -462,6 +480,7 @@ Deno.serve(async (req) => {
           totalScraped: scrapedProperties.length,
           newListings: newListings.length,
           updatedListings: updatedListings.length,
+          skippedCount: skippedCount,
           success: true
         });
 

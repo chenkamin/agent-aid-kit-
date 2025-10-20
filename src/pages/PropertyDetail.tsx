@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Edit, Trash2, MapPin, DollarSign, Home, Calendar, Ruler, Plus, Phone, Mail, FileText, Video, CheckCircle2, Clock } from "lucide-react";
+import { ArrowLeft, Edit, Trash2, MapPin, DollarSign, Home, Calendar, Ruler, Plus, Phone, Mail, FileText, Video, CheckCircle2, Clock, MessageSquare, Flame, Snowflake, ThermometerSun } from "lucide-react";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +55,18 @@ export default function PropertyDetail() {
     queryFn: async () => {
       const { data } = await supabase
         .from("activities")
+        .select("*")
+        .eq("property_id", id)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+  });
+
+  const { data: smsMessages } = useQuery({
+    queryKey: ["property-sms", id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("sms_messages")
         .select("*")
         .eq("property_id", id)
         .order("created_at", { ascending: false });
@@ -473,6 +485,96 @@ export default function PropertyDetail() {
                           <Clock className="h-3 w-3" />
                           Due: {format(new Date(activity.due_at), "MMM d, yyyy")}
                         </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            SMS Communication
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!smsMessages || smsMessages.length === 0 ? (
+            <p className="text-muted-foreground italic">No SMS messages yet. Messages will appear here when you communicate with the seller.</p>
+          ) : (
+            <div className="space-y-4">
+              {smsMessages.map((sms: any) => (
+                <div
+                  key={sms.id}
+                  className={`p-4 rounded-lg border ${
+                    sms.direction === 'incoming' 
+                      ? 'bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800' 
+                      : 'bg-gray-50 border-gray-200 dark:bg-gray-900 dark:border-gray-800'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-2">
+                        {sms.direction === 'incoming' ? (
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            Incoming
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Outgoing</Badge>
+                        )}
+                        <span className="text-sm text-muted-foreground">
+                          {format(new Date(sms.created_at), "MMM d, yyyy 'at' h:mm a")}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-start gap-2">
+                        <Phone className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div className="flex-1">
+                          <div className="text-sm text-muted-foreground">
+                            {sms.direction === 'incoming' ? `From: ${sms.from_number}` : `To: ${sms.to_number}`}
+                          </div>
+                          <p className="mt-2 text-sm whitespace-pre-wrap">{sms.message}</p>
+                        </div>
+                      </div>
+
+                      {sms.direction === 'incoming' && sms.ai_score && (
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center gap-2">
+                            {sms.ai_score === 3 && (
+                              <>
+                                <Flame className="h-5 w-5 text-red-500" />
+                                <Badge variant="destructive" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                  🔥 HOT LEAD
+                                </Badge>
+                              </>
+                            )}
+                            {sms.ai_score === 2 && (
+                              <>
+                                <ThermometerSun className="h-5 w-5 text-orange-500" />
+                                <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                                  Warm Lead
+                                </Badge>
+                              </>
+                            )}
+                            {sms.ai_score === 1 && (
+                              <>
+                                <Snowflake className="h-5 w-5 text-blue-400" />
+                                <Badge variant="secondary" className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
+                                  Cold Lead
+                                </Badge>
+                              </>
+                            )}
+                          </div>
+                          {sms.ai_analysis && (
+                            <p className="mt-2 text-sm text-muted-foreground italic">
+                              AI Analysis: {sms.ai_analysis}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

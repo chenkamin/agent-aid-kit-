@@ -16,7 +16,8 @@ import {
   Edit,
   Save,
   X,
-  Filter
+  Filter,
+  MapPin
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -484,6 +485,19 @@ export default function Activities() {
                 <DialogTitle>
                   {editingActivity ? "Edit Activity" : cloningActivity ? "Clone Activity" : "Add New Activity"}
                 </DialogTitle>
+                {(editingActivity || cloningActivity) && (editingActivity?.properties || cloningActivity?.properties) && (
+                  <div className="pt-2 mt-2 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-medium">Property:</span>{" "}
+                      {(editingActivity?.properties || cloningActivity?.properties)?.address || "Unknown"}
+                    </p>
+                    {((editingActivity?.properties || cloningActivity?.properties)?.city) && (
+                      <p className="text-xs text-muted-foreground">
+                        {(editingActivity?.properties || cloningActivity?.properties)?.city}
+                      </p>
+                    )}
+                  </div>
+                )}
               </DialogHeader>
               <div className="space-y-4 mt-4">
                 <div className="space-y-2">
@@ -796,18 +810,27 @@ export default function Activities() {
                         </Badge>
                       </div>
                     </div>
+                    {activity.properties && (
+                      <div className="flex items-start gap-2 px-3 py-2 bg-primary/5 rounded-md border border-primary/10 mb-2">
+                        <MapPin className="h-4 w-4 mt-0.5 text-primary" />
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {activity.properties.address || "Unknown property"}
+                          </p>
+                          {activity.properties.city && (
+                            <p className="text-xs text-muted-foreground">
+                              {activity.properties.city}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {activity.body && (
                       <p className="text-base text-muted-foreground">
                         {activity.body}
                       </p>
                     )}
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      {activity.properties && (
-                        <span>
-                          📍 {activity.properties.address || "Unknown property"}
-                          {activity.properties.city && `, ${activity.properties.city}`}
-                        </span>
-                      )}
                       {activity.assigned_to && (
                         <span>
                           👤 {getTeamMemberDisplayName(activity.assigned_to)}
@@ -921,25 +944,35 @@ export default function Activities() {
                           {activity.status}
                         </Badge>
                       </div>
+                      {activity.properties && (
+                        <div className="flex items-start gap-2 px-2 py-1.5 bg-primary/5 rounded border border-primary/10 mb-2">
+                          <MapPin className="h-3 w-3 mt-0.5 text-primary" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-foreground truncate">
+                              {activity.properties.address || "Unknown"}
+                            </p>
+                            {activity.properties.city && (
+                              <p className="text-xs text-muted-foreground">
+                                {activity.properties.city}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       {activity.body && (
                         <p className="text-sm text-muted-foreground mb-2">{activity.body}</p>
                       )}
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3 flex-wrap">
                         <Badge variant="outline" className="capitalize">
                           {activity.type.replace("-", " ")}
                         </Badge>
-                        {activity.properties && (
-                          <span>
-                            {activity.properties.address}
-                          </span>
-                        )}
                         {activity.assigned_to && (
                           <span>
                             👤 {getTeamMemberDisplayName(activity.assigned_to)}
                           </span>
                         )}
                         {activity.due_at && (
-                          <span>{format(new Date(activity.due_at), "p")}</span>
+                          <span>⏰ {format(new Date(activity.due_at), "p")}</span>
                         )}
                       </div>
                       <div className="flex gap-2">

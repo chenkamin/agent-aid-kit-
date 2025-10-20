@@ -84,6 +84,12 @@ export default function Properties() {
     description: "",
     notes: "",
   });
+  const [filterInputs, setFilterInputs] = useState({
+    minPrice: "",
+    maxPrice: "",
+    minBedrooms: "",
+    maxBedrooms: "",
+  }); // Immediate input values
   const [filters, setFilters] = useState({
     status: "all",
     buyBoxId: "all",
@@ -96,7 +102,8 @@ export default function Properties() {
     urgency: "all",
     assignedTo: "all",
   });
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState(""); // Immediate input value
+  const [searchQuery, setSearchQuery] = useState(""); // Debounced value for querying
   const [showFilters, setShowFilters] = useState(false);
   const [sortConfig, setSortConfig] = useState<{
     key: string;
@@ -348,6 +355,30 @@ export default function Properties() {
     enabled: !!userCompany?.company_id,
   });
 
+  // Debounce search input (500ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Debounce filter inputs (500ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters((prev) => ({
+        ...prev,
+        minPrice: filterInputs.minPrice,
+        maxPrice: filterInputs.maxPrice,
+        minBedrooms: filterInputs.minBedrooms,
+        maxBedrooms: filterInputs.maxBedrooms,
+      }));
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [filterInputs]);
+
   // Reset to page 1 when filters, search query, or items per page change
   useEffect(() => {
     setCurrentPage(1);
@@ -395,6 +426,28 @@ export default function Properties() {
         .select("id, name")
         .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false});
+      
+      return data || [];
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  // Query for all upcoming activities (today or future)
+  const { data: upcomingActivities } = useQuery({
+    queryKey: ["upcoming-activities", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { data } = await supabase
+        .from("activities")
+        .select("*")
+        .eq("company_id", userCompany.company_id)
+        .eq("status", "open")
+        .gte("due_at", today.toISOString())
+        .order("due_at", { ascending: true });
       
       return data || [];
     },
@@ -772,6 +825,20 @@ export default function Properties() {
     )[0];
   };
 
+  // Get next upcoming activity for a property (any type, due today or future)
+  const getNextUpcomingActivity = (propertyId: string) => {
+    if (!upcomingActivities || upcomingActivities.length === 0) return null;
+    
+    const propertyUpcomingActivities = upcomingActivities.filter(
+      (activity: any) => activity.property_id === propertyId
+    );
+    
+    if (propertyUpcomingActivities.length === 0) return null;
+    
+    // Activities are already sorted by due_at ascending, so just return the first one
+    return propertyUpcomingActivities[0];
+  };
+
   const addActivityMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!user?.id) throw new Error("User not authenticated");
@@ -798,6 +865,8 @@ export default function Properties() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["upcoming-activities"] });
+      queryClient.invalidateQueries({ queryKey: ["property-activities"] });
       toast({
         title: "Activity added",
         description: "The activity has been added successfully.",
@@ -859,6 +928,8 @@ export default function Properties() {
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ["properties"] });
       queryClient.invalidateQueries({ queryKey: ["activities"] });
+      queryClient.invalidateQueries({ queryKey: ["upcoming-activities"] });
+      queryClient.invalidateQueries({ queryKey: ["property-activities"] });
       toast({
         title: "Activities created",
         description: `Created ${count} ${count === 1 ? 'activity' : 'activities'} for ${count} ${count === 1 ? 'property' : 'properties'}`,
@@ -1241,6 +1312,46 @@ export default function Properties() {
     }
     bulkUpdateWorkflowMutation.mutate({ propertyIds: selectedPropertyIds, workflowState });
   };
+
+  // Send SMS mutation
+  const sendSMSMutation = useMutation({
+    mutationFn: async (data: { to: string; message: string; propertyId?: string }) => {
+      const { data: responseData, error } = await supabase.functions.invoke('send-sms', {
+        body: {
+          type: 'single',
+          to: data.to,
+          message: data.message,
+          propertyId: data.propertyId,
+        },
+      });
+
+      if (error) throw error;
+      return responseData;
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: "SMS sent!",
+        description: `Message sent to ${smsForm.agentName}`,
+      });
+      setIsSendingSMS(false);
+      setSmsForm({
+        toPhone: "",
+        agentName: "",
+        message: "",
+      });
+      // Invalidate property SMS messages if we sent to a specific property
+      if (variables.propertyId) {
+        queryClient.invalidateQueries({ queryKey: ["property-sms", variables.propertyId] });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send SMS",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Update property mutation
   const updatePropertyMutation = useMutation({
@@ -1815,8 +1926,8 @@ export default function Properties() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by address..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-10"
           />
         </div>
@@ -2024,8 +2135,8 @@ export default function Properties() {
                 id="filter-min-price"
                 type="number"
                 placeholder="$0"
-                value={filters.minPrice}
-                onChange={(e) => setFilters((prev) => ({ ...prev, minPrice: e.target.value }))}
+                value={filterInputs.minPrice}
+                onChange={(e) => setFilterInputs((prev) => ({ ...prev, minPrice: e.target.value }))}
               />
             </div>
 
@@ -2035,8 +2146,8 @@ export default function Properties() {
                 id="filter-max-price"
                 type="number"
                 placeholder="Any"
-                value={filters.maxPrice}
-                onChange={(e) => setFilters((prev) => ({ ...prev, maxPrice: e.target.value }))}
+                value={filterInputs.maxPrice}
+                onChange={(e) => setFilterInputs((prev) => ({ ...prev, maxPrice: e.target.value }))}
               />
             </div>
 
@@ -2046,8 +2157,8 @@ export default function Properties() {
                 id="filter-bedrooms"
                 type="number"
                 placeholder="Any"
-                value={filters.minBedrooms}
-                onChange={(e) => setFilters((prev) => ({ ...prev, minBedrooms: e.target.value }))}
+                value={filterInputs.minBedrooms}
+                onChange={(e) => setFilterInputs((prev) => ({ ...prev, minBedrooms: e.target.value }))}
               />
             </div>
 
@@ -2057,8 +2168,8 @@ export default function Properties() {
                 id="filter-max-bedrooms"
                 type="number"
                 placeholder="Any"
-                value={filters.maxBedrooms}
-                onChange={(e) => setFilters((prev) => ({ ...prev, maxBedrooms: e.target.value }))}
+                value={filterInputs.maxBedrooms}
+                onChange={(e) => setFilterInputs((prev) => ({ ...prev, maxBedrooms: e.target.value }))}
               />
             </div>
 
@@ -2131,18 +2242,26 @@ export default function Properties() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setFilters({
-                status: "all",
-                buyBoxId: "all",
-                minPrice: "",
-                maxPrice: "",
-                minBedrooms: "",
-                maxBedrooms: "",
-                homeType: "all",
-                workflowState: "all",
-                urgency: "all",
-                assignedTo: "all",
-              })}
+              onClick={() => {
+                setFilterInputs({
+                  minPrice: "",
+                  maxPrice: "",
+                  minBedrooms: "",
+                  maxBedrooms: "",
+                });
+                setFilters({
+                  status: "all",
+                  buyBoxId: "all",
+                  minPrice: "",
+                  maxPrice: "",
+                  minBedrooms: "",
+                  maxBedrooms: "",
+                  homeType: "all",
+                  workflowState: "all",
+                  urgency: "all",
+                  assignedTo: "all",
+                });
+              }}
             >
               Clear Filters
             </Button>
@@ -2166,18 +2285,26 @@ export default function Properties() {
             {properties && properties.length > 0 && (
               <Button
                 variant="outline"
-                onClick={() => setFilters({
-                  status: "all",
-                  buyBoxId: "all",
-                  minPrice: "",
-                  maxPrice: "",
-                  minBedrooms: "",
-                  maxBedrooms: "",
-                  homeType: "all",
-                  workflowState: "all",
-                  urgency: "all",
-                  assignedTo: "all",
-                })}
+                onClick={() => {
+                  setFilterInputs({
+                    minPrice: "",
+                    maxPrice: "",
+                    minBedrooms: "",
+                    maxBedrooms: "",
+                  });
+                  setFilters({
+                    status: "all",
+                    buyBoxId: "all",
+                    minPrice: "",
+                    maxPrice: "",
+                    minBedrooms: "",
+                    maxBedrooms: "",
+                    homeType: "all",
+                    workflowState: "all",
+                    urgency: "all",
+                    assignedTo: "all",
+                  });
+                }}
               >
                 Clear All Filters
               </Button>
@@ -2225,6 +2352,9 @@ export default function Properties() {
                       State
                       {getSortIcon('workflow_state')}
                     </Button>
+                  </TableHead>
+                  <TableHead>
+                    <span className="font-semibold">Next Activity</span>
                   </TableHead>
                   <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('city')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
@@ -2375,6 +2505,53 @@ export default function Properties() {
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          const nextActivity = getNextUpcomingActivity(property.id);
+                          if (!nextActivity) return <span className="text-xs text-muted-foreground">-</span>;
+                          
+                          const dueDate = new Date(nextActivity.due_at);
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const tomorrow = new Date(today);
+                          tomorrow.setDate(tomorrow.getDate() + 1);
+                          
+                          let dateLabel = format(dueDate, 'MMM d');
+                          if (dueDate.toDateString() === today.toDateString()) {
+                            dateLabel = 'Today';
+                          } else if (dueDate.toDateString() === tomorrow.toDateString()) {
+                            dateLabel = 'Tomorrow';
+                          }
+                          
+                          return (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs px-2 gap-1 hover:bg-primary/10"
+                                    onClick={() => {
+                                      setSelectedProperty(property);
+                                      setEditedProperty({ ...property });
+                                    }}
+                                  >
+                                    <Calendar className="h-3 w-3" />
+                                    {dateLabel}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <div className="text-xs max-w-xs">
+                                    <p className="font-semibold">{nextActivity.title || 'Activity'}</p>
+                                    <p className="text-muted-foreground">Type: {nextActivity.type}</p>
+                                    <p className="text-muted-foreground">Due: {format(dueDate, 'PPp')}</p>
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>{property.city || '-'}</TableCell>
                       <TableCell>
@@ -2887,30 +3064,42 @@ export default function Properties() {
                       </div>
 
                       <div className="flex flex-col sm:flex-row justify-end gap-2">
-                        <Button variant="outline" onClick={() => setIsSendingSMS(false)} className="w-full sm:w-auto text-sm">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setIsSendingSMS(false)} 
+                          className="w-full sm:w-auto text-sm"
+                          disabled={sendSMSMutation.isPending}
+                        >
                           Cancel
                         </Button>
-                        <Button onClick={() => {
-                          if (!smsForm.toPhone || !smsForm.agentName || !smsForm.message) {
-                            toast({
-                              title: "Missing information",
-                              description: "Please fill in all required fields",
-                              variant: "destructive",
+                        <Button 
+                          onClick={() => {
+                            if (!smsForm.toPhone || !smsForm.agentName || !smsForm.message) {
+                              toast({
+                                title: "Missing information",
+                                description: "Please fill in all required fields",
+                                variant: "destructive",
+                              });
+                              return;
+                            }
+                            // Replace template variables
+                            const finalMessage = smsForm.message
+                              .replace(/\{agent_name\}/gi, smsForm.agentName)
+                              .replace(/\{address\}/gi, selectedProperty?.address || 'N/A')
+                              .replace(/\{price\}/gi, selectedProperty?.price ? `$${selectedProperty.price.toLocaleString()}` : 'N/A')
+                              .replace(/\{beds\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
+                              .replace(/\{baths\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A');
+                            
+                            sendSMSMutation.mutate({
+                              to: smsForm.toPhone,
+                              message: finalMessage,
+                              propertyId: selectedProperty?.id,
                             });
-                            return;
-                          }
-                          toast({
-                            title: "SMS Sent!",
-                            description: `Message sent to ${smsForm.agentName}`,
-                          });
-                          setIsSendingSMS(false);
-                          setSmsForm({
-                            toPhone: "",
-                            agentName: "",
-                            message: "",
-                          });
-                        }} className="w-full sm:w-auto text-sm">
-                          Send SMS
+                          }} 
+                          className="w-full sm:w-auto text-sm"
+                          disabled={sendSMSMutation.isPending}
+                        >
+                          {sendSMSMutation.isPending ? 'Sending...' : 'Send SMS'}
                         </Button>
                       </div>
                     </div>
@@ -2927,6 +3116,18 @@ export default function Properties() {
                   <DialogContent className="w-[95vw] max-w-md" aria-describedby="activity-form-description">
                     <DialogHeader>
                       <DialogTitle className="text-lg md:text-xl">Add New Activity</DialogTitle>
+                      {selectedProperty && (
+                        <div className="pt-2 mt-2 border-t">
+                          <p className="text-sm text-muted-foreground">
+                            <span className="font-medium">Property:</span> {getPropertyDisplayName(selectedProperty)}
+                          </p>
+                          {selectedProperty.city && selectedProperty.state && (
+                            <p className="text-xs text-muted-foreground">
+                              {selectedProperty.city}, {selectedProperty.state} {selectedProperty.zip}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </DialogHeader>
                     <div className="space-y-3 md:space-y-4 mt-4">
                       <div className="space-y-2">
