@@ -119,11 +119,12 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl!, supabaseKey!);
 
-    // Get all active buy boxes (lists) with their company info
+    // Get ONE buy box - the oldest that needs updating (round-robin)
     const { data: buyBoxes, error: buyBoxError } = await supabase
       .from('buy_boxes')
-      .select('id, user_id, company_id, name, zip_codes, price_min, price_max, filter_by_ppsf, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent, home_types, filter_by_city_match, cities')
-      .order('created_at', { ascending: true });
+      .select('id, user_id, company_id, name, zip_codes, price_min, price_max, filter_by_ppsf, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent, home_types, filter_by_city_match, cities, last_scraped_at')
+      .order('last_scraped_at', { ascending: true, nullsFirst: true })
+      .limit(1);
 
     if (buyBoxError) throw buyBoxError;
 
@@ -135,14 +136,28 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`📦 Processing ${buyBoxes.length} buy boxes...`);
+    const buyBox = buyBoxes[0];
+    
+    // Get total count for reporting
+    const { count: totalBuyBoxes } = await supabase
+      .from('buy_boxes')
+      .select('*', { count: 'exact', head: true });
 
-    const results = [];
+    console.log(`\n🏠 Processing buy box: ${buyBox.name} (User: ${buyBox.user_id})`);
+    console.log(`📊 Progress: Processing 1 of ${totalBuyBoxes} total buy boxes`);
+    console.log(`⏰ Last scraped: ${buyBox.last_scraped_at || 'Never'}`);
 
-    for (const buyBox of buyBoxes) {
-      console.log(`\n🏠 Processing buy box: ${buyBox.name} (User: ${buyBox.user_id})`);
+    // Update timestamp IMMEDIATELY to prevent race conditions
+    const { error: updateError } = await supabase
+      .from('buy_boxes')
+      .update({ last_scraped_at: new Date().toISOString() })
+      .eq('id', buyBox.id);
 
-      try {
+    if (updateError) {
+      console.error('⚠️ Failed to update last_scraped_at:', updateError);
+    }
+
+    try {
         // Ensure buy box has company_id, if not try to get it from user's team membership
         let companyId = buyBox.company_id;
         
@@ -164,14 +179,23 @@ Deno.serve(async (req) => {
             console.log(`✅ Updated buy box ${buyBox.name} with company_id: ${companyId}`);
           } else {
             console.log(`❌ Skipping buy box ${buyBox.name} - no company found for user ${buyBox.user_id}`);
-            results.push({
+            
+            const result = {
               buyBoxId: buyBox.id,
               buyBoxName: buyBox.name,
               userId: buyBox.user_id,
               error: 'No company_id found for user',
               success: false
-            });
-            continue;
+            };
+
+            return new Response(
+              JSON.stringify({
+                message: 'Buy box update failed',
+                totalBuyBoxes: totalBuyBoxes || 1,
+                processedBuyBox: result
+              }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+            );
           }
         }
 
@@ -379,6 +403,7 @@ Deno.serve(async (req) => {
               status: scrapedStatus,
               initial_status: prop.homeStatus || prop.statusText || '',
               days_on_market: parseInteger(prop.daysOnZillow),
+              date_listed: prop.datePostedString ? new Date(prop.datePostedString).toISOString().split('T')[0] : null,
               listing_url: listingUrl,
               url: listingUrl,
               is_new_listing: true,
@@ -473,7 +498,7 @@ Deno.serve(async (req) => {
           console.log(`   📊 Updated ${updatedListings.length} properties`);
         }
 
-        results.push({
+        const result = {
           buyBoxId: buyBox.id,
           buyBoxName: buyBox.name,
           userId: buyBox.user_id,
@@ -482,30 +507,39 @@ Deno.serve(async (req) => {
           updatedListings: updatedListings.length,
           skippedCount: skippedCount,
           success: true
-        });
+        };
+
+        console.log('\n✅ Buy box update completed');
+
+        return new Response(
+          JSON.stringify({
+            message: 'Buy box update completed',
+            totalBuyBoxes: totalBuyBoxes || 1,
+            processedBuyBox: result
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
 
       } catch (error) {
         console.error(`   ❌ Error processing buy box ${buyBox.name}:`, error.message);
-        results.push({
+        
+        const result = {
           buyBoxId: buyBox.id,
           buyBoxName: buyBox.name,
           userId: buyBox.user_id,
           error: error.message,
           success: false
-        });
+        };
+
+        return new Response(
+          JSON.stringify({
+            message: 'Buy box update failed',
+            totalBuyBoxes: totalBuyBoxes || 1,
+            processedBuyBox: result
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        );
       }
-    }
-
-    console.log('\n✅ Daily update job completed');
-
-    return new Response(
-      JSON.stringify({
-        message: 'Daily update completed',
-        processedBuyBoxes: buyBoxes.length,
-        results
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-    );
 
   } catch (error) {
     console.error('❌ Error in daily update job:', error);

@@ -52,3 +52,4 @@ GRANT EXECUTE ON FUNCTION public.auto_create_company_for_new_user() TO authentic
 
 
 
+

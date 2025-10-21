@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -88,10 +88,19 @@ export default function Activities() {
     assignedTo: "all",
   });
   const [showFilters, setShowFilters] = useState(false);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
-  // Fetch activities
-  const { data: activities, isLoading } = useQuery({
-    queryKey: ["activities", userCompany?.company_id, filters],
+  // Reset to page 1 when filters or items per page change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, itemsPerPage]);
+
+  // Fetch ALL activities (for accurate counting with client-side buy_box filter)
+  const { data: allActivities, isLoading } = useQuery({
+    queryKey: ["all-activities", userCompany?.company_id, filters],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
       
@@ -150,6 +159,12 @@ export default function Activities() {
     },
     enabled: !!userCompany?.company_id,
   });
+
+  // Calculate pagination from filtered activities
+  const totalCount = allActivities?.length || 0;
+  const from = (currentPage - 1) * itemsPerPage;
+  const to = from + itemsPerPage;
+  const activities = allActivities?.slice(from, to) || [];
 
   // Fetch properties for dropdown
   const { data: properties } = useQuery({
@@ -775,6 +790,15 @@ export default function Activities() {
         </Tabs>
       </div>
 
+      {/* Item Count Display */}
+      {activities && activities.length > 0 && (
+        <div className="flex items-center justify-between px-2">
+          <p className="text-sm text-muted-foreground">
+            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} activities
+          </p>
+        </div>
+      )}
+
       {/* Content */}
       {activities && activities.length === 0 ? (
         <Card className="py-16">
@@ -1010,6 +1034,135 @@ export default function Activities() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Pagination Controls */}
+      {activities && activities.length > 0 && viewMode === "list" && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Items per page:</span>
+                <Select
+                  value={itemsPerPage.toString()}
+                  onValueChange={(value) => setItemsPerPage(parseInt(value))}
+                >
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground ml-2 sm:ml-4">
+                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} activities
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  First
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {(() => {
+                    const totalPages = Math.ceil((totalCount || 0) / itemsPerPage);
+                    const pages = [];
+                    const showPages = 5; // Show 5 page numbers at a time
+                    let startPage = Math.max(1, currentPage - Math.floor(showPages / 2));
+                    const endPage = Math.min(totalPages, startPage + showPages - 1);
+                    
+                    if (endPage - startPage < showPages - 1) {
+                      startPage = Math.max(1, endPage - showPages + 1);
+                    }
+                    
+                    // Show first page and ellipsis if needed
+                    if (startPage > 1) {
+                      pages.push(
+                        <Button
+                          key={1}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(1)}
+                        >
+                          1
+                        </Button>
+                      );
+                      if (startPage > 2) {
+                        pages.push(<span key="ellipsis1" className="px-2">...</span>);
+                      }
+                    }
+                    
+                    for (let i = startPage; i <= endPage; i++) {
+                      pages.push(
+                        <Button
+                          key={i}
+                          variant={currentPage === i ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(i)}
+                        >
+                          {i}
+                        </Button>
+                      );
+                    }
+                    
+                    // Show ellipsis and last page if needed
+                    if (endPage < totalPages) {
+                      if (endPage < totalPages - 1) {
+                        pages.push(<span key="ellipsis2" className="px-2">...</span>);
+                      }
+                      pages.push(
+                        <Button
+                          key={totalPages}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(totalPages)}
+                        >
+                          {totalPages}
+                        </Button>
+                      );
+                    }
+                    
+                    return pages;
+                  })()}
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil((totalCount || 0) / itemsPerPage), prev + 1))}
+                  disabled={currentPage >= Math.ceil((totalCount || 0) / itemsPerPage)}
+                >
+                  Next
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(Math.ceil((totalCount || 0) / itemsPerPage))}
+                  disabled={currentPage >= Math.ceil((totalCount || 0) / itemsPerPage)}
+                >
+                  Last
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

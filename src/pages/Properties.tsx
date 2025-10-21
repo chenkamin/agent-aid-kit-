@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2 } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -122,6 +135,7 @@ export default function Properties() {
     agentName: "",
     message: "",
   });
+  const [contactSelectorOpen, setContactSelectorOpen] = useState(false);
   const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
   const [bulkEmailForm, setBulkEmailForm] = useState({
     templateId: "",
@@ -235,6 +249,29 @@ export default function Properties() {
       
       console.log("Team members loaded:", membersWithProfiles.length, membersWithProfiles);
       return membersWithProfiles;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  // Fetch contacts for SMS recipient selection
+  const { data: contacts = [] } = useQuery({
+    queryKey: ["contacts", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("id, full_name, phone, company, type")
+        .eq("company_id", userCompany.company_id)
+        .not("phone", "is", null)
+        .order("full_name");
+      
+      if (error) {
+        console.error("Error fetching contacts:", error);
+        return [];
+      }
+      
+      return data || [];
     },
     enabled: !!userCompany?.company_id,
   });
@@ -2237,7 +2274,7 @@ export default function Properties() {
 
           <div className="flex items-center justify-between mt-4">
             <p className="text-sm text-muted-foreground">
-              Showing {sortedProperties?.length || 0} of {properties?.length || 0} properties
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} properties
             </p>
             <Button
               variant="ghost"
@@ -3002,6 +3039,9 @@ export default function Properties() {
                       agentName: selectedProperty.seller_agent_name || "",
                       message: "",
                     });
+                  } else {
+                    // Reset form when closing
+                    setContactSelectorOpen(false);
                   }
                   setIsSendingSMS(open);
                 }}>
@@ -3013,11 +3053,85 @@ export default function Properties() {
                   </DialogTrigger>
                   <DialogContent className="w-[95vw] max-w-md">
                     <DialogHeader>
-                      <DialogTitle className="text-lg md:text-xl">Send SMS to Realtor</DialogTitle>
+                      <DialogTitle className="text-lg md:text-xl">Send SMS</DialogTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Send a text message to anyone about this property
+                      </p>
                     </DialogHeader>
                     <div className="space-y-3 md:space-y-4 mt-4">
+                      {selectedProperty?.seller_agent_phone && !smsForm.toPhone && (
+                        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-2.5">
+                          <p className="text-xs text-amber-800 dark:text-amber-200">
+                            💡 Pre-filled with listing agent info. You can edit, replace, or select from your contacts.
+                          </p>
+                        </div>
+                      )}
+
                       <div className="space-y-2">
-                        <Label htmlFor="sms-phone">Agent Phone *</Label>
+                        <Label>Select from Contacts (Optional)</Label>
+                        <Popover open={contactSelectorOpen} onOpenChange={setContactSelectorOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={contactSelectorOpen}
+                              className="w-full justify-between"
+                            >
+                              <span className="flex items-center gap-2">
+                                <UserCircle className="h-4 w-4" />
+                                {smsForm.agentName && smsForm.toPhone 
+                                  ? `${smsForm.agentName} (${smsForm.toPhone})`
+                                  : "Select a contact..."}
+                              </span>
+                              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-full p-0" align="start">
+                            <Command>
+                              <CommandInput placeholder="Search contacts..." />
+                              <CommandList>
+                                <CommandEmpty>No contacts found.</CommandEmpty>
+                                <CommandGroup>
+                                  {contacts.map((contact: any) => (
+                                    <CommandItem
+                                      key={contact.id}
+                                      value={`${contact.full_name} ${contact.phone} ${contact.company || ''}`}
+                                      onSelect={() => {
+                                        setSmsForm(prev => ({
+                                          ...prev,
+                                          toPhone: contact.phone,
+                                          agentName: contact.full_name,
+                                        }));
+                                        setContactSelectorOpen(false);
+                                      }}
+                                    >
+                                      <Check
+                                        className={`mr-2 h-4 w-4 ${
+                                          smsForm.toPhone === contact.phone ? "opacity-100" : "opacity-0"
+                                        }`}
+                                      />
+                                      <div className="flex flex-col">
+                                        <span className="font-medium">{contact.full_name}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {contact.phone}
+                                          {contact.company && ` • ${contact.company}`}
+                                          {contact.type && ` • ${contact.type}`}
+                                        </span>
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        <p className="text-xs text-muted-foreground">
+                          Select a contact from your database or enter manually below
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sms-phone">Recipient Phone Number *</Label>
                         <Input
                           id="sms-phone"
                           type="tel"
@@ -3025,16 +3139,22 @@ export default function Properties() {
                           onChange={(e) => setSmsForm(prev => ({ ...prev, toPhone: e.target.value }))}
                           placeholder="+1 (555) 123-4567"
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Enter manually or select from contacts above
+                        </p>
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="sms-agent-name">Agent Name *</Label>
+                        <Label htmlFor="sms-agent-name">Recipient Name *</Label>
                         <Input
                           id="sms-agent-name"
                           value={smsForm.agentName}
                           onChange={(e) => setSmsForm(prev => ({ ...prev, agentName: e.target.value }))}
                           placeholder="John Smith"
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Enter manually or select from contacts above
+                        </p>
                       </div>
 
                       <div className="space-y-2">

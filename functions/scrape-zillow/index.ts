@@ -831,6 +831,7 @@ Deno.serve(async (req) => {
           status: scrapedStatus,
           initial_status: prop.homeStatus || prop.statusText || prop.hdpData?.homeInfo?.homeStatus || '',
           days_on_market: parseInteger(prop.daysOnZillow || prop.hdpData?.homeInfo?.daysOnZillow),
+          date_listed: prop.datePostedString ? new Date(prop.datePostedString).toISOString().split('T')[0] : null,
           listing_url: listingUrl,
           url: listingUrl,
           is_new_listing: true,
