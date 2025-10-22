@@ -22,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSearchParams } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ export default function Activities() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   // Fetch user's company first
   const { data: userCompany } = useQuery({
@@ -67,6 +69,10 @@ export default function Activities() {
   const [isAddingActivity, setIsAddingActivity] = useState(false);
   const [editingActivity, setEditingActivity] = useState<any>(null);
   const [cloningActivity, setCloningActivity] = useState<any>(null);
+  const [selectedActivity, setSelectedActivity] = useState<any>(null);
+  
+  // Handle URL parameter for activity ID
+  const activityId = searchParams.get('activity');
   
   const [activityForm, setActivityForm] = useState({
     type: "other",
@@ -98,6 +104,17 @@ export default function Activities() {
     setCurrentPage(1);
   }, [filters, itemsPerPage]);
 
+  // Helper functions to update URL when opening/closing activities
+  const openActivity = (activity: any) => {
+    setSelectedActivity(activity);
+    setSearchParams({ activity: activity.id });
+  };
+
+  const closeActivity = () => {
+    setSelectedActivity(null);
+    setSearchParams({});
+  };
+
   // Fetch ALL activities (for accurate counting with client-side buy_box filter)
   const { data: allActivities, isLoading } = useQuery({
     queryKey: ["all-activities", userCompany?.company_id, filters],
@@ -110,7 +127,7 @@ export default function Activities() {
         .from("activities")
         .select("*, properties(id, address, city, buy_box_id)")
         .eq("company_id", userCompany.company_id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: true });
       
       // Apply filters
       if (filters.status !== "all") {
@@ -165,6 +182,16 @@ export default function Activities() {
   const from = (currentPage - 1) * itemsPerPage;
   const to = from + itemsPerPage;
   const activities = allActivities?.slice(from, to) || [];
+
+  // Open activity from URL parameter
+  useEffect(() => {
+    if (activityId && allActivities) {
+      const activity = allActivities.find((a: any) => a.id === activityId);
+      if (activity) {
+        setSelectedActivity(activity);
+      }
+    }
+  }, [activityId, allActivities]);
 
   // Fetch properties for dropdown
   const { data: properties } = useQuery({
@@ -794,7 +821,7 @@ export default function Activities() {
       {activities && activities.length > 0 && (
         <div className="flex items-center justify-between px-2">
           <p className="text-sm text-muted-foreground">
-            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} activities
+            Showing {activities.length} of {totalCount || 0} activities
           </p>
         </div>
       )}
@@ -812,105 +839,101 @@ export default function Activities() {
         </Card>
       ) : viewMode === "list" ? (
         // List View
-        <div className="space-y-4">
+        <div className="space-y-2">
           {activities?.map((activity) => (
-            <Card key={activity.id} className="hover:shadow-lg transition-shadow">
-              <CardContent className="py-6">
-                <div className="flex items-start gap-4">
-                  <div className="mt-1">
+            <Card 
+              key={activity.id} 
+              className="hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => openActivity(activity)}
+            >
+              <CardContent className="py-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0">
                     {getStatusIcon(activity.status)}
                   </div>
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-start justify-between gap-4">
-                      <h3 className="text-xl font-semibold text-foreground">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-base font-semibold text-foreground truncate">
                         {activity.title || "Untitled Activity"}
                       </h3>
-                      <div className="flex items-center gap-2">
-                        <Badge className={getStatusColor(activity.status)}>
-                          {activity.status}
-                        </Badge>
-                        <Badge variant="outline" className="capitalize">
-                          {activity.type.replace("-", " ")}
-                        </Badge>
-                      </div>
+                      <Badge variant="outline" className="capitalize text-xs flex-shrink-0">
+                        {activity.type.replace("-", " ")}
+                      </Badge>
                     </div>
                     {activity.properties && (
-                      <div className="flex items-start gap-2 px-3 py-2 bg-primary/5 rounded-md border border-primary/10 mb-2">
-                        <MapPin className="h-4 w-4 mt-0.5 text-primary" />
-                        <div>
-                          <p className="text-sm font-medium text-foreground">
-                            {activity.properties.address || "Unknown property"}
-                          </p>
-                          {activity.properties.city && (
-                            <p className="text-xs text-muted-foreground">
-                              {activity.properties.city}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {activity.body && (
-                      <p className="text-base text-muted-foreground">
-                        {activity.body}
+                      <p className="text-sm text-muted-foreground truncate">
+                        📍 {activity.properties.address || "Unknown property"}
+                        {activity.properties.city && ` • ${activity.properties.city}`}
                       </p>
                     )}
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      {activity.assigned_to && (
-                        <span>
-                          👤 {getTeamMemberDisplayName(activity.assigned_to)}
-                        </span>
-                      )}
+                    {activity.body && (
+                      <p className="text-sm text-muted-foreground line-clamp-1 mt-1">
+                        {activity.body.length > 100 ? `${activity.body.substring(0, 100)}...` : activity.body}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-2">
                       {activity.due_at && (
-                        <span>📅 Due: {format(new Date(activity.due_at), "PPp")}</span>
+                        <span>📅 {format(new Date(activity.due_at), "MMM d, yyyy")}</span>
+                      )}
+                      {activity.assigned_to && (
+                        <span>👤 {getTeamMemberDisplayName(activity.assigned_to)}</span>
                       )}
                     </div>
+                  </div>
+                  <div className="flex-shrink-0 flex items-center gap-2">
+                    <Badge className={getStatusColor(activity.status)}>
+                      {activity.status}
+                    </Badge>
                     
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-2 pt-2">
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-1">
                       {activity.status !== 'done' && (
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => updateStatusMutation.mutate({ id: activity.id, status: 'done' })}
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateStatusMutation.mutate({ id: activity.id, status: 'done' });
+                          }}
+                          title="Mark Done"
                         >
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          Mark Done
-                        </Button>
-                      )}
-                      {activity.status === 'done' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateStatusMutation.mutate({ id: activity.id, status: 'open' })}
-                        >
-                          Reopen
+                          <CheckCircle2 className="h-4 w-4" />
                         </Button>
                       )}
                       {activity.status !== 'snoozed' && activity.status !== 'done' && (
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => updateStatusMutation.mutate({ id: activity.id, status: 'snoozed' })}
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateStatusMutation.mutate({ id: activity.id, status: 'snoozed' });
+                          }}
+                          title="Snooze"
                         >
-                          <Clock className="h-4 w-4 mr-1" />
-                          Snooze
+                          <Clock className="h-4 w-4" />
                         </Button>
                       )}
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => handleEditActivity(activity)}
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditActivity(activity);
+                        }}
+                        title="Edit"
                       >
-                        <Edit className="h-4 w-4 mr-1" />
-                        Edit
+                        <Edit className="h-4 w-4" />
                       </Button>
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => handleCloneActivity(activity)}
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCloneActivity(activity);
+                        }}
+                        title="Clone"
                       >
-                        <Copy className="h-4 w-4 mr-1" />
-                        Clone
+                        <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -1057,7 +1080,7 @@ export default function Activities() {
                   </SelectContent>
                 </Select>
                 <span className="text-sm text-muted-foreground ml-2 sm:ml-4">
-                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} activities
+                  Showing {activities?.length || 0} of {totalCount || 0} activities
                 </span>
               </div>
               
@@ -1164,6 +1187,153 @@ export default function Activities() {
           </CardContent>
         </Card>
       )}
+
+      {/* Activity Details Modal */}
+      <Dialog open={!!selectedActivity} onOpenChange={(open) => !open && closeActivity()}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl md:text-2xl">
+              {selectedActivity?.title || "Activity Details"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedActivity && (
+            <div className="space-y-6 mt-4">
+              {/* Status and Type Badges */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className={getStatusColor(selectedActivity.status)}>
+                  {selectedActivity.status}
+                </Badge>
+                <Badge variant="outline" className="capitalize">
+                  {selectedActivity.type.replace("-", " ")}
+                </Badge>
+              </div>
+
+              {/* Property Info */}
+              {selectedActivity.properties && (
+                <div className="flex items-start gap-2 px-4 py-3 bg-primary/5 rounded-lg border border-primary/10">
+                  <MapPin className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-foreground">
+                      {selectedActivity.properties.address || "Unknown property"}
+                    </p>
+                    {selectedActivity.properties.city && (
+                      <p className="text-sm text-muted-foreground">
+                        {selectedActivity.properties.city}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Body/Description */}
+              {selectedActivity.body && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Details</Label>
+                  <p className="text-base text-muted-foreground">
+                    {selectedActivity.body}
+                  </p>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {selectedActivity.assigned_to && (
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-muted-foreground">Assigned To</Label>
+                    <p className="text-sm">
+                      👤 {getTeamMemberDisplayName(selectedActivity.assigned_to)}
+                    </p>
+                  </div>
+                )}
+                {selectedActivity.due_at && (
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-muted-foreground">Due Date</Label>
+                    <p className="text-sm">
+                      📅 {format(new Date(selectedActivity.due_at), "PPp")}
+                    </p>
+                  </div>
+                )}
+                {selectedActivity.created_at && (
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-muted-foreground">Created</Label>
+                    <p className="text-sm">
+                      {format(new Date(selectedActivity.created_at), "PPp")}
+                    </p>
+                  </div>
+                )}
+                {selectedActivity.completed_at && (
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-muted-foreground">Completed</Label>
+                    <p className="text-sm">
+                      ✅ {format(new Date(selectedActivity.completed_at), "PPp")}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-2 pt-4 border-t">
+                {selectedActivity.status !== 'done' && (
+                  <Button
+                    variant="default"
+                    onClick={() => {
+                      updateStatusMutation.mutate({ id: selectedActivity.id, status: 'done' });
+                      closeActivity();
+                    }}
+                  >
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Mark Done
+                  </Button>
+                )}
+                {selectedActivity.status === 'done' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      updateStatusMutation.mutate({ id: selectedActivity.id, status: 'open' });
+                      closeActivity();
+                    }}
+                  >
+                    Reopen
+                  </Button>
+                )}
+                {selectedActivity.status !== 'snoozed' && selectedActivity.status !== 'done' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      updateStatusMutation.mutate({ id: selectedActivity.id, status: 'snoozed' });
+                      closeActivity();
+                    }}
+                  >
+                    <Clock className="h-4 w-4 mr-2" />
+                    Snooze
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    handleEditActivity(selectedActivity);
+                    closeActivity();
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    handleCloneActivity(selectedActivity);
+                    closeActivity();
+                  }}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Clone
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -2396,7 +2396,7 @@ export default function Properties() {
 
           <div className="flex items-center justify-between mt-4">
             <p className="text-sm text-muted-foreground">
-              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} properties
+              Showing {sortedProperties?.length || 0} of {totalCount || 0} properties
             </p>
             <Button
               variant="ghost"
@@ -2516,10 +2516,14 @@ export default function Properties() {
                       )}
                       
                       {nextFollowUp && (
-                        <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mb-2">
+                        <Link 
+                          to={`/activities?activity=${nextFollowUp.id}`}
+                          className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mb-2 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <Clock className="h-3 w-3" />
                           <span>Follow-up: {format(new Date(nextFollowUp.due_at), 'MMM d')}</span>
-                        </div>
+                        </Link>
                       )}
                     </div>
                     
@@ -2652,9 +2656,9 @@ export default function Properties() {
                   </TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('created_at')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
+                    <Button variant="ghost" onClick={() => handleSort('date_listed')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Listing Date
-                      {getSortIcon('created_at')}
+                      {getSortIcon('date_listed')}
                     </Button>
                   </TableHead>
                   <TableHead>
@@ -2810,24 +2814,26 @@ export default function Properties() {
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 text-xs px-2 gap-1 hover:bg-primary/10"
-                                    onClick={() => {
-                                      setSelectedProperty(property);
-                                      setEditedProperty({ ...property });
-                                    }}
-                                  >
-                                    <Calendar className="h-3 w-3" />
-                                    {dateLabel}
-                                  </Button>
+                                  <Link to={`/activities?activity=${nextActivity.id}`}>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs px-2 gap-1 hover:bg-primary/10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                      }}
+                                    >
+                                      <Calendar className="h-3 w-3" />
+                                      {dateLabel}
+                                    </Button>
+                                  </Link>
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <div className="text-xs max-w-xs">
                                     <p className="font-semibold">{nextActivity.title || 'Activity'}</p>
                                     <p className="text-muted-foreground">Type: {nextActivity.type}</p>
                                     <p className="text-muted-foreground">Due: {format(dueDate, 'PPp')}</p>
+                                    <p className="text-blue-500 text-[10px] mt-1">Click to view activity</p>
                                   </div>
                                 </TooltipContent>
                               </Tooltip>
@@ -2845,7 +2851,7 @@ export default function Properties() {
                         ) : property.source || ''}
                       </TableCell>
                       <TableCell>
-                        {property.created_at ? format(new Date(property.created_at), 'MM/dd/yyyy') : '-'}
+                        {property.date_listed ? format(new Date(property.date_listed), 'MM/dd/yyyy') : '-'}
                       </TableCell>
                       <TableCell>{property.bedrooms || '-'}</TableCell>
                       <TableCell>{property.bathrooms || '-'}</TableCell>
@@ -2875,7 +2881,7 @@ export default function Properties() {
                   </SelectContent>
                 </Select>
                 <span className="text-sm text-muted-foreground ml-2 sm:ml-4">
-                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0} properties
+                  Showing {sortedProperties?.length || 0} of {totalCount || 0} properties
                 </span>
               </div>
               
@@ -3173,7 +3179,7 @@ export default function Properties() {
                   </div>
                   
                   {/* Action Buttons - Email, SMS, Activity */}
-                  <div className="flex flex-wrap gap-2 lg:ml-auto">
+                  <div className="flex flex-wrap gap-2 w-full lg:w-auto lg:ml-auto">
                 <Dialog open={isSendingEmail} onOpenChange={(open) => {
                   if (open && selectedProperty) {
                     // Pre-populate email form with seller agent data
@@ -3192,13 +3198,13 @@ export default function Properties() {
                       Send Email
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="w-[95vw] max-w-md">
+                  <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle className="text-lg md:text-xl">Send Email to Realtor</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-3 md:space-y-4 mt-4">
                       <div className="space-y-2">
-                        <Label htmlFor="email-template">Email Template *</Label>
+                        <Label htmlFor="email-template" className="text-sm">Email Template *</Label>
                         <Select
                           value={emailForm.templateId}
                           onValueChange={(value) => setEmailForm(prev => ({ ...prev, templateId: value }))}
@@ -3296,10 +3302,10 @@ export default function Properties() {
                       Send SMS
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="w-[95vw] max-w-md">
+                  <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle className="text-lg md:text-xl">Send SMS</DialogTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-xs md:text-sm text-muted-foreground mt-1">
                         Send a text message to anyone about this property
                       </p>
                     </DialogHeader>
@@ -3313,7 +3319,7 @@ export default function Properties() {
                       )}
 
                       <div className="space-y-2">
-                        <Label>Select from Contacts (Optional)</Label>
+                        <Label className="text-sm">Select from Contacts (Optional)</Label>
                         <Popover open={contactSelectorOpen} onOpenChange={setContactSelectorOpen}>
                           <PopoverTrigger asChild>
                             <Button
@@ -3568,37 +3574,31 @@ export default function Properties() {
               </div>
 
             <Tabs defaultValue="general" className="mt-4">
-              <div className="overflow-x-auto">
-                <TabsList className="grid w-full grid-cols-6 min-w-[600px]">
-                  <TabsTrigger value="general" className="text-xs md:text-sm">
-                    <Home className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                    <span className="hidden sm:inline">General</span>
-                    <span className="sm:hidden">Gen</span>
+              <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+                <TabsList className="grid w-full grid-cols-6 min-w-max md:min-w-0">
+                  <TabsTrigger value="general" className="text-xs md:text-sm px-2 md:px-4">
+                    <Home className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
+                    <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">General</span>
                   </TabsTrigger>
-                <TabsTrigger value="listing" className="text-xs md:text-sm">
-                  <Calendar className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                  <span className="hidden sm:inline">Listing</span>
-                  <span className="sm:hidden">List</span>
+                <TabsTrigger value="listing" className="text-xs md:text-sm px-2 md:px-4">
+                  <Calendar className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
+                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Listing</span>
                 </TabsTrigger>
-                <TabsTrigger value="financial" className="text-xs md:text-sm">
-                  <DollarSign className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                  <span className="hidden sm:inline">Financial</span>
-                  <span className="sm:hidden">$</span>
+                <TabsTrigger value="financial" className="text-xs md:text-sm px-2 md:px-4">
+                  <DollarSign className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
+                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Financial</span>
                 </TabsTrigger>
-                <TabsTrigger value="details" className="text-xs md:text-sm">
-                  <Building2 className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                  <span className="hidden sm:inline">Details</span>
-                  <span className="sm:hidden">Info</span>
+                <TabsTrigger value="details" className="text-xs md:text-sm px-2 md:px-4">
+                  <Building2 className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
+                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Details</span>
                 </TabsTrigger>
-                <TabsTrigger value="history" className="text-xs md:text-sm">
-                  <Clock className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                  <span className="hidden sm:inline">History</span>
-                  <span className="sm:hidden">Hist</span>
+                <TabsTrigger value="history" className="text-xs md:text-sm px-2 md:px-4">
+                  <Clock className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
+                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">History</span>
                 </TabsTrigger>
-                <TabsTrigger value="comps" className="text-xs md:text-sm">
-                  <Ruler className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                  <span className="hidden sm:inline">Comps</span>
-                  <span className="sm:hidden">Cmp</span>
+                <TabsTrigger value="comps" className="text-xs md:text-sm px-2 md:px-4">
+                  <Ruler className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
+                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Comps</span>
                 </TabsTrigger>
               </TabsList>
               </div>
@@ -3833,17 +3833,19 @@ export default function Properties() {
               {/* Listing Tab */}
               <TabsContent value="listing" className="space-y-4 mt-4">
                 {/* Save Button */}
-                <div className="flex justify-end gap-2 pb-4 border-b">
+                <div className="flex flex-col sm:flex-row justify-end gap-2 pb-4 border-b">
                   <Button
                     variant="outline"
                     onClick={() => setEditedProperty({ ...selectedProperty })}
                     disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
                   >
                     Reset Changes
                   </Button>
                   <Button
                     onClick={handleSaveProperty}
                     disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
                   >
                     {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
@@ -3917,17 +3919,19 @@ export default function Properties() {
               {/* Financial Tab */}
               <TabsContent value="financial" className="space-y-4 mt-4">
                 {/* Save Button */}
-                <div className="flex justify-end gap-2 pb-4 border-b">
+                <div className="flex flex-col sm:flex-row justify-end gap-2 pb-4 border-b">
                   <Button
                     variant="outline"
                     onClick={() => setEditedProperty({ ...selectedProperty })}
                     disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
                   >
                     Reset Changes
                   </Button>
                   <Button
                     onClick={handleSaveProperty}
                     disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
+                    className="w-full sm:w-auto text-sm"
                   >
                     {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
@@ -4280,13 +4284,13 @@ export default function Properties() {
 
                 {/* Add Comp Form Dialog */}
                 <Dialog open={isAddingComp} onOpenChange={setIsAddingComp}>
-                  <DialogContent className="w-[95vw] max-w-md">
+                  <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle className="text-lg md:text-xl">Add Comparable Property</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 mt-4">
                       <div className="space-y-2">
-                        <Label htmlFor="comp-address">Address *</Label>
+                        <Label htmlFor="comp-address" className="text-sm">Address *</Label>
                         <Input
                           id="comp-address"
                           value={compForm.address}
@@ -4409,15 +4413,15 @@ export default function Properties() {
 
       {/* Bulk Add Activity Dialog */}
       <Dialog open={isBulkAddingActivity} onOpenChange={setIsBulkAddingActivity}>
-        <DialogContent className="w-[95vw] max-w-md">
+        <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-lg md:text-xl">
+            <DialogTitle className="text-base md:text-lg lg:text-xl">
               Add Activity to {selectedPropertyIds.length} {selectedPropertyIds.length === 1 ? 'Property' : 'Properties'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="bulk-activity-type">Activity Type</Label>
+              <Label htmlFor="bulk-activity-type" className="text-sm">Activity Type</Label>
               <Select
                 value={bulkActivityForm.type}
                 onValueChange={(value) => setBulkActivityForm(prev => ({ ...prev, type: value }))}
@@ -4442,7 +4446,7 @@ export default function Properties() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="bulk-activity-title">Title</Label>
+              <Label htmlFor="bulk-activity-title" className="text-sm">Title</Label>
               <Input
                 id="bulk-activity-title"
                 value={bulkActivityForm.title}
@@ -4452,7 +4456,7 @@ export default function Properties() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="bulk-activity-body">Details</Label>
+              <Label htmlFor="bulk-activity-body" className="text-sm">Details</Label>
               <Textarea
                 id="bulk-activity-body"
                 value={bulkActivityForm.body}
@@ -4463,7 +4467,7 @@ export default function Properties() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="bulk-activity-due">Due Date (Optional)</Label>
+              <Label htmlFor="bulk-activity-due" className="text-sm">Due Date (Optional)</Label>
               <Input
                 id="bulk-activity-due"
                 type="datetime-local"
@@ -4494,7 +4498,7 @@ export default function Properties() {
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label htmlFor="bulk-email-template">Email Template *</Label>
+              <Label htmlFor="bulk-email-template" className="text-sm">Email Template *</Label>
               <Select
                 value={bulkEmailForm.templateId}
                 onValueChange={(value) => setBulkEmailForm(prev => ({ ...prev, templateId: value }))}
@@ -4519,7 +4523,7 @@ export default function Properties() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="bulk-email-offer-price">Offer Price (Optional)</Label>
+              <Label htmlFor="bulk-email-offer-price" className="text-sm">Offer Price (Optional)</Label>
               <Input
                 id="bulk-email-offer-price"
                 value={bulkEmailForm.offerPrice}
@@ -4593,7 +4597,7 @@ export default function Properties() {
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label htmlFor="bulk-sms-message">Message *</Label>
+              <Label htmlFor="bulk-sms-message" className="text-sm">Message *</Label>
               <Textarea
                 id="bulk-sms-message"
                 value={bulkSMSMessage}
