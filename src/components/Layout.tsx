@@ -1,8 +1,9 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,7 +23,8 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -33,6 +35,23 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Communication", href: "/communication", icon: MessageSquare },
   ];
 
+  // Initialize sidebar state based on screen size
+  useEffect(() => {
+    if (isMobile) {
+      setSidebarOpen(false);
+    } else {
+      setSidebarOpen(true);
+    }
+  }, [isMobile]);
+
+  // Close sidebar on mobile when navigating
+  useEffect(() => {
+    if (isMobile && sidebarOpen) {
+      setSidebarOpen(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, isMobile]);
+
   const getUserInitials = () => {
     if (user?.email) {
       return user.email.substring(0, 2).toUpperCase();
@@ -42,20 +61,36 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-secondary flex">
+      {/* Mobile Backdrop */}
+      {isMobile && sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 h-screen transition-all duration-300 bg-card border-r",
-          sidebarOpen ? "w-64" : "w-20"
+          "fixed left-0 top-0 z-50 h-screen transition-all duration-300 bg-card border-r",
+          // Mobile: overlay with transform, Desktop: normal sidebar with width change
+          isMobile
+            ? cn(
+                "w-64 transform",
+                sidebarOpen ? "translate-x-0" : "-translate-x-full"
+              )
+            : sidebarOpen
+            ? "w-64"
+            : "w-20"
         )}
       >
         {/* Sidebar Header */}
         <div className="flex h-16 items-center justify-between px-4 border-b">
-          <Link to="/" className={cn("flex items-center space-x-2", !sidebarOpen && "justify-center w-full")}>
+          <Link to="/" className={cn("flex items-center space-x-2", !isMobile && !sidebarOpen && "justify-center w-full")}>
             <Building2 className="h-6 w-6 text-primary flex-shrink-0" />
-            {sidebarOpen && <span className="text-lg font-bold text-foreground">Real Estate CRM</span>}
+            {(isMobile || sidebarOpen) && <span className="text-lg font-bold text-foreground">Real Estate CRM</span>}
           </Link>
-          {sidebarOpen && (
+          {(isMobile || sidebarOpen) && (
             <Button
               variant="ghost"
               size="icon"
@@ -81,12 +116,12 @@ export default function Layout({ children }: LayoutProps) {
                   isActive
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                  !sidebarOpen && "justify-center"
+                  !isMobile && !sidebarOpen && "justify-center"
                 )}
-                title={!sidebarOpen ? item.name : undefined}
+                title={!isMobile && !sidebarOpen ? item.name : undefined}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
-                {sidebarOpen && <span>{item.name}</span>}
+                {(isMobile || sidebarOpen) && <span>{item.name}</span>}
               </Link>
             );
           })}
@@ -100,7 +135,7 @@ export default function Layout({ children }: LayoutProps) {
                 variant="ghost"
                 className={cn(
                   "w-full justify-start gap-3",
-                  !sidebarOpen && "justify-center px-0"
+                  !isMobile && !sidebarOpen && "justify-center px-0"
                 )}
               >
                 <Avatar className="h-8 w-8 flex-shrink-0">
@@ -108,7 +143,7 @@ export default function Layout({ children }: LayoutProps) {
                     {getUserInitials()}
                   </AvatarFallback>
                 </Avatar>
-                {sidebarOpen && (
+                {(isMobile || sidebarOpen) && (
                   <div className="flex flex-col items-start text-left overflow-hidden">
                     <p className="text-sm font-medium truncate w-full">{user?.email?.split('@')[0]}</p>
                     <p className="text-xs text-muted-foreground truncate w-full">{user?.email}</p>
@@ -140,10 +175,14 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main Content Area */}
-      <div className={cn("flex-1 transition-all duration-300", sidebarOpen ? "ml-64" : "ml-20")}>
+      <div className={cn(
+        "flex-1 transition-all duration-300",
+        isMobile ? "ml-0" : sidebarOpen ? "ml-64" : "ml-20"
+      )}>
         {/* Top Bar */}
-        <header className="sticky top-0 z-30 h-16 border-b bg-card flex items-center px-6">
-          {!sidebarOpen && (
+        <header className="sticky top-0 z-30 h-16 border-b bg-card flex items-center px-4 md:px-6">
+          {/* Hamburger Menu for Mobile or Collapsed Sidebar for Desktop */}
+          {(isMobile || !sidebarOpen) && (
             <Button
               variant="ghost"
               size="icon"
@@ -153,13 +192,13 @@ export default function Layout({ children }: LayoutProps) {
               <Menu className="h-5 w-5" />
             </Button>
           )}
-          <h1 className="text-lg font-semibold">
+          <h1 className="text-base md:text-lg font-semibold truncate">
             {navigation.find((item) => item.href === location.pathname)?.name || "Real Estate CRM"}
           </h1>
         </header>
 
         {/* Page Content */}
-        <main className="p-6">
+        <main className="p-4 md:p-6">
           {children}
         </main>
       </div>

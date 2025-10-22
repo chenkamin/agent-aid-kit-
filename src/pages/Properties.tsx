@@ -39,6 +39,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Checkbox } from "@/components/ui/checkbox";
 import BuyBoxAnalyticsModal from "@/components/BuyBoxAnalyticsModal";
 import { useSearchParams } from "react-router-dom";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 const PROPERTY_TYPES = [
   { value: "Single Family", label: "Single Family Home (SFH)", icon: "🏠" },
@@ -51,12 +60,14 @@ const PROPERTY_TYPES = [
 ];
 
 export default function Properties() {
+  const isMobile = useIsMobile();
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
   const [editedProperty, setEditedProperty] = useState<any>(null);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [isAddingActivity, setIsAddingActivity] = useState(false);
   const [isBulkAddingActivity, setIsBulkAddingActivity] = useState(false);
   const [isAddingProperty, setIsAddingProperty] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [activityForm, setActivityForm] = useState({
     type: "other",
     title: "",
@@ -1571,26 +1582,26 @@ export default function Properties() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">Properties</h1>
-          <p className="text-lg text-muted-foreground mt-2">
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-foreground">Properties</h1>
+          <p className="text-sm md:text-lg text-muted-foreground mt-1 md:mt-2">
             Manage your real estate portfolio
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 md:gap-3 w-full sm:w-auto">
           <Dialog open={isCreatingList} onOpenChange={setIsCreatingList}>
             <DialogTrigger asChild>
-              <Button size="lg" variant="outline" className="text-base">
-                <List className="mr-2 h-5 w-5" />
-                Create List
+              <Button size={isMobile ? "default" : "lg"} variant="outline" className="text-sm md:text-base flex-1 sm:flex-none">
+                <List className="mr-1 md:mr-2 h-4 md:h-5 w-4 md:w-5" />
+                {isMobile ? "List" : "Create List"}
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" aria-describedby="create-list-description">
+            <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] sm:max-h-[80vh] overflow-y-auto" aria-describedby="create-list-description">
               <DialogHeader>
-                <DialogTitle>Create Property List</DialogTitle>
-                <p id="create-list-description" className="text-sm text-muted-foreground">
+                <DialogTitle className="text-lg md:text-xl">Create Property List</DialogTitle>
+                <p id="create-list-description" className="text-xs md:text-sm text-muted-foreground">
                   Define criteria for your property search list (for future Zillow scraping)
                 </p>
               </DialogHeader>
@@ -1646,7 +1657,7 @@ export default function Properties() {
                   <p className="text-xs text-muted-foreground mb-2">
                     Select the types of properties you want to include. Leave empty to include all types.
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {PROPERTY_TYPES.map((type) => (
                       <div key={type.value} className="flex items-center space-x-2 border rounded-lg p-2 hover:bg-accent transition-colors">
                         <Checkbox
@@ -1656,7 +1667,7 @@ export default function Properties() {
                         />
                         <label
                           htmlFor={`list-type-${type.value}`}
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center gap-1.5"
+                          className="text-xs sm:text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center gap-1.5"
                         >
                           <span>{type.icon}</span>
                           <span className="text-xs">{type.label}</span>
@@ -1738,15 +1749,15 @@ export default function Properties() {
 
           <Dialog open={isAddingProperty} onOpenChange={setIsAddingProperty}>
             <DialogTrigger asChild>
-          <Button size="lg" className="text-base">
-            <Plus className="mr-2 h-5 w-5" />
-            Add Property
+          <Button size={isMobile ? "default" : "lg"} className="text-sm md:text-base flex-1 sm:flex-none">
+            <Plus className="mr-1 md:mr-2 h-4 md:h-5 w-4 md:w-5" />
+            {isMobile ? "Add" : "Add Property"}
           </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" aria-describedby="add-property-description">
+            <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] sm:max-h-[80vh] overflow-y-auto" aria-describedby="add-property-description">
               <DialogHeader>
-                <DialogTitle>Add New Property</DialogTitle>
-                <p id="add-property-description" className="text-sm text-muted-foreground">
+                <DialogTitle className="text-lg md:text-xl">Add New Property</DialogTitle>
+                <p id="add-property-description" className="text-xs md:text-sm text-muted-foreground">
                   Enter the property details below
                 </p>
               </DialogHeader>
@@ -1958,7 +1969,7 @@ export default function Properties() {
       </div>
 
       {/* Search Bar and Filter Toggle */}
-      <div className="mb-6 flex gap-4">
+      <div className="mb-4 md:mb-6 flex flex-col sm:flex-row gap-2 md:gap-4">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -1972,26 +1983,137 @@ export default function Properties() {
           variant="outline"
           onClick={exportToCSV}
           disabled={!sortedProperties || sortedProperties.length === 0}
+          className="w-full sm:w-auto"
         >
           <Download className="mr-2 h-4 w-4" />
-          Export to CSV
+          {isMobile ? "Export" : "Export to CSV"}
         </Button>
-        <Button
-          variant="outline"
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          {showFilters ? (
-            <>
-              <ChevronUp className="mr-2 h-4 w-4" />
-              Hide Filters
-            </>
-          ) : (
-            <>
-              <ChevronDown className="mr-2 h-4 w-4" />
-              Show Filters
-            </>
-          )}
-        </Button>
+        {isMobile ? (
+          <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline">
+                <ChevronDown className="mr-2 h-4 w-4" />
+                Filters
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Filters</SheetTitle>
+                <SheetDescription>
+                  Filter properties by various criteria
+                </SheetDescription>
+              </SheetHeader>
+              <div className="grid gap-4 py-4">
+                {/* Filters for mobile */}
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-filter-status" className="text-sm font-medium">Status</Label>
+                  <Select value={filters.status} onValueChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}>
+                    <SelectTrigger id="mobile-filter-status">
+                      <SelectValue placeholder="All Statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="For Sale">For Sale</SelectItem>
+                      <SelectItem value="Under Contract">Under Contract</SelectItem>
+                      <SelectItem value="Sold">Sold</SelectItem>
+                      <SelectItem value="Off Market">Off Market</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-filter-buybox" className="text-sm font-medium">Buy Box</Label>
+                  <Select value={filters.buyBoxId} onValueChange={(value) => setFilters((prev) => ({ ...prev, buyBoxId: value }))}>
+                    <SelectTrigger id="mobile-filter-buybox">
+                      <SelectValue placeholder="All Buy Boxes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Buy Boxes</SelectItem>
+                      {buyBoxes?.map((box) => (
+                        <SelectItem key={box.id} value={box.id}>{box.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-filter-workflow" className="text-sm font-medium">Workflow Stage</Label>
+                  <Select value={filters.workflowState} onValueChange={(value) => setFilters((prev) => ({ ...prev, workflowState: value }))}>
+                    <SelectTrigger id="mobile-filter-workflow">
+                      <SelectValue placeholder="All Stages" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Stages</SelectItem>
+                      <SelectItem value="Initial">🆕 Initial</SelectItem>
+                      <SelectItem value="Reviewing">👀 Reviewing</SelectItem>
+                      <SelectItem value="Research">🔍 Research</SelectItem>
+                      <SelectItem value="On Progress">⚡ On Progress</SelectItem>
+                      <SelectItem value="Follow Up">📞 Follow Up</SelectItem>
+                      <SelectItem value="Negotiating">💬 Negotiating</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="mobile-filter-min-price" className="text-sm font-medium">Min Price</Label>
+                    <Input
+                      id="mobile-filter-min-price"
+                      type="number"
+                      placeholder="$0"
+                      value={filterInputs.minPrice}
+                      onChange={(e) => setFilterInputs((prev) => ({ ...prev, minPrice: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="mobile-filter-max-price" className="text-sm font-medium">Max Price</Label>
+                    <Input
+                      id="mobile-filter-max-price"
+                      type="number"
+                      placeholder="Any"
+                      value={filterInputs.maxPrice}
+                      onChange={(e) => setFilterInputs((prev) => ({ ...prev, maxPrice: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-filter-home-type" className="text-sm font-medium">Home Type</Label>
+                  <Select value={filters.homeType} onValueChange={(value) => setFilters((prev) => ({ ...prev, homeType: value }))}>
+                    <SelectTrigger id="mobile-filter-home-type">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="Single Family">Single Family</SelectItem>
+                      <SelectItem value="Multi Family">Multi Family</SelectItem>
+                      <SelectItem value="Condo">Condo</SelectItem>
+                      <SelectItem value="Townhouse">Townhouse</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+        ) : (
+          <Button
+            variant="outline"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            {showFilters ? (
+              <>
+                <ChevronUp className="mr-2 h-4 w-4" />
+                Hide Filters
+              </>
+            ) : (
+              <>
+                <ChevronDown className="mr-2 h-4 w-4" />
+                Show Filters
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       {/* Bulk Actions Toolbar */}
@@ -2348,7 +2470,130 @@ export default function Properties() {
             )}
           </CardContent>
         </Card>
+      ) : isMobile ? (
+        /* Mobile Card View */
+        <div className="space-y-3">
+          {sortedProperties?.map((property) => {
+            const nextFollowUp = getNextFollowUp(property);
+            return (
+              <Card 
+                key={property.id}
+                className="cursor-pointer hover:bg-accent/50 transition-colors"
+                onClick={() => {
+                  setSelectedProperty(property);
+                  setEditedProperty({ ...property });
+                }}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Checkbox
+                          checked={selectedPropertyIds.includes(property.id)}
+                          onCheckedChange={(checked) => handleSelectProperty(property.id, checked as boolean)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-sm truncate">{getPropertyDisplayName(property)}</h3>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {[property.city, property.state].filter(Boolean).join(', ')}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
+                        {property.price && (
+                          <span className="font-semibold text-foreground">
+                            ${property.price?.toLocaleString()}
+                          </span>
+                        )}
+                        {property.bedrooms && <span>{property.bedrooms} bed</span>}
+                        {property.bathrooms && <span>{property.bathrooms} bath</span>}
+                      </div>
+
+                      {property.is_new_listing && (
+                        <Badge className="bg-green-500 text-white hover:bg-green-600 mb-2">NEW</Badge>
+                      )}
+                      
+                      {nextFollowUp && (
+                        <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mb-2">
+                          <Clock className="h-3 w-3" />
+                          <span>Follow-up: {format(new Date(nextFollowUp.due_at), 'MMM d')}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {property.listing_url && (
+                      <a
+                        href={property.listing_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0"
+                      >
+                        <Button size="sm" variant="outline" className="h-8 px-2">
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </a>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          
+          {/* Mobile Pagination */}
+          {sortedProperties && sortedProperties.length > 0 && (
+            <Card className="mt-4">
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalCount || 0)} of {totalCount || 0}
+                    </span>
+                    <Select
+                      value={itemsPerPage.toString()}
+                      onValueChange={(value) => setItemsPerPage(Number(value))}
+                    >
+                      <SelectTrigger className="w-20 h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="flex items-center justify-between gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm font-medium">
+                      Page {currentPage} of {Math.ceil((totalCount || 0) / itemsPerPage)}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil((totalCount || 0) / itemsPerPage), prev + 1))}
+                      disabled={currentPage >= Math.ceil((totalCount || 0) / itemsPerPage)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       ) : (
+        /* Desktop Table View */
         <Card>
           <CardContent className="p-0">
             <Table>

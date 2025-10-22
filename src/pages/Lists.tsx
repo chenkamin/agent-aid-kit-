@@ -54,7 +54,9 @@ export default function Lists() {
   const [scrapingListId, setScrapingListId] = useState<string | null>(null);
   const [selectedHomeTypes, setSelectedHomeTypes] = useState<string[]>([]);
   const [filterByCityMatch, setFilterByCityMatch] = useState(false);
+  const [filterByNeighborhoods, setFilterByNeighborhoods] = useState(false);
   const [cities, setCities] = useState("");
+  const [neighborhoods, setNeighborhoods] = useState("");
   const [listForm, setListForm] = useState({
     name: "",
     description: "",
@@ -76,6 +78,10 @@ export default function Lists() {
     id: string;
     name: string;
   } | null>(null);
+  // Bulk update states
+  const [selectedBuyBoxIds, setSelectedBuyBoxIds] = useState<string[]>([]);
+  const [showBulkUpdateDialog, setShowBulkUpdateDialog] = useState(false);
+  const [bulkHomeTypes, setBulkHomeTypes] = useState<string[]>([]);
   
   // Get user's company
   const { data: userCompany } = useQuery({
@@ -254,6 +260,7 @@ export default function Lists() {
         description: data.description || null,
         zip_codes: data.zipCodes.split(",").map((z: string) => z.trim()).filter(Boolean),
         cities: data.cities ? data.cities.split(",").map((c: string) => c.trim()).filter(Boolean) : [],
+        neighborhoods: data.neighborhoods ? data.neighborhoods.split(",").map((n: string) => n.trim()).filter(Boolean) : [],
         price_min: data.priceMin ? parseFloat(data.priceMin) : null,
         price_max: data.priceMax ? parseFloat(data.priceMax) : null,
         days_on_zillow: data.daysOnZillow ? parseInt(data.daysOnZillow) : null,
@@ -262,6 +269,7 @@ export default function Lists() {
         for_rent: data.forRent,
         filter_by_ppsf: data.filterByPpsf,
         filter_by_city_match: data.filterByCityMatch,
+        filter_by_neighborhoods: data.filterByNeighborhoods,
         home_types: data.homeTypes || [],
       };
 
@@ -300,7 +308,9 @@ export default function Lists() {
         setEditingList(null);
         setSelectedHomeTypes([]);
         setFilterByCityMatch(false);
+        setFilterByNeighborhoods(false);
         setCities("");
+        setNeighborhoods("");
         setListForm({
           name: "",
           description: "",
@@ -359,7 +369,9 @@ export default function Lists() {
         setEditingList(null);
         setSelectedHomeTypes([]);
         setFilterByCityMatch(false);
+        setFilterByNeighborhoods(false);
         setCities("");
+        setNeighborhoods("");
         setListForm({
           name: "",
           description: "",
@@ -455,6 +467,49 @@ export default function Lists() {
     },
   });
 
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async (homeTypes: string[]) => {
+      if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
+      
+      // Update all selected buy boxes
+      const updatePromises = selectedBuyBoxIds.map(buyBoxId =>
+        supabase
+          .from("buy_boxes")
+          .update({ home_types: homeTypes })
+          .eq("id", buyBoxId)
+          .eq("company_id", userCompany.company_id)
+      );
+      
+      const results = await Promise.all(updatePromises);
+      
+      // Check for errors
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) {
+        throw new Error(`Failed to update ${errors.length} buy box(es)`);
+      }
+      
+      return results;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["buy_boxes", userCompany?.company_id] });
+      toast({
+        title: "Bulk update completed",
+        description: `Successfully updated ${selectedBuyBoxIds.length} buy box(es) with new property types.`,
+      });
+      setShowBulkUpdateDialog(false);
+      setSelectedBuyBoxIds([]);
+      setBulkHomeTypes([]);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Bulk update failed",
+        description: error.message || "An error occurred during bulk update",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleScrape = (listId: string) => {
     scrapeListMutation.mutate(listId);
   };
@@ -463,7 +518,9 @@ export default function Lists() {
     setEditingList(list);
     setSelectedHomeTypes(list.home_types || []);
     setFilterByCityMatch(list.filter_by_city_match ?? false);
+    setFilterByNeighborhoods(list.filter_by_neighborhoods ?? false);
     setCities(list.cities ? list.cities.join(", ") : "");
+    setNeighborhoods(list.neighborhoods ? list.neighborhoods.join(", ") : "");
     setListForm({
       name: list.name,
       description: list.description || "",
@@ -485,6 +542,42 @@ export default function Lists() {
         ? prev.filter(t => t !== type)
         : [...prev, type]
     );
+  };
+
+  const toggleBulkHomeType = (type: string) => {
+    setBulkHomeTypes(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    );
+  };
+
+  const toggleBuyBoxSelection = (buyBoxId: string) => {
+    setSelectedBuyBoxIds(prev =>
+      prev.includes(buyBoxId)
+        ? prev.filter(id => id !== buyBoxId)
+        : [...prev, buyBoxId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedBuyBoxIds.length === sortedLists.length) {
+      setSelectedBuyBoxIds([]);
+    } else {
+      setSelectedBuyBoxIds(sortedLists.map((list: any) => list.id));
+    }
+  };
+
+  const handleBulkUpdate = () => {
+    if (selectedBuyBoxIds.length === 0) {
+      toast({
+        title: "No buy boxes selected",
+        description: "Please select at least one buy box to update",
+        variant: "destructive",
+      });
+      return;
+    }
+    setShowBulkUpdateDialog(true);
   };
 
   const handleDelete = (listId: string) => {
@@ -514,10 +607,18 @@ export default function Lists() {
             Create property search criteria and automatically scrape Zillow
           </p>
         </div>
-        <Button onClick={() => setIsCreatingList(true)} size="lg">
-          <Plus className="mr-2 h-5 w-5" />
-          Create Buy Box
-        </Button>
+        <div className="flex gap-3">
+          {selectedBuyBoxIds.length > 0 && (
+            <Button onClick={handleBulkUpdate} variant="outline" size="lg">
+              <Edit className="mr-2 h-5 w-5" />
+              Bulk Update ({selectedBuyBoxIds.length})
+            </Button>
+          )}
+          <Button onClick={() => setIsCreatingList(true)} size="lg">
+            <Plus className="mr-2 h-5 w-5" />
+            Create Buy Box
+          </Button>
+        </div>
       </div>
 
       {sortedLists && sortedLists.length === 0 ? (
@@ -541,7 +642,10 @@ export default function Lists() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]">
-                    <Checkbox />
+                    <Checkbox
+                      checked={sortedLists.length > 0 && selectedBuyBoxIds.length === sortedLists.length}
+                      onCheckedChange={toggleSelectAll}
+                    />
                   </TableHead>
                   <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('name')} className="font-semibold p-0 h-auto hover:bg-transparent">
@@ -571,7 +675,10 @@ export default function Lists() {
                 {sortedLists?.map((list: any) => (
                   <TableRow key={list.id}>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Checkbox />
+                      <Checkbox
+                        checked={selectedBuyBoxIds.includes(list.id)}
+                        onCheckedChange={() => toggleBuyBoxSelection(list.id)}
+                      />
                     </TableCell>
                     <TableCell className="font-medium">{list.name}</TableCell>
                     <TableCell>
@@ -689,7 +796,9 @@ export default function Lists() {
           setCities("");
           setListForm({
             name: "",
+            description: "",
             zipCodes: "",
+            priceMin: "",
             priceMax: "",
             daysOnZillow: "",
             forSaleByAgent: true,
@@ -814,6 +923,19 @@ export default function Lists() {
                     />
                     <p className="text-xs text-muted-foreground">Comma-separated list of cities for filtering</p>
                   </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="neighborhoods" className="text-sm font-semibold">Neighborhoods (Optional)</Label>
+                    <Textarea
+                      id="neighborhoods"
+                      placeholder="e.g., Tremont, Ohio City, Downtown"
+                      value={neighborhoods}
+                      onChange={(e) => setNeighborhoods(e.target.value)}
+                      rows={3}
+                      className="resize-none"
+                    />
+                    <p className="text-xs text-muted-foreground">Comma-separated list of neighborhoods for AI-powered filtering</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -839,6 +961,37 @@ export default function Lists() {
                       id="filter-by-city-match"
                       checked={filterByCityMatch}
                       onCheckedChange={setFilterByCityMatch}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Neighborhoods AI Filter */}
+            {neighborhoods && (
+              <div className="space-y-3 p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/20 dark:to-pink-950/20 rounded-lg border border-purple-200 dark:border-purple-900">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1 flex-1">
+                    <Label className="text-purple-900 dark:text-purple-100 font-semibold flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      AI-Powered Neighborhood Filter
+                    </Label>
+                    <p className="text-xs text-purple-700 dark:text-purple-300">
+                      Use OpenAI to verify each property is in one of your specified neighborhoods. 
+                      More accurate than simple text matching - AI understands neighborhood boundaries and variations.
+                    </p>
+                    <p className="text-xs font-medium text-purple-800 dark:text-purple-200 mt-2">
+                      Will verify neighborhoods: {neighborhoods}
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      ⚠️ Note: Uses OpenAI API - may slow down scraping slightly
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2 ml-4">
+                    <Switch
+                      id="filter-by-neighborhoods"
+                      checked={filterByNeighborhoods}
+                      onCheckedChange={setFilterByNeighborhoods}
                     />
                   </div>
                 </div>
@@ -1016,7 +1169,9 @@ export default function Lists() {
               setCities("");
               setListForm({
                 name: "",
+                description: "",
                 zipCodes: "",
+                priceMin: "",
                 priceMax: "",
                 daysOnZillow: "",
                 forSaleByAgent: true,
@@ -1032,8 +1187,10 @@ export default function Lists() {
                 const dataToSave = {
                   ...listForm,
                   cities,
+                  neighborhoods,
                   homeTypes: selectedHomeTypes,
                   filterByCityMatch,
+                  filterByNeighborhoods,
                   ...(editingList && { id: editingList.id })
                 };
                 createListMutation.mutate(dataToSave);
@@ -1086,6 +1243,84 @@ export default function Lists() {
           buyBoxName={selectedBuyBoxForAnalytics.name}
         />
       )}
+
+      {/* Bulk Update Property Types Dialog */}
+      <Dialog open={showBulkUpdateDialog} onOpenChange={(open) => {
+        setShowBulkUpdateDialog(open);
+        if (!open) {
+          setBulkHomeTypes([]);
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">Bulk Update Property Types</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Update property types for {selectedBuyBoxIds.length} selected buy box{selectedBuyBoxIds.length > 1 ? 'es' : ''}
+            </p>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="space-y-3">
+              <Label className="text-base font-semibold">Property Types (Optional)</Label>
+              <p className="text-sm text-muted-foreground">
+                Select the property types you want to apply to all selected buy boxes. 
+                This will replace any existing property type filters.
+              </p>
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                {PROPERTY_TYPES.map((type) => (
+                  <div key={type.value} className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent transition-colors">
+                    <Checkbox
+                      id={`bulk-type-${type.value}`}
+                      checked={bulkHomeTypes.includes(type.value)}
+                      onCheckedChange={() => toggleBulkHomeType(type.value)}
+                    />
+                    <label
+                      htmlFor={`bulk-type-${type.value}`}
+                      className="text-sm font-medium cursor-pointer flex items-center gap-2 flex-1"
+                    >
+                      <span>{type.icon}</span>
+                      <span>{type.label}</span>
+                    </label>
+                  </div>
+                ))}
+              </div>
+              {bulkHomeTypes.length > 0 && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-900 mt-3">
+                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                    Selected: {bulkHomeTypes.join(", ")}
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    These types will be applied to all {selectedBuyBoxIds.length} selected buy box{selectedBuyBoxIds.length > 1 ? 'es' : ''}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={() => {
+              setShowBulkUpdateDialog(false);
+              setBulkHomeTypes([]);
+            }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => bulkUpdateMutation.mutate(bulkHomeTypes)}
+              disabled={bulkUpdateMutation.isPending}
+            >
+              {bulkUpdateMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Update {selectedBuyBoxIds.length} Buy Box{selectedBuyBoxIds.length > 1 ? 'es' : ''}
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

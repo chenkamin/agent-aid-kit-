@@ -520,6 +520,155 @@ Deno.serve(async (req) => {
       console.log(`📊 After city filtering: ${properties.length} of ${beforeCityFilter} properties passed`);
     }
 
+    // Initialize map to store verified neighborhoods
+    const propertyNeighborhoodMap = new Map();
+
+    // Filter by neighborhoods using OpenAI if specified
+    if (buyBox.filter_by_neighborhoods && buyBox.neighborhoods?.length > 0) {
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`🤖 AI-POWERED NEIGHBORHOOD FILTERING ENABLED`);
+      console.log(`${'='.repeat(80)}`);
+      console.log(`   Target Neighborhoods: ${buyBox.neighborhoods.join(', ')}`);
+      console.log(`   Properties to verify: ${properties.length}`);
+      console.log(`   Verification URL: ${supabaseUrl}/functions/v1/verify-neighborhood`);
+      console.log(`${'='.repeat(80)}\n`);
+      
+      const beforeNeighborhoodFilter = properties.length;
+      const verifyNeighborhoodUrl = `${supabaseUrl}/functions/v1/verify-neighborhood`;
+      
+      // Track statistics
+      let verifiedCount = 0;
+      let rejectedCount = 0;
+      let errorCount = 0;
+      
+      // Process properties in parallel but with some rate limiting
+      const batchSize = 5; // Process 5 properties at a time to avoid overwhelming OpenAI
+      const verifiedProperties = [];
+      
+      for (let i = 0; i < properties.length; i += batchSize) {
+        const batch = properties.slice(i, i + batchSize);
+        const batchNum = Math.floor(i / batchSize) + 1;
+        const totalBatches = Math.ceil(properties.length / batchSize);
+        
+        console.log(`\n📦 Processing Batch ${batchNum}/${totalBatches} (Properties ${i + 1}-${Math.min(i + batchSize, properties.length)})`);
+        
+        const verificationPromises = batch.map(async (prop, index) => {
+          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
+          const fullAddress = [addressData.address, addressData.city, addressData.state].filter(Boolean).join(', ');
+          const propNum = i + index + 1;
+          
+          console.log(`   [${propNum}/${properties.length}] Checking: ${fullAddress || 'Unknown address'}`);
+          
+          if (!addressData.address || !addressData.city) {
+            console.log(`      ⚠️  SKIPPED - Incomplete address data`);
+            errorCount++;
+            return { prop, isInNeighborhood: false, matchedNeighborhood: null, skipped: true };
+          }
+          
+          try {
+            const startTime = Date.now();
+            const response = await fetch(verifyNeighborhoodUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseKey}`,
+              },
+              body: JSON.stringify({
+                address: addressData.address,
+                city: addressData.city,
+                state: addressData.state,
+                neighborhoods: buyBox.neighborhoods,
+              }),
+            });
+            
+            const elapsed = Date.now() - startTime;
+            
+            if (!response.ok) {
+              console.error(`      ❌ FAILED - API error (${response.status}) after ${elapsed}ms`);
+              errorCount++;
+              return { prop, isInNeighborhood: false, matchedNeighborhood: null, error: true };
+            }
+            
+            const result = await response.json();
+            
+            if (result.isInNeighborhood && result.matchedNeighborhood) {
+              console.log(`      ✅ PASS - Verified in "${result.matchedNeighborhood}" (${elapsed}ms)`);
+              verifiedCount++;
+            } else {
+              console.log(`      ❌ REJECTED - Not in any target neighborhood (${elapsed}ms)`);
+              console.log(`         OpenAI response: "${result.raw_response}"`);
+              rejectedCount++;
+            }
+            
+            return { 
+              prop, 
+              isInNeighborhood: result.isInNeighborhood,
+              matchedNeighborhood: result.matchedNeighborhood,
+              rawResponse: result.raw_response
+            };
+          } catch (error) {
+            console.error(`      ❌ ERROR - Exception: ${error.message}`);
+            errorCount++;
+            return { prop, isInNeighborhood: false, matchedNeighborhood: null, error: true };
+          }
+        });
+        
+        const batchResults = await Promise.all(verificationPromises);
+        
+        // Log batch results
+        const batchPassed = batchResults.filter(r => r.isInNeighborhood).length;
+        const batchRejected = batchResults.filter(r => !r.isInNeighborhood && !r.error && !r.skipped).length;
+        const batchErrors = batchResults.filter(r => r.error || r.skipped).length;
+        console.log(`   ✓ Batch complete: ${batchPassed} passed, ${batchRejected} rejected, ${batchErrors} errors/skipped\n`);
+        
+        // Store both the property and its verified neighborhood
+        const passedProperties = batchResults.filter(r => r.isInNeighborhood);
+        verifiedProperties.push(...passedProperties);
+        
+        // Small delay between batches to avoid rate limits
+        if (i + batchSize < properties.length) {
+          console.log(`   ⏳ Waiting 1 second before next batch...\n`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      
+      // Populate the map with matched neighborhoods
+      verifiedProperties.forEach(vp => {
+        const url = vp.prop.detailUrl || vp.prop.url;
+        if (url) {
+          propertyNeighborhoodMap.set(url, vp.matchedNeighborhood);
+        }
+      });
+      
+      properties = verifiedProperties.map(vp => vp.prop);
+      
+      // Final summary
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`📊 NEIGHBORHOOD FILTERING COMPLETE`);
+      console.log(`${'='.repeat(80)}`);
+      console.log(`   Properties before filtering: ${beforeNeighborhoodFilter}`);
+      console.log(`   Properties after filtering:  ${properties.length}`);
+      console.log(`   ✅ Verified & passed:        ${verifiedCount}`);
+      console.log(`   ❌ Rejected:                 ${rejectedCount}`);
+      console.log(`   ⚠️  Errors/Skipped:          ${errorCount}`);
+      console.log(`   📉 Filter rate:              ${((properties.length / beforeNeighborhoodFilter) * 100).toFixed(1)}% passed`);
+      
+      // Log matched neighborhoods breakdown
+      if (verifiedCount > 0) {
+        const neighborhoodCounts: Record<string, number> = {};
+        verifiedProperties.forEach(vp => {
+          if (vp.matchedNeighborhood) {
+            neighborhoodCounts[vp.matchedNeighborhood] = (neighborhoodCounts[vp.matchedNeighborhood] || 0) + 1;
+          }
+        });
+        console.log(`\n   🏘️  Properties by Neighborhood:`);
+        Object.entries(neighborhoodCounts).forEach(([neighborhood, count]) => {
+          console.log(`      - ${neighborhood}: ${count} properties`);
+        });
+      }
+      console.log(`${'='.repeat(80)}\n`);
+    }
+
     if (properties.length === 0) {
       return new Response(
         JSON.stringify({
@@ -812,6 +961,9 @@ Deno.serve(async (req) => {
                              prop.statusText ||
                              'undefined';
 
+        // Get verified neighborhood if available (only for buy boxes with neighborhood filter)
+        const verifiedNeighborhood = propertyNeighborhoodMap.get(listingUrl) || null;
+
         newListings.push({
           user_id: user.id,
           company_id: companyId,
@@ -820,6 +972,7 @@ Deno.serve(async (req) => {
           city: addressData.city,
           state: addressData.state,
           zip: addressData.zip,
+          neighborhood: verifiedNeighborhood,
           price: scrapedPrice,
           bedrooms: parseInteger(prop.beds || prop.bedrooms || prop.hdpData?.homeInfo?.bedrooms),
           bed: parseInteger(prop.beds || prop.bedrooms || prop.hdpData?.homeInfo?.bedrooms),
