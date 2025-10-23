@@ -182,6 +182,24 @@ export default function Properties() {
       setSearchParams({});
     }
   }, [searchParams, setSearchParams]);
+
+  // Get property ID from URL
+  const propertyIdFromUrl = searchParams.get('property');
+  
+  // Fetch specific property from URL parameter
+  const { data: urlProperty } = useQuery({
+    queryKey: ["property-from-url", propertyIdFromUrl],
+    queryFn: async () => {
+      if (!propertyIdFromUrl) return null;
+      const { data } = await supabase
+        .from("properties")
+        .select("*")
+        .eq("id", propertyIdFromUrl)
+        .single();
+      return data;
+    },
+    enabled: !!propertyIdFromUrl,
+  });
   
   // Fetch user's company first
   const { data: userCompany } = useQuery({
@@ -431,6 +449,35 @@ export default function Properties() {
   useEffect(() => {
     setCurrentPage(1);
   }, [filters, searchQuery, itemsPerPage]);
+
+  // Open property modal from URL parameter
+  useEffect(() => {
+    if (urlProperty && propertyIdFromUrl) {
+      // Only update if it's a different property or no property is selected
+      if (!selectedProperty || selectedProperty.id !== propertyIdFromUrl) {
+        setSelectedProperty(urlProperty);
+        setEditedProperty({ ...urlProperty });
+      }
+    } else if (!propertyIdFromUrl && selectedProperty) {
+      // Close modal if URL parameter is removed
+      setSelectedProperty(null);
+      setEditedProperty(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyIdFromUrl, urlProperty]);
+
+  // Helper functions to manage property modal with URL
+  const openPropertyModal = (property: any) => {
+    setSelectedProperty(property);
+    setEditedProperty({ ...property });
+    setSearchParams({ property: property.id });
+  };
+
+  const closePropertyModal = () => {
+    setSelectedProperty(null);
+    setEditedProperty(null);
+    setSearchParams({});
+  };
 
   // Fetch activities for selected property
   const { data: propertyActivities } = useQuery({
@@ -2479,10 +2526,7 @@ export default function Properties() {
               <Card 
                 key={property.id}
                 className="cursor-pointer hover:bg-accent/50 transition-colors"
-                onClick={() => {
-                  setSelectedProperty(property);
-                  setEditedProperty({ ...property });
-                }}
+                onClick={() => openPropertyModal(property)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -2681,10 +2725,7 @@ export default function Properties() {
                 return (
                     <TableRow
                     key={property.id}
-                    onClick={() => {
-                      setSelectedProperty(property);
-                      setEditedProperty({ ...property });
-                    }}
+                    onClick={() => openPropertyModal(property)}
                       className="cursor-pointer hover:bg-accent/50"
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -2985,8 +3026,7 @@ export default function Properties() {
 
       <Dialog open={!!selectedProperty} onOpenChange={(open) => {
         if (!open) {
-          setSelectedProperty(null);
-          setEditedProperty(null);
+          closePropertyModal();
         }
       }}>
         <DialogContent className="w-[95vw] max-w-5xl max-h-[90vh] overflow-y-auto" aria-describedby="property-details-description">

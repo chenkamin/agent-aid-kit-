@@ -22,7 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,7 @@ export default function Activities() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   
   // Fetch user's company first
   const { data: userCompany } = useQuery({
@@ -862,7 +863,15 @@ export default function Activities() {
                     </div>
                     {activity.properties && (
                       <p className="text-sm text-muted-foreground truncate">
-                        📍 {activity.properties.address || "Unknown property"}
+                        📍 <span 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/properties?property=${activity.property_id}`);
+                          }}
+                          className="text-primary hover:underline cursor-pointer"
+                        >
+                          {activity.properties.address || "Unknown property"}
+                        </span>
                         {activity.properties.city && ` • ${activity.properties.city}`}
                       </p>
                     )}
@@ -992,10 +1001,16 @@ export default function Activities() {
                         </Badge>
                       </div>
                       {activity.properties && (
-                        <div className="flex items-start gap-2 px-2 py-1.5 bg-primary/5 rounded border border-primary/10 mb-2">
+                        <div 
+                          className="flex items-start gap-2 px-2 py-1.5 bg-primary/5 rounded border border-primary/10 mb-2 cursor-pointer hover:bg-primary/10 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/properties?property=${activity.property_id}`);
+                          }}
+                        >
                           <MapPin className="h-3 w-3 mt-0.5 text-primary" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-foreground truncate">
+                            <p className="text-xs font-medium text-primary hover:underline truncate">
                               {activity.properties.address || "Unknown"}
                             </p>
                             {activity.properties.city && (
@@ -1211,10 +1226,13 @@ export default function Activities() {
 
               {/* Property Info */}
               {selectedActivity.properties && (
-                <div className="flex items-start gap-2 px-4 py-3 bg-primary/5 rounded-lg border border-primary/10">
+                <div 
+                  className="flex items-start gap-2 px-4 py-3 bg-primary/5 rounded-lg border border-primary/10 cursor-pointer hover:bg-primary/10 transition-colors"
+                  onClick={() => navigate(`/properties?property=${selectedActivity.property_id}`)}
+                >
                   <MapPin className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
                   <div>
-                    <p className="font-semibold text-foreground">
+                    <p className="font-semibold text-primary hover:underline">
                       {selectedActivity.properties.address || "Unknown property"}
                     </p>
                     {selectedActivity.properties.city && (
