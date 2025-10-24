@@ -25,8 +25,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export default function Contacts() {
+  const isMobile = useIsMobile();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -434,15 +436,15 @@ export default function Contacts() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">Contacts</h1>
-          <p className="text-lg text-muted-foreground mt-2">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">Contacts</h1>
+          <p className="text-base sm:text-lg text-muted-foreground mt-2">
             Manage your network of agents, sellers, and buyers
           </p>
         </div>
-        <Button size="lg" className="text-base" onClick={() => setIsAddingContact(true)}>
-          <Plus className="mr-2 h-5 w-5" />
+        <Button size={isMobile ? "default" : "lg"} className="w-full sm:w-auto text-base" onClick={() => setIsAddingContact(true)}>
+          <Plus className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
           Add Contact
         </Button>
       </div>
@@ -528,7 +530,76 @@ export default function Contacts() {
             </Button>
           </CardContent>
         </Card>
+      ) : isMobile ? (
+        /* Mobile Card View */
+        <div className="space-y-3">
+          {filteredContacts?.map((contact) => (
+            <Card 
+              key={contact.id}
+              className="cursor-pointer hover:bg-accent/50 transition-colors"
+              onClick={() => handleViewContact(contact)}
+            >
+              <CardContent className="p-4">
+                <div className="space-y-3">
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-base truncate">
+                        {contact.full_name || "Unnamed Contact"}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge className={getTypeColor(contact.type)}>
+                          {contact.type}
+                        </Badge>
+                        {contact.source === "property" && (
+                          <Badge variant="outline" className="text-xs">
+                            From Property
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    {contact.source === "manual" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditContact(contact);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Contact Details */}
+                  <div className="space-y-2 text-sm">
+                    {contact.email && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Mail className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{contact.email}</span>
+                      </div>
+                    )}
+                    {contact.phone && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="h-4 w-4 flex-shrink-0" />
+                        <span>{contact.phone}</span>
+                      </div>
+                    )}
+                    {contact.company && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Building className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{contact.company}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : (
+        /* Desktop Table View */
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -628,9 +699,9 @@ export default function Contacts() {
 
       {/* Contact Properties Modal */}
       <Dialog open={!!viewingContactProperties} onOpenChange={() => setViewingContactProperties(null)}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl flex items-center gap-2">
+            <DialogTitle className="text-xl sm:text-2xl flex items-center gap-2">
               <Home className="h-6 w-6" />
               Properties for {viewingContactProperties?.full_name || "Contact"}
             </DialogTitle>
@@ -761,9 +832,9 @@ export default function Contacts() {
 
       {/* Add/Edit Contact Modal */}
       <Dialog open={isAddingContact || !!editingContact} onOpenChange={handleCloseModal}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl">
+            <DialogTitle className="text-xl sm:text-2xl">
               {editingContact ? "Edit Contact" : "Add New Contact"}
             </DialogTitle>
           </DialogHeader>

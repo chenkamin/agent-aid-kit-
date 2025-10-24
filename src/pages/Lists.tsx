@@ -31,6 +31,7 @@ import {
 import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Link } from "react-router-dom";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const PROPERTY_TYPES = [
   { value: "Single Family", label: "SFH", icon: "🏠" },
@@ -43,6 +44,7 @@ const PROPERTY_TYPES = [
 ];
 
 export default function Lists() {
+  const isMobile = useIsMobile();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -402,7 +404,7 @@ export default function Lists() {
       if (!session) throw new Error("Not authenticated");
 
       const response = await fetch(
-        `${supabase.supabaseUrl}/functions/v1/scrape-zillow`,
+        `https://ijgrelgzahireresdqvw.supabase.co/functions/v1/scrape-zillow`,
         {
           method: "POST",
           headers: {
@@ -600,22 +602,22 @@ export default function Lists() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">Buy Boxes</h1>
-          <p className="text-lg text-muted-foreground mt-2">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">Buy Boxes</h1>
+          <p className="text-base sm:text-lg text-muted-foreground mt-2">
             Create property search criteria and automatically scrape Zillow
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
           {selectedBuyBoxIds.length > 0 && (
-            <Button onClick={handleBulkUpdate} variant="outline" size="lg">
-              <Edit className="mr-2 h-5 w-5" />
+            <Button onClick={handleBulkUpdate} variant="outline" size={isMobile ? "default" : "lg"} className="w-full sm:w-auto">
+              <Edit className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
               Bulk Update ({selectedBuyBoxIds.length})
             </Button>
           )}
-          <Button onClick={() => setIsCreatingList(true)} size="lg">
-            <Plus className="mr-2 h-5 w-5" />
+          <Button onClick={() => setIsCreatingList(true)} size={isMobile ? "default" : "lg"} className="w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
             Create Buy Box
           </Button>
         </div>
@@ -635,7 +637,120 @@ export default function Lists() {
             </Button>
           </CardContent>
         </Card>
+      ) : isMobile ? (
+        /* Mobile Card View */
+        <div className="space-y-3">
+          {sortedLists?.map((list: any) => (
+            <Card key={list.id}>
+              <CardContent className="p-4">
+                <div className="space-y-3">
+                  {/* Header with checkbox and name */}
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      checked={selectedBuyBoxIds.includes(list.id)}
+                      onCheckedChange={() => toggleBuyBoxSelection(list.id)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-base truncate">{list.name}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="secondary" className="text-xs">
+                          {list.properties?.[0]?.count || 0} properties
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Details */}
+                  <div className="space-y-2 text-sm">
+                    {list.zip_codes && list.zip_codes.length > 0 && (
+                      <div>
+                        <span className="font-semibold">Zip Codes: </span>
+                        <span className="text-muted-foreground">{list.zip_codes.join(", ")}</span>
+                      </div>
+                    )}
+                    {(list.price_min || list.price_max) && (
+                      <div>
+                        <span className="font-semibold">Price: </span>
+                        <span className="text-muted-foreground">
+                          ${list.price_min ? Number(list.price_min).toLocaleString() : "0"} - ${list.price_max ? Number(list.price_max).toLocaleString() : "∞"}
+                          {list.filter_by_ppsf && " per sqft"}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {list.for_sale_by_agent && (
+                        <Badge variant="outline" className="text-xs">Agent</Badge>
+                      )}
+                      {list.for_sale_by_owner && (
+                        <Badge variant="outline" className="text-xs">FSBO</Badge>
+                      )}
+                      {list.for_rent && (
+                        <Badge variant="outline" className="text-xs">Rent</Badge>
+                      )}
+                    </div>
+                    {list.created_at && (
+                      <div className="text-xs text-muted-foreground">
+                        Created: {new Date(list.created_at).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <Link to={`/properties?buyBoxId=${list.id}`} className="flex-1">
+                      <Button size="sm" variant="outline" className="w-full">
+                        <Filter className="h-4 w-4 mr-2" />
+                        View
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedBuyBoxForAnalytics({
+                          id: list.id,
+                          name: list.name,
+                        });
+                        setShowBuyBoxAnalytics(true);
+                      }}
+                    >
+                      <BarChart className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEdit(list)}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => handleScrape(list.id)}
+                      disabled={scrapingListId === list.id}
+                    >
+                      {scrapingListId === list.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDelete(list.id)}
+                      disabled={deleteListMutation.isPending}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : (
+        /* Desktop Table View */
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -808,10 +923,10 @@ export default function Lists() {
           });
         }
       }}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl">{editingList ? "Edit Buy Box" : "Create New Buy Box"}</DialogTitle>
-            <p className="text-sm text-muted-foreground">Configure your property search criteria and filtering options</p>
+            <DialogTitle className="text-xl sm:text-2xl">{editingList ? "Edit Buy Box" : "Create New Buy Box"}</DialogTitle>
+            <p className="text-xs sm:text-sm text-muted-foreground">Configure your property search criteria and filtering options</p>
           </DialogHeader>
           <div className="space-y-6 py-4">
             {/* Buy Box Name - Full Width */}
@@ -1117,7 +1232,7 @@ export default function Lists() {
             {/* Listing Types - Full Width */}
             <div className="border rounded-lg p-5 bg-card">
               <h3 className="text-lg font-semibold mb-3">🏷️ Listing Types</h3>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent transition-colors">
                   <Checkbox
                     id="for-sale-by-agent"
@@ -1251,21 +1366,21 @@ export default function Lists() {
           setBulkHomeTypes([]);
         }
       }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl">Bulk Update Property Types</DialogTitle>
-            <p className="text-sm text-muted-foreground">
+            <DialogTitle className="text-xl sm:text-2xl">Bulk Update Property Types</DialogTitle>
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Update property types for {selectedBuyBoxIds.length} selected buy box{selectedBuyBoxIds.length > 1 ? 'es' : ''}
             </p>
           </DialogHeader>
           <div className="space-y-6 py-4">
             <div className="space-y-3">
               <Label className="text-base font-semibold">Property Types (Optional)</Label>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs sm:text-sm text-muted-foreground">
                 Select the property types you want to apply to all selected buy boxes. 
                 This will replace any existing property type filters.
               </p>
-              <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                 {PROPERTY_TYPES.map((type) => (
                   <div key={type.value} className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent transition-colors">
                     <Checkbox

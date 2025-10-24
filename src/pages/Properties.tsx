@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +67,10 @@ export default function Properties() {
   const [isAddingActivity, setIsAddingActivity] = useState(false);
   const [isBulkAddingActivity, setIsBulkAddingActivity] = useState(false);
   const [isAddingProperty, setIsAddingProperty] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [importErrors, setImportErrors] = useState<string[]>([]);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [activityForm, setActivityForm] = useState({
     type: "other",
@@ -1330,6 +1334,225 @@ export default function Properties() {
     createPropertyMutation.mutate(propertyForm);
   };
 
+  const handleImportProperties = async () => {
+    if (!importFile) {
+      toast({
+        title: "Error",
+        description: "Please select a CSV file to import",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user?.id || !userCompany?.company_id) {
+      toast({
+        title: "Error",
+        description: "User not authenticated",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const fileText = await importFile.text();
+      const lines = fileText.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        toast({
+          title: "Error",
+          description: "CSV file is empty or invalid",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Parse CSV header
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const requiredFields = ['address'];
+      const missingFields = requiredFields.filter(f => !headers.includes(f));
+      
+      if (missingFields.length > 0) {
+        toast({
+          title: "Error",
+          description: `Missing required fields: ${missingFields.join(', ')}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Parse CSV rows
+      const properties = [];
+      const errors: string[] = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        try {
+          const values = lines[i].split(',').map(v => v.trim());
+          const property: any = {};
+
+          headers.forEach((header, index) => {
+            const value = values[index];
+            if (value && value !== '') {
+              switch (header) {
+                case 'address':
+                  property.address = value;
+                  break;
+                case 'city':
+                  property.city = value;
+                  break;
+                case 'state':
+                  property.state = value;
+                  break;
+                case 'zip':
+                  property.zip = value;
+                  break;
+                case 'neighborhood':
+                  property.neighborhood = value;
+                  break;
+                case 'status':
+                  property.status = value;
+                  break;
+                case 'price': {
+                  const price = parseFloat(value);
+                  if (!isNaN(price)) property.price = price;
+                  break;
+                }
+                case 'bedrooms':
+                case 'bed': {
+                  const bed = parseFloat(value);
+                  if (!isNaN(bed)) {
+                    property.bedrooms = bed;
+                    property.bed = bed;
+                  }
+                  break;
+                }
+                case 'bathrooms':
+                case 'bath': {
+                  const bath = parseFloat(value);
+                  if (!isNaN(bath)) {
+                    property.bathrooms = bath;
+                    property.bath = bath;
+                  }
+                  break;
+                }
+                case 'square_footage':
+                case 'living_sqf': {
+                  const sqft = parseFloat(value);
+                  if (!isNaN(sqft)) {
+                    property.square_footage = sqft;
+                    property.living_sqf = sqft;
+                  }
+                  break;
+                }
+                case 'year_built': {
+                  const year = parseInt(value);
+                  if (!isNaN(year)) property.year_built = year;
+                  break;
+                }
+                case 'home_type':
+                case 'property_type':
+                  property.home_type = value;
+                  property.property_type = value;
+                  break;
+                case 'description':
+                  property.description = value;
+                  break;
+                case 'notes':
+                  property.notes = value;
+                  break;
+                case 'seller_agent_name':
+                case 'agent_name':
+                  property.seller_agent_name = value;
+                  break;
+                case 'seller_agent_phone':
+                case 'agent_phone':
+                  property.seller_agent_phone = value;
+                  break;
+                case 'seller_agent_email':
+                case 'agent_email':
+                  property.seller_agent_email = value;
+                  break;
+              }
+            }
+          });
+
+          if (!property.address) {
+            errors.push(`Row ${i + 1}: Missing required field 'address'`);
+            continue;
+          }
+
+          // Add required fields
+          property.user_id = user.id;
+          property.company_id = userCompany.company_id;
+          property.source = 'Manual Import';
+          
+          properties.push(property);
+        } catch (error: any) {
+          errors.push(`Row ${i + 1}: ${error.message}`);
+        }
+      }
+
+      if (properties.length === 0) {
+        toast({
+          title: "Error",
+          description: "No valid properties found in CSV file",
+          variant: "destructive",
+        });
+        setImportErrors(errors);
+        return;
+      }
+
+      // Import properties in batches
+      setImportProgress({ current: 0, total: properties.length });
+      let successCount = 0;
+      
+      for (let i = 0; i < properties.length; i++) {
+        try {
+          const { error } = await supabase
+            .from('properties')
+            .insert(properties[i]);
+
+          if (error) {
+            errors.push(`Row ${i + 2}: ${error.message}`);
+          } else {
+            successCount++;
+          }
+        } catch (error: any) {
+          errors.push(`Row ${i + 2}: ${error.message}`);
+        }
+        
+        setImportProgress({ current: i + 1, total: properties.length });
+      }
+
+      // Refresh the properties list
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+
+      if (successCount > 0) {
+        toast({
+          title: "Import Complete",
+          description: `Successfully imported ${successCount} of ${properties.length} properties`,
+        });
+      }
+
+      if (errors.length > 0) {
+        setImportErrors(errors);
+      } else {
+        // Close dialog if no errors
+        setTimeout(() => {
+          setIsImporting(false);
+          setImportFile(null);
+          setImportProgress({ current: 0, total: 0 });
+        }, 1000);
+      }
+
+    } catch (error: any) {
+      toast({
+        title: "Import Failed",
+        description: error.message || "Failed to import properties",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Bulk update workflow state mutation
   const bulkUpdateWorkflowMutation = useMutation({
     mutationFn: async ({ propertyIds, workflowState }: { propertyIds: string[]; workflowState: string }) => {
@@ -1788,6 +2011,142 @@ export default function Properties() {
                   </Button>
                   <Button onClick={handleCreateList} disabled={createListMutation.isPending}>
                     {createListMutation.isPending ? "Creating..." : "Create List"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isImporting} onOpenChange={(open) => {
+            setIsImporting(open);
+            if (!open) {
+              setImportFile(null);
+              setImportErrors([]);
+              setImportProgress({ current: 0, total: 0 });
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button size={isMobile ? "default" : "lg"} variant="outline" className="text-sm md:text-base flex-1 sm:flex-none">
+                <Upload className="mr-1 md:mr-2 h-4 md:h-5 w-4 md:w-5" />
+                {isMobile ? "Import" : "Import"}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] sm:max-h-[80vh] overflow-y-auto" aria-describedby="import-properties-description">
+              <DialogHeader>
+                <DialogTitle className="text-lg md:text-xl">Import Properties</DialogTitle>
+                <p id="import-properties-description" className="text-xs md:text-sm text-muted-foreground">
+                  Upload a CSV file to import multiple properties at once
+                </p>
+              </DialogHeader>
+              
+              <div className="space-y-6 mt-4">
+                <div className="space-y-4">
+                  <div className="border-2 border-dashed border-border rounded-lg p-6 text-center space-y-4">
+                    <div className="flex justify-center">
+                      <Upload className="h-12 w-12 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="csv-upload" className="cursor-pointer">
+                        <div className="text-sm font-medium">
+                          {importFile ? importFile.name : "Choose a CSV file"}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Click to browse or drag and drop
+                        </div>
+                      </Label>
+                      <Input
+                        id="csv-upload"
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setImportFile(file);
+                            setImportErrors([]);
+                          }
+                        }}
+                      />
+                    </div>
+                    {importFile && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setImportFile(null)}
+                      >
+                        Clear File
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">Need a template?</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const csvTemplate = `address,city,state,zip,neighborhood,status,price,bedrooms,bathrooms,square_footage,year_built,home_type,description,notes
+123 Main St,Cleveland,OH,44125,Downtown,For Sale,150000,3,2,1500,2000,Single Family,Beautiful home,Great location
+456 Oak Ave,Akron,OH,44301,Highland,For Sale,200000,4,2.5,2000,2010,Townhouse,Modern townhouse,Near schools`;
+                          const blob = new Blob([csvTemplate], { type: 'text/csv' });
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'property_import_template.csv';
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          toast({
+                            title: "Template Downloaded",
+                            description: "Check your downloads folder for the CSV template",
+                          });
+                        }}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Download Template
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Download a template CSV file to see the correct format. Required fields: address
+                    </p>
+                  </div>
+
+                  {importProgress.total > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span>Importing properties...</span>
+                        <span>{importProgress.current} / {importProgress.total}</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2">
+                        <div
+                          className="bg-primary h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {importErrors.length > 0 && (
+                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-2">
+                      <p className="text-sm font-medium text-destructive">Import Errors:</p>
+                      <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                        {importErrors.map((error, index) => (
+                          <li key={index} className="text-destructive/90">• {error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t">
+                  <Button variant="outline" onClick={() => setIsImporting(false)} disabled={importProgress.total > 0 && importProgress.current < importProgress.total}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleImportProperties} 
+                    disabled={!importFile || (importProgress.total > 0 && importProgress.current < importProgress.total)}
+                  >
+                    {importProgress.total > 0 && importProgress.current < importProgress.total ? "Importing..." : "Import Properties"}
                   </Button>
                 </div>
               </div>
