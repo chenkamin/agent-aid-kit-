@@ -390,30 +390,33 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           id: string
+          is_default: boolean | null
           name: string
           subject: string
           updated_at: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           body: string
           company_id?: string | null
           created_at?: string | null
           id?: string
+          is_default?: boolean | null
           name: string
           subject: string
           updated_at?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           body?: string
           company_id?: string | null
           created_at?: string | null
           id?: string
+          is_default?: boolean | null
           name?: string
           subject?: string
           updated_at?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -977,25 +980,28 @@ export type Database = {
           body: string
           created_at: string | null
           id: string
+          is_default: boolean | null
           name: string
           updated_at: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           body: string
           created_at?: string | null
           id?: string
+          is_default?: boolean | null
           name: string
           updated_at?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           body?: string
           created_at?: string | null
           id?: string
+          is_default?: boolean | null
           name?: string
           updated_at?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {

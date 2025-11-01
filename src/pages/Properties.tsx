@@ -3572,6 +3572,32 @@ export default function Properties() {
                           to_state: value,
                         });
 
+                        // If moving to "Not Relevant" or "Archived", mark all open activities as done
+                        if (value === 'Not Relevant' || value === 'Archived') {
+                          const { data: openActivities, error: activitiesError } = await supabase
+                            .from('activities')
+                            .update({ 
+                              status: 'done',
+                              completed_at: new Date().toISOString()
+                            })
+                            .eq('property_id', propertyId)
+                            .eq('status', 'open')
+                            .select();
+                          
+                          if (!activitiesError) {
+                            const count = openActivities?.length || 0;
+                            if (count > 0) {
+                              toast({
+                                title: "Activities Completed",
+                                description: `${count} open ${count === 1 ? 'activity' : 'activities'} marked as done`,
+                              });
+                            }
+                          }
+                          
+                          // Invalidate activities cache
+                          queryClient.invalidateQueries({ queryKey: ["activities"] });
+                        }
+
                         // Invalidate to sync with server (but UI already updated)
                         queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
                         queryClient.invalidateQueries({ queryKey: ["workflow-history", propertyId] });

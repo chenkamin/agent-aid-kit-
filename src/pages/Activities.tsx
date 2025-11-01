@@ -17,7 +17,8 @@ import {
   Save,
   X,
   Filter,
-  MapPin
+  MapPin,
+  Download
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -86,7 +87,7 @@ export default function Activities() {
   
   // Filter states
   const [filters, setFilters] = useState({
-    status: "all",
+    status: "open",
     type: "all",
     dateFrom: "",
     dateTo: "",
@@ -95,6 +96,10 @@ export default function Activities() {
     assignedTo: "all",
   });
   const [showFilters, setShowFilters] = useState(false);
+  
+  // Sort states
+  const [sortBy, setSortBy] = useState<"due_date" | "created_date">("due_date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -118,17 +123,21 @@ export default function Activities() {
 
   // Fetch ALL activities (for accurate counting with client-side buy_box filter)
   const { data: allActivities, isLoading } = useQuery({
-    queryKey: ["all-activities", userCompany?.company_id, filters],
+    queryKey: ["all-activities", userCompany?.company_id, filters, sortBy, sortOrder],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
       
       console.log("🔍 Fetching activities for company_id:", userCompany.company_id);
       
+      // Determine sort field
+      const sortField = sortBy === "due_date" ? "due_at" : "created_at";
+      const ascending = sortOrder === "asc";
+      
       let query = supabase
         .from("activities")
         .select("*, properties(id, address, city, buy_box_id)")
         .eq("company_id", userCompany.company_id)
-        .order("created_at", { ascending: true });
+        .order(sortField, { ascending });
       
       // Apply filters
       if (filters.status !== "all") {
@@ -194,18 +203,32 @@ export default function Activities() {
     }
   }, [activityId, allActivities]);
 
-  // Fetch properties for dropdown
+  // Fetch properties for dropdown - only properties with open activities
   const { data: properties } = useQuery({
-    queryKey: ["properties", userCompany?.company_id],
+    queryKey: ["properties-with-open-activities", userCompany?.company_id],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
-      // Exclude "Not Relevant" properties by default
+      
+      // Get all property IDs that have open activities
+      const { data: activitiesData } = await supabase
+        .from("activities")
+        .select("property_id")
+        .eq("company_id", userCompany.company_id)
+        .eq("status", "open")
+        .not("property_id", "is", null);
+      
+      if (!activitiesData || activitiesData.length === 0) return [];
+      
+      // Get unique property IDs
+      const propertyIds = [...new Set(activitiesData.map(a => a.property_id))];
+      
+      // Fetch the actual property details
       const { data } = await supabase
         .from("properties")
         .select("id, address, city")
-        .eq("company_id", userCompany.company_id)
-        .neq("status", "Not Relevant")
+        .in("id", propertyIds)
         .order("address");
+      
       return data || [];
     },
     enabled: !!userCompany?.company_id,
@@ -487,6 +510,79 @@ export default function Activities() {
   const selectedDateKey = selectedDate ? format(selectedDate, "yyyy-MM-dd") : "";
   const selectedDateActivities = selectedDateKey ? (activitiesByDate[selectedDateKey] || []) : [];
 
+  // Export to CSV function
+  const exportToCSV = () => {
+    if (!allActivities || allActivities.length === 0) {
+      toast({
+        title: "No Data",
+        description: "There are no activities to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prepare CSV headers
+    const headers = [
+      "Title",
+      "Type",
+      "Status",
+      "Property Address",
+      "Property City",
+      "Details",
+      "Due Date",
+      "Assigned To",
+      "Created At",
+      "Completed At"
+    ];
+
+    // Prepare CSV rows
+    const rows = allActivities.map((activity: any) => {
+      const assignedMember = teamMembers?.find((m: any) => m.user_id === activity.assigned_to);
+      const assignedName = assignedMember?.profiles?.full_name || assignedMember?.profiles?.email || "Unassigned";
+      
+      return [
+        activity.title || "",
+        activity.type || "",
+        activity.status || "",
+        activity.properties?.address || "No property",
+        activity.properties?.city || "",
+        (activity.body || "").replace(/[\n\r]/g, " ").replace(/"/g, '""'), // Escape quotes and newlines
+        activity.due_at ? format(new Date(activity.due_at), "yyyy-MM-dd HH:mm") : "",
+        assignedName,
+        activity.created_at ? format(new Date(activity.created_at), "yyyy-MM-dd HH:mm") : "",
+        activity.completed_at ? format(new Date(activity.completed_at), "yyyy-MM-dd HH:mm") : ""
+      ];
+    });
+
+    // Convert to CSV format
+    const csvContent = [
+      headers.map(h => `"${h}"`).join(","),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+    ].join("\n");
+
+    // Add UTF-8 BOM for proper Hebrew/Unicode character display in Excel
+    const BOM = "\uFEFF";
+    const csvWithBOM = BOM + csvContent;
+
+    // Create blob and download
+    const blob = new Blob([csvWithBOM], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute("href", url);
+    link.setAttribute("download", `activities_${format(new Date(), "yyyy-MM-dd_HHmm")}.csv`);
+    link.style.visibility = "hidden";
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export Successful",
+      description: `Exported ${allActivities.length} activities to CSV`,
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -506,6 +602,14 @@ export default function Activities() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={exportToCSV}
+            disabled={!allActivities || allActivities.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
           <Button
             variant={showFilters ? "secondary" : "outline"}
             onClick={() => setShowFilters(!showFilters)}
@@ -657,7 +761,7 @@ export default function Activities() {
       {showFilters && (
         <Card>
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select
@@ -780,20 +884,56 @@ export default function Activities() {
                   onChange={(e) => setFilters(prev => ({ ...prev, dateTo: e.target.value }))}
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label>Sort By</Label>
+                <Select
+                  value={sortBy}
+                  onValueChange={(value: "due_date" | "created_date") => setSortBy(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="due_date">Due Date</SelectItem>
+                    <SelectItem value="created_date">Created Date</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Order</Label>
+                <Select
+                  value={sortOrder}
+                  onValueChange={(value: "asc" | "desc") => setSortOrder(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="asc">Oldest First</SelectItem>
+                    <SelectItem value="desc">Newest First</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="mt-4 flex justify-end">
               <Button
                 variant="ghost"
-                onClick={() => setFilters({
-                  status: "all",
-                  type: "all",
-                  dateFrom: "",
-                  dateTo: "",
-                  propertyId: "all",
-                  buyBoxId: "all",
-                  assignedTo: "all",
-                })}
+                onClick={() => {
+                  setFilters({
+                    status: "open",
+                    type: "all",
+                    dateFrom: "",
+                    dateTo: "",
+                    propertyId: "all",
+                    buyBoxId: "all",
+                    assignedTo: "all",
+                  });
+                  setSortBy("due_date");
+                  setSortOrder("asc");
+                }}
               >
                 Clear Filters
               </Button>
