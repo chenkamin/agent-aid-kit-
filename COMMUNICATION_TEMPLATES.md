@@ -41,6 +41,8 @@ The system includes an AI assistant powered by OpenAI GPT-4o-mini that can gener
 - Click-to-insert variable buttons
 - Template preview with variable badges
 - Edit and delete functionality
+- **Variable validation** - Automatic detection and warning for invalid variables
+- Manual creation option alongside AI generation
 
 **Example Email Template:**
 ```
@@ -65,6 +67,8 @@ Best regards
 - Character counter
 - Quick variable insertion
 - Template preview with variable badges
+- **Variable validation** - Real-time validation of template variables
+- Manual creation option alongside AI generation
 - Edit and delete functionality
 
 **Example SMS Template:**
@@ -191,12 +195,45 @@ When sending communications about a property, the system will:
 5. Replace `{{BEDROOMS}}`, `{{BATHROOMS}}`, `{{SQFT}}` with property details
 6. Send the personalized message
 
+## Template Variable Validation
+
+The system includes robust validation to ensure templates only use valid variables:
+
+### How It Works
+
+1. **Real-time Validation**: As you type, the system checks for invalid variables
+2. **Visual Feedback**: Invalid variables are highlighted with a warning message
+3. **Save Protection**: Templates with invalid variables cannot be saved until corrected
+4. **Clear Guidance**: The error message shows which variables are invalid and lists all valid options
+
+### Valid Variables
+
+Only these variables are recognized:
+- `{{PROPERTY}}` - Property address
+- `{{PRICE}}` - Property price
+- `{{AGENT_NAME}}` - Agent/contact name
+- `{{BEDROOMS}}` - Number of bedrooms
+- `{{BATHROOMS}}` - Number of bathrooms
+- `{{SQFT}}` - Square footage
+
+### Example Validation Errors
+
+❌ **Invalid**: `{{ADRESS}}` (misspelled)
+✅ **Valid**: `{{PROPERTY}}`
+
+❌ **Invalid**: `{{property}}` (lowercase)
+✅ **Valid**: `{{PROPERTY}}`
+
+❌ **Invalid**: `{{PHONE}}` (not supported)
+✅ **Valid**: Use `{{AGENT_NAME}}` and add phone manually
+
 ## Security
 
 - All templates are user-specific (RLS policies)
 - Connection credentials are stored encrypted
 - AI-generated content is reviewed before saving
 - Authentication required for all operations
+- Template variables are validated to prevent errors
 
 ## Future Enhancements
 
@@ -249,6 +286,14 @@ OPENAI_API_KEY=sk-your-openai-api-key-here
 - Check browser console for errors
 - Verify you're logged in
 - Ensure template has required fields (name, body)
+- **Check for invalid variables** - Look for the red warning box indicating invalid variables
+
+**"Invalid variables found" error:**
+- Review the error message to see which variables are invalid
+- Ensure all variables use UPPERCASE letters only
+- Check spelling (e.g., `{{PROPERTY}}` not `{{ADRESS}}`)
+- Use only variables from the approved list
+- Remove or fix any custom variables
 
 **AI generation failing:**
 - Check OPENAI_API_KEY is set in Supabase
@@ -257,6 +302,7 @@ OPENAI_API_KEY=sk-your-openai-api-key-here
 
 **Variables not being replaced:**
 - Use exact variable names: `{{PROPERTY}}`, `{{PRICE}}`, etc.
-- Check variable spelling and casing
+- Check variable spelling and casing (must be UPPERCASE)
 - Ensure curly braces are doubled: `{{` and `}}`
+- Verify the variable is in the valid variables list
 

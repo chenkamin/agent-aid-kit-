@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings } from "lucide-react";
+import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings, Bell, Check, Trash2, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -14,6 +14,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 
 interface LayoutProps {
   children: ReactNode;
@@ -24,6 +30,8 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const isMobile = useIsMobile();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const navigation = [
@@ -34,6 +42,84 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Activities", href: "/activities", icon: Activity },
     { name: "Communication", href: "/communication", icon: MessageSquare },
   ];
+
+  // Fetch notifications
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["notifications", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      
+      // First, create notifications for activities due today
+      await supabase.rpc('create_activity_due_notifications');
+      
+      // Then fetch all notifications
+      const { data, error } = await supabase
+        .from("notifications")
+        .select(`
+          *,
+          property:properties(address, city),
+          activity:activities(title, type),
+          sent_by:sent_by_user_id(email)
+        `)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id,
+    refetchInterval: 60000, // Refetch every minute
+  });
+
+  const unreadCount = notifications.filter((n: any) => !n.read).length;
+
+  // Mark notification as read
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ read: true, read_at: new Date().toISOString() })
+        .eq("id", notificationId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });
+    },
+  });
+
+  // Mark all as read
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ read: true, read_at: new Date().toISOString() })
+        .eq("user_id", user?.id)
+        .eq("read", false);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });
+      toast({ title: "All notifications marked as read" });
+    },
+  });
+
+  // Delete notification
+  const deleteNotificationMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const { error } = await supabase
+        .from("notifications")
+        .delete()
+        .eq("id", notificationId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });
+    },
+  });
 
   // Initialize sidebar state based on screen size
   useEffect(() => {
@@ -192,9 +278,111 @@ export default function Layout({ children }: LayoutProps) {
               <Menu className="h-5 w-5" />
             </Button>
           )}
-          <h1 className="text-base md:text-lg font-semibold truncate">
+          <h1 className="text-base md:text-lg font-semibold truncate flex-1">
             {navigation.find((item) => item.href === location.pathname)?.name || "Real Estate CRM"}
           </h1>
+          
+          {/* Notifications Bell */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative">
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <Badge 
+                    className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white text-xs"
+                  >
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80 md:w-96">
+              <div className="flex items-center justify-between px-2 py-2">
+                <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
+                {unreadCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => markAllAsReadMutation.mutate()}
+                  >
+                    <Check className="h-3 w-3 mr-1" />
+                    Mark all read
+                  </Button>
+                )}
+              </div>
+              <DropdownMenuSeparator />
+              <ScrollArea className="h-[400px]">
+                {notifications.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No notifications</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {notifications.map((notification: any) => (
+                      <div
+                        key={notification.id}
+                        className={cn(
+                          "px-3 py-2 cursor-pointer hover:bg-accent transition-colors",
+                          !notification.read && "bg-blue-50 dark:bg-blue-950/20"
+                        )}
+                        onClick={() => {
+                          if (!notification.read) {
+                            markAsReadMutation.mutate(notification.id);
+                          }
+                          if (notification.property_id) {
+                            navigate(`/properties`);
+                          } else if (notification.activity_id) {
+                            navigate(`/activities`);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-semibold text-sm truncate">
+                                {notification.title}
+                              </p>
+                              {!notification.read && (
+                                <div className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" />
+                              )}
+                            </div>
+                            {notification.message && (
+                              <p className="text-xs text-muted-foreground line-clamp-2">
+                                {notification.message}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(notification.created_at), "MMM d, h:mm a")}
+                              </p>
+                              {notification.sent_by && (
+                                <Badge variant="outline" className="text-xs">
+                                  From: {notification.sent_by.email?.split('@')[0]}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 flex-shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteNotificationMutation.mutate(notification.id);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </header>
 
         {/* Page Content */}

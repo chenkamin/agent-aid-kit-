@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload, Send, Flame, ThermometerSun, Snowflake, Edit } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -164,10 +164,18 @@ export default function Properties() {
     name: string;
   } | null>(null);
   const [isAddingComp, setIsAddingComp] = useState(false);
+  const [editingCompId, setEditingCompId] = useState<string | null>(null);
   const [compForm, setCompForm] = useState({
     address: "",
     zillow_link: "",
     price: "",
+    grade: "middle",
+    description: "",
+  });
+  const [isSendingNotification, setIsSendingNotification] = useState(false);
+  const [notificationForm, setNotificationForm] = useState({
+    recipientId: "",
+    message: "",
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
@@ -508,6 +516,21 @@ export default function Properties() {
         .select("*")
         .eq("property_id", selectedProperty.id)
         .order("changed_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!selectedProperty?.id,
+  });
+
+  // Fetch SMS messages for selected property
+  const { data: propertySmsMessages } = useQuery({
+    queryKey: ["property-sms", selectedProperty?.id],
+    queryFn: async () => {
+      if (!selectedProperty?.id) return [];
+      const { data } = await supabase
+        .from("sms_messages" as any)
+        .select("*")
+        .eq("property_id", selectedProperty.id)
+        .order("created_at", { ascending: false });
       return data || [];
     },
     enabled: !!selectedProperty?.id,
@@ -1722,14 +1745,22 @@ export default function Properties() {
   };
 
   const addCompMutation = useMutation({
-    mutationFn: async (comp: { address: string; zillow_link: string; price: string }) => {
+    mutationFn: async (comp: { address: string; zillow_link: string; price: string; grade: string; description: string }) => {
       if (!selectedProperty?.id) throw new Error("No property selected");
       
       // Get existing comps from the property
       const existingComps = selectedProperty.comps || [];
       
-      // Add new comp to the array
-      const updatedComps = [...existingComps, { ...comp, id: Date.now().toString() }];
+      let updatedComps;
+      if (editingCompId) {
+        // Edit existing comp
+        updatedComps = existingComps.map((c: any) => 
+          c.id === editingCompId ? { ...comp, id: editingCompId } : c
+        );
+      } else {
+        // Add new comp to the array
+        updatedComps = [...existingComps, { ...comp, id: Date.now().toString() }];
+      }
       
       const { error } = await supabase
         .from('properties')
@@ -1745,15 +1776,16 @@ export default function Properties() {
       queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
       toast({
         title: "Success",
-        description: "Comp added successfully",
+        description: editingCompId ? "Comp updated successfully" : "Comp added successfully",
       });
       setIsAddingComp(false);
-      setCompForm({ address: "", zillow_link: "", price: "" });
+      setEditingCompId(null);
+      setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to add comp",
+        description: error.message || (editingCompId ? "Failed to update comp" : "Failed to add comp"),
         variant: "destructive",
       });
     },
@@ -1792,6 +1824,64 @@ export default function Properties() {
       });
     },
   });
+
+  // Send notification mutation
+  const sendNotificationMutation = useMutation({
+    mutationFn: async (data: { recipientId: string; message: string; propertyId: string }) => {
+      if (!userCompany?.company_id) throw new Error("No company found");
+      
+      const { error } = await supabase.from("notifications").insert([{
+        user_id: data.recipientId,
+        company_id: userCompany.company_id,
+        title: `Property Notification: ${selectedProperty?.address || "Property"}`,
+        message: data.message,
+        type: "property_notification",
+        property_id: data.propertyId,
+        sent_by_user_id: user?.id,
+      }]);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Notification sent!",
+        description: "Your team member will be notified",
+      });
+      setIsSendingNotification(false);
+      setNotificationForm({ recipientId: "", message: "" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send notification",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSendNotification = () => {
+    if (!notificationForm.recipientId || !notificationForm.message) {
+      toast({
+        title: "Error",
+        description: "Please select a recipient and enter a message",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!selectedProperty?.id) {
+      toast({
+        title: "Error",
+        description: "No property selected",
+        variant: "destructive",
+      });
+      return;
+    }
+    sendNotificationMutation.mutate({
+      recipientId: notificationForm.recipientId,
+      message: notificationForm.message,
+      propertyId: selectedProperty.id,
+    });
+  };
 
   const handleAddComp = () => {
     if (!compForm.address || !compForm.price) {
@@ -3388,7 +3478,7 @@ export default function Properties() {
           closePropertyModal();
         }
       }}>
-        <DialogContent className="w-[95vw] max-w-5xl max-h-[90vh] overflow-y-auto" aria-describedby="property-details-description">
+        <DialogContent className="w-[95vw] max-w-7xl max-h-[90vh] overflow-y-auto" aria-describedby="property-details-description">
           <DialogHeader>
             <DialogTitle className="text-lg md:text-2xl">
               {selectedProperty?.address || "Untitled Property"}
@@ -3579,6 +3669,76 @@ export default function Properties() {
                   
                   {/* Action Buttons - Email, SMS, Activity */}
                   <div className="flex flex-wrap gap-2 w-full lg:w-auto lg:ml-auto">
+                
+                {/* Send Notification Button */}
+                <Dialog open={isSendingNotification} onOpenChange={setIsSendingNotification}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Send className="mr-2 h-4 w-4" />
+                      Send Notification
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="w-[95vw] max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="text-lg md:text-xl">Send Notification to Team Member</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="notification-recipient">Recipient *</Label>
+                        <Select
+                          value={notificationForm.recipientId}
+                          onValueChange={(value) => setNotificationForm(prev => ({ ...prev, recipientId: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select team member..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teamMembers && teamMembers.filter((m: any) => m.user_id !== user?.id).map((member: any) => (
+                              <SelectItem key={member.user_id} value={member.user_id}>
+                                {member.profiles?.full_name || member.profiles?.email || "Unknown"} {member.role && member.role !== "member" && `(${member.role})`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="notification-message">Message *</Label>
+                        <Textarea
+                          id="notification-message"
+                          value={notificationForm.message}
+                          onChange={(e) => setNotificationForm(prev => ({ ...prev, message: e.target.value }))}
+                          placeholder="Enter your message..."
+                          rows={4}
+                        />
+                      </div>
+                      
+                      <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-md text-sm">
+                        <p className="text-muted-foreground">
+                          <strong>Property:</strong> {selectedProperty?.address || "Untitled"}
+                        </p>
+                        {selectedProperty?.city && (
+                          <p className="text-muted-foreground text-xs">
+                            {selectedProperty.city}, {selectedProperty.state}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 justify-end">
+                        <Button variant="outline" onClick={() => setIsSendingNotification(false)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={handleSendNotification}
+                          disabled={sendNotificationMutation.isPending || !notificationForm.recipientId || !notificationForm.message}
+                        >
+                          {sendNotificationMutation.isPending ? "Sending..." : "Send Notification"}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
                 <Dialog open={isSendingEmail} onOpenChange={(open) => {
                   if (open && selectedProperty) {
                     // Pre-populate email form with seller agent data
@@ -3974,7 +4134,7 @@ export default function Properties() {
 
             <Tabs defaultValue="general" className="mt-4">
               <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-                <TabsList className="grid w-full grid-cols-6 min-w-max md:min-w-0">
+                <TabsList className="grid w-full grid-cols-7 min-w-max md:min-w-0">
                   <TabsTrigger value="general" className="text-xs md:text-sm px-2 md:px-4">
                     <Home className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
                     <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">General</span>
@@ -3998,6 +4158,10 @@ export default function Properties() {
                 <TabsTrigger value="comps" className="text-xs md:text-sm px-2 md:px-4">
                   <Ruler className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
                   <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Comps</span>
+                </TabsTrigger>
+                <TabsTrigger value="communication" className="text-xs md:text-sm px-2 md:px-4">
+                  <MessageSquare className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
+                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">SMS</span>
                 </TabsTrigger>
               </TabsList>
               </div>
@@ -4674,18 +4838,30 @@ export default function Properties() {
                   <h3 className="font-semibold text-lg">Comparable Properties</h3>
                   <Button 
                     size="sm" 
-                    onClick={() => setIsAddingComp(true)}
+                    onClick={() => {
+                      setEditingCompId(null);
+                      setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
+                      setIsAddingComp(true);
+                    }}
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     Add Comp
                   </Button>
                 </div>
 
-                {/* Add Comp Form Dialog */}
-                <Dialog open={isAddingComp} onOpenChange={setIsAddingComp}>
+                {/* Add/Edit Comp Form Dialog */}
+                <Dialog open={isAddingComp} onOpenChange={(open) => {
+                  setIsAddingComp(open);
+                  if (!open) {
+                    setEditingCompId(null);
+                    setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
+                  }
+                }}>
                   <DialogContent className="w-[95vw] max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle className="text-lg md:text-xl">Add Comparable Property</DialogTitle>
+                      <DialogTitle className="text-lg md:text-xl">
+                        {editingCompId ? "Edit Comparable Property" : "Add Comparable Property"}
+                      </DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 mt-4">
                       <div className="space-y-2">
@@ -4720,12 +4896,40 @@ export default function Properties() {
                         />
                       </div>
 
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-grade">Grade</Label>
+                        <Select
+                          value={compForm.grade}
+                          onValueChange={(value) => setCompForm(prev => ({ ...prev, grade: value }))}
+                        >
+                          <SelectTrigger id="comp-grade">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="middle">Middle</SelectItem>
+                            <SelectItem value="low">Low</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="comp-description">Description</Label>
+                        <Textarea
+                          id="comp-description"
+                          value={compForm.description}
+                          onChange={(e) => setCompForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Additional notes about this comp..."
+                          rows={3}
+                        />
+                      </div>
+
                       <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4">
                         <Button 
                           variant="outline" 
                           onClick={() => {
                             setIsAddingComp(false);
-                            setCompForm({ address: "", zillow_link: "", price: "" });
+                            setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
                           }}
                           className="w-full sm:w-auto text-sm"
                         >
@@ -4736,7 +4940,9 @@ export default function Properties() {
                           disabled={addCompMutation.isPending}
                           className="w-full sm:w-auto text-sm"
                         >
-                          {addCompMutation.isPending ? "Adding..." : "Add Comp"}
+                          {addCompMutation.isPending 
+                            ? (editingCompId ? "Updating..." : "Adding...") 
+                            : (editingCompId ? "Update Comp" : "Add Comp")}
                         </Button>
                       </div>
                     </div>
@@ -4745,64 +4951,235 @@ export default function Properties() {
 
                 {/* Comps List */}
                 {!selectedProperty?.comps || selectedProperty.comps.length === 0 ? (
-                  <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                  <div className="text-center py-12 border-2 border-dashed rounded-lg bg-gradient-to-br from-blue-50/50 to-purple-50/50 dark:from-blue-950/20 dark:to-purple-950/20">
                     <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
                     <p className="text-muted-foreground mb-4">No comparable properties added yet</p>
                     <Button 
                       variant="outline" 
-                      onClick={() => setIsAddingComp(true)}
+                      onClick={() => {
+                        setEditingCompId(null);
+                        setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
+                        setIsAddingComp(true);
+                      }}
                     >
                       <Plus className="mr-2 h-4 w-4" />
                       Add Your First Comp
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {selectedProperty.comps.map((comp: any, index: number) => (
-                      <Card key={comp.id || index} className="border-l-4 border-l-blue-500">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 space-y-2">
-                              <div className="flex items-start gap-2">
-                                <MapPin className="h-4 w-4 text-muted-foreground mt-1 flex-shrink-0" />
-                                <div>
-                                  <p className="font-semibold text-sm">{comp.address}</p>
-                                  {comp.zillow_link && (
-                                    <a
-                                      href={comp.zillow_link}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 mt-1"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <ExternalLink className="h-3 w-3" />
-                                      View on Zillow
-                                    </a>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                                <span className="font-semibold text-green-600 dark:text-green-400">
-                                  ${parseFloat(comp.price).toLocaleString()}
-                                </span>
-                              </div>
+                      <Card 
+                        key={comp.id || index} 
+                        className="group hover:shadow-lg transition-all duration-200 border-t-4 overflow-hidden flex flex-col"
+                        style={{
+                          borderTopColor: comp.grade === 'high' 
+                            ? 'rgb(34, 197, 94)' 
+                            : comp.grade === 'low' 
+                            ? 'rgb(239, 68, 68)'
+                            : 'rgb(234, 179, 8)'
+                        }}
+                      >
+                        <CardContent className="p-4 flex-1 flex flex-col">
+                          {/* Header with Grade Badge */}
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            {comp.grade && (
+                              <Badge 
+                                className={
+                                  comp.grade === 'high' 
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                                    : comp.grade === 'low' 
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                }
+                              >
+                                {comp.grade.charAt(0).toUpperCase() + comp.grade.slice(1)}
+                              </Badge>
+                            )}
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20"
+                                onClick={() => {
+                                  setCompForm({
+                                    address: comp.address,
+                                    zillow_link: comp.zillow_link || "",
+                                    price: comp.price,
+                                    grade: comp.grade || "middle",
+                                    description: comp.description || "",
+                                  });
+                                  setEditingCompId(comp.id);
+                                  setIsAddingComp(true);
+                                }}
+                                title="Edit"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                onClick={() => deleteCompMutation.mutate(comp.id)}
+                                disabled={deleteCompMutation.isPending}
+                                title="Delete"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => deleteCompMutation.mutate(comp.id)}
-                              disabled={deleteCompMutation.isPending}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
                           </div>
+
+                          {/* Address */}
+                          <div className="flex items-start gap-2 mb-2">
+                            <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                            <h4 className="font-semibold text-sm leading-tight">{comp.address}</h4>
+                          </div>
+
+                          {/* Zillow Link */}
+                          {comp.zillow_link && (
+                            <a
+                              href={comp.zillow_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 hover:underline mb-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              View on Zillow
+                            </a>
+                          )}
+
+                          {/* Price */}
+                          <div className="flex items-center gap-1.5 bg-green-50 dark:bg-green-950/20 px-2.5 py-1.5 rounded-md border border-green-200 dark:border-green-900 w-fit mb-3">
+                            <DollarSign className="h-4 w-4 text-green-600 dark:text-green-400" />
+                            <span className="font-bold text-base text-green-700 dark:text-green-300">
+                              {parseFloat(comp.price).toLocaleString()}
+                            </span>
+                          </div>
+
+                          {/* Description */}
+                          {comp.description && (
+                            <div className="pt-3 mt-auto border-t">
+                              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                                {comp.description}
+                              </p>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     ))}
                   </div>
                 )}
+              </TabsContent>
+
+              {/* Communication Tab */}
+              <TabsContent value="communication" className="space-y-4 mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-lg">SMS Communications</h3>
+                    <Badge variant="outline" className="text-xs">
+                      {propertySmsMessages?.length || 0} messages
+                    </Badge>
+                  </div>
+
+                  {/* AI Score Summary */}
+                 
+
+                  {/* SMS Messages List */}
+                  {!propertySmsMessages || propertySmsMessages.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                      <p className="text-muted-foreground text-sm">No SMS messages for this property yet</p>
+                      <p className="text-xs text-muted-foreground mt-2">Messages will appear here when you communicate about this property</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                      {propertySmsMessages.map((sms: any) => (
+                        <div
+                          key={sms.id}
+                          className={`p-4 rounded-lg border ${
+                            sms.direction === 'incoming'
+                              ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
+                              : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              {sms.direction === 'incoming' ? (
+                                <Badge variant="default" className="bg-blue-600 text-xs">
+                                  Incoming
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Send className="h-3 w-3 mr-1" />
+                                  Outgoing
+                                </Badge>
+                              )}
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {sms.status}
+                              </Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(sms.created_at), "MMM d, yyyy h:mm a")}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Phone className="h-3 w-3" />
+                              <span>
+                                {sms.direction === 'incoming' 
+                                  ? `From: ${sms.from_number}` 
+                                  : `To: ${sms.to_number}`}
+                              </span>
+                            </div>
+                            
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                              {sms.message}
+                            </p>
+
+                            {/* AI Analysis for incoming messages */}
+                            {sms.direction === 'incoming' && sms.ai_score && (
+                              <div className="mt-3 pt-3 border-t">
+                                <div className="flex items-center gap-2 mb-2">
+                                  {sms.ai_score === 3 && (
+                                    <>
+                                      <Flame className="h-5 w-5 text-red-500" />
+                                      <Badge variant="destructive" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                        🔥 HOT LEAD
+                                      </Badge>
+                                    </>
+                                  )}
+                                  {sms.ai_score === 2 && (
+                                    <>
+                                      <ThermometerSun className="h-5 w-5 text-orange-500" />
+                                      <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                                        Warm Lead
+                                      </Badge>
+                                    </>
+                                  )}
+                                  {sms.ai_score === 1 && (
+                                    <>
+                                      <Snowflake className="h-5 w-5 text-blue-400" />
+                                      <Badge variant="secondary" className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
+                                        Cold Lead
+                                      </Badge>
+                                    </>
+                                  )}
+                                </div>
+                                {sms.ai_analysis && (
+                                  <p className="text-xs text-muted-foreground italic bg-white dark:bg-gray-800 p-2 rounded">
+                                    💡 AI Analysis: {sms.ai_analysis}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </TabsContent>
             </Tabs>
             </>

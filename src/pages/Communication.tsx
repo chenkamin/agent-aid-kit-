@@ -40,6 +40,28 @@ interface CommunicationSettings {
   sms_phone_number?: string;
 }
 
+// Valid template variables
+const VALID_VARIABLES = [
+  '{{PROPERTY}}',
+  '{{PRICE}}',
+  '{{AGENT_NAME}}',
+  '{{BEDROOMS}}',
+  '{{BATHROOMS}}',
+  '{{SQFT}}'
+];
+
+// Validate template variables
+const validateTemplateVariables = (text: string): { isValid: boolean; invalidVars: string[] } => {
+  const variablePattern = /\{\{[A-Z_]+\}\}/g;
+  const foundVariables = text.match(variablePattern) || [];
+  const invalidVars = foundVariables.filter(v => !VALID_VARIABLES.includes(v));
+  
+  return {
+    isValid: invalidVars.length === 0,
+    invalidVars: Array.from(new Set(invalidVars))
+  };
+};
+
 export default function Communication() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -178,6 +200,19 @@ export default function Communication() {
     mutationFn: async (data: any) => {
       if (!userCompany?.company_id) throw new Error("No company found");
       
+      // Validate variables in subject and body
+      const subjectValidation = validateTemplateVariables(data.subject || '');
+      const bodyValidation = validateTemplateVariables(data.body || '');
+      
+      const allInvalidVars = [...subjectValidation.invalidVars, ...bodyValidation.invalidVars];
+      
+      if (allInvalidVars.length > 0) {
+        throw new Error(
+          `Invalid variables found: ${allInvalidVars.join(', ')}. ` +
+          `Valid variables are: ${VALID_VARIABLES.join(', ')}`
+        );
+      }
+      
       if (editingEmailTemplateId) {
         // Update existing template
         const { error } = await supabase
@@ -217,6 +252,16 @@ export default function Communication() {
   // Create SMS template mutation
   const createSMSTemplateMutation = useMutation({
     mutationFn: async (data: any) => {
+      // Validate variables in body
+      const bodyValidation = validateTemplateVariables(data.body || '');
+      
+      if (bodyValidation.invalidVars.length > 0) {
+        throw new Error(
+          `Invalid variables found: ${bodyValidation.invalidVars.join(', ')}. ` +
+          `Valid variables are: ${VALID_VARIABLES.join(', ')}`
+        );
+      }
+      
       const { error } = await supabase.from("sms_templates").insert([{
         user_id: user?.id,
         ...data,
@@ -732,6 +777,23 @@ export default function Communication() {
                 placeholder="Enter your email message..."
                 className="min-h-[200px]"
               />
+              {(() => {
+                const subjectValidation = validateTemplateVariables(emailTemplateForm.subject);
+                const bodyValidation = validateTemplateVariables(emailTemplateForm.body);
+                const hasInvalidVars = subjectValidation.invalidVars.length > 0 || bodyValidation.invalidVars.length > 0;
+                const allInvalidVars = [...subjectValidation.invalidVars, ...bodyValidation.invalidVars];
+                
+                return hasInvalidVars ? (
+                  <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-3 mt-2">
+                    <p className="text-xs font-semibold text-red-900 dark:text-red-100 mb-1">
+                      ⚠️ Invalid Variables Detected
+                    </p>
+                    <p className="text-xs text-red-700 dark:text-red-300">
+                      {allInvalidVars.join(', ')} - These variables are not recognized. Please use only valid variables from the list below.
+                    </p>
+                  </div>
+                ) : null;
+              })()}
               <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
                 <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
                   💡 Available Variables
@@ -821,6 +883,20 @@ export default function Communication() {
               <p className="text-xs text-muted-foreground mt-1">
                 {smsTemplateForm.body.length}/160 characters
               </p>
+              {(() => {
+                const bodyValidation = validateTemplateVariables(smsTemplateForm.body);
+                
+                return bodyValidation.invalidVars.length > 0 ? (
+                  <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-3 mt-2">
+                    <p className="text-xs font-semibold text-red-900 dark:text-red-100 mb-1">
+                      ⚠️ Invalid Variables Detected
+                    </p>
+                    <p className="text-xs text-red-700 dark:text-red-300">
+                      {bodyValidation.invalidVars.join(', ')} - These variables are not recognized. Please use only valid variables from the list below.
+                    </p>
+                  </div>
+                ) : null;
+              })()}
               <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
                 <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
                   💡 Available Variables

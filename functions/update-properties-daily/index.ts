@@ -205,6 +205,11 @@ Deno.serve(async (req) => {
           .select('id, address, city, state, zip, listing_url, price, status')
           .eq('buy_box_id', buyBox.id);
 
+        console.log(`   📋 DEBUG - Existing properties in database for this buy box: ${(existingProperties || []).length}`);
+        if (existingProperties && existingProperties.length > 0) {
+          console.log(`   🔍 DEBUG - Sample existing property:`, JSON.stringify(existingProperties[0], null, 2));
+        }
+
         // Create maps by address+city and by URL for duplicate detection within this buy box
         const existingByAddress = new Map(
           (existingProperties || []).map(p => [`${p.address}|${p.city}`.toLowerCase(), p])
@@ -212,6 +217,8 @@ Deno.serve(async (req) => {
         const existingPropsMap = new Map(
           (existingProperties || []).map(p => [p.listing_url, p])
         );
+        
+        console.log(`   🔍 DEBUG - Existing URLs map size: ${existingPropsMap.size}`);
 
         // If filtering by price per sqft, don't pass price filter to Apify
         // We'll filter manually after getting all results
@@ -291,6 +298,14 @@ Deno.serve(async (req) => {
 
         let scrapedProperties = await resultsResponse.json();
         console.log(`   ✅ Found ${scrapedProperties.length} properties from Zillow (before filtering)`);
+        
+        // DEBUG: Log first property to see what data we're getting
+        if (scrapedProperties.length > 0) {
+          console.log(`   🔍 DEBUG - Sample property:`, JSON.stringify(scrapedProperties[0], null, 2));
+        } else {
+          console.log(`   ⚠️ WARNING - No properties returned from Zillow scraper!`);
+          console.log(`   🔍 Search config used:`, JSON.stringify(searchConfig, null, 2));
+        }
 
         // If filtering by price per sqft, filter properties based on calculated ppsf
         if (buyBox.filter_by_ppsf && (buyBox.price_min || buyBox.price_max)) {
@@ -300,8 +315,8 @@ Deno.serve(async (req) => {
           
           const originalCount = scrapedProperties.length;
           scrapedProperties = scrapedProperties.filter((prop: any) => {
-            const price = parseNumber(prop.price || prop.unformattedPrice);
-            const sqft = parseInteger(prop.livingArea || prop.area);
+            const price = parseNumber(prop.price || prop.unformattedPrice || prop.hdpData?.homeInfo?.price);
+            const sqft = parseInteger(prop.livingArea || prop.area || prop.hdpData?.homeInfo?.livingArea);
             
             // If we don't have both price and sqft, skip this property
             if (!price || !sqft || sqft === 0) {
@@ -333,8 +348,24 @@ Deno.serve(async (req) => {
           const normalizedFilterTypes = buyBox.home_types.map((type: string) => normalizeHomeType(type));
           console.log(`   🏠 Normalized filter types: ${normalizedFilterTypes.join(', ')}`);
           
+          // DEBUG: Check first few properties to see what's happening
+          if (scrapedProperties.length > 0) {
+            console.log(`   🔍 DEBUG - Checking first 3 properties for home type matching:`);
+            for (let i = 0; i < Math.min(3, scrapedProperties.length); i++) {
+              const prop = scrapedProperties[i];
+              const rawHomeType = prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType || 'undefined';
+              const normalizedHomeType = normalizeHomeType(rawHomeType);
+              const matches = normalizedFilterTypes.includes(normalizedHomeType);
+              console.log(`      Property ${i + 1}:`);
+              console.log(`         Raw home type: "${rawHomeType}"`);
+              console.log(`         Normalized: "${normalizedHomeType}"`);
+              console.log(`         Looking for: [${normalizedFilterTypes.join(', ')}]`);
+              console.log(`         Match: ${matches ? '✅ YES' : '❌ NO'}`);
+            }
+          }
+          
           scrapedProperties = scrapedProperties.filter((prop: any) => {
-            const homeType = normalizeHomeType(prop.homeType || prop.propertyType);
+            const homeType = normalizeHomeType(prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType);
             return normalizedFilterTypes.includes(homeType);
           });
           
@@ -450,18 +481,26 @@ Deno.serve(async (req) => {
         const propertyUpdates = [];
         let skippedCount = 0;
 
+        console.log(`\n   🔄 Processing ${scrapedProperties.length} scraped properties after all filters...`);
+
         for (const prop of scrapedProperties) {
           const listingUrl = prop.detailUrl || prop.url || '';
           const addressData = extractAddressFromUrl(listingUrl);
-          const scrapedPrice = parseNumber(prop.price || prop.unformattedPrice);
+          const scrapedPrice = parseNumber(prop.price || prop.unformattedPrice || prop.hdpData?.homeInfo?.price);
           const scrapedStatus = 'For Sale';
+
+          console.log(`\n   🏠 Checking property: ${listingUrl}`);
+          console.log(`      Address extracted: ${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`);
+          console.log(`      Price: ${scrapedPrice}`);
 
           const existingProp = existingPropsMap.get(listingUrl);
 
           if (!existingProp) {
+            console.log(`      ✅ NOT found in existing properties - this is a NEW listing`);
+            
             // NEW LISTING - Skip if address is incomplete
             if (!addressData.address || !addressData.city) {
-              console.log(`⚠️ Skipping property with incomplete address: ${listingUrl}`);
+              console.log(`      ⚠️ Skipping - incomplete address data`);
               skippedCount++;
               continue;
             }
@@ -469,7 +508,7 @@ Deno.serve(async (req) => {
             // Get verified neighborhood if available (only for buy boxes with neighborhood filter)
             const verifiedNeighborhood = propertyNeighborhoodMap.get(listingUrl) || null;
 
-            newListings.push({
+            const newListing = {
               user_id: buyBox.user_id,
               company_id: companyId,
               buy_box_id: buyBox.id,
@@ -479,24 +518,30 @@ Deno.serve(async (req) => {
               zip: addressData.zip,
               neighborhood: verifiedNeighborhood,
               price: scrapedPrice,
-              bedrooms: parseInteger(prop.beds || prop.bedrooms),
-              bed: parseInteger(prop.beds || prop.bedrooms),
-              bathrooms: parseNumber(prop.baths || prop.bathrooms),
-              bath: parseNumber(prop.baths || prop.bathrooms),
-              square_footage: parseInteger(prop.livingArea || prop.area),
-              living_sqf: parseInteger(prop.livingArea || prop.area),
-              home_type: normalizeHomeType(prop.homeType || prop.propertyType),
+              bedrooms: parseInteger(prop.beds || prop.bedrooms || prop.hdpData?.homeInfo?.bedrooms),
+              bed: parseInteger(prop.beds || prop.bedrooms || prop.hdpData?.homeInfo?.bedrooms),
+              bathrooms: parseNumber(prop.baths || prop.bathrooms || prop.hdpData?.homeInfo?.bathrooms),
+              bath: parseNumber(prop.baths || prop.bathrooms || prop.hdpData?.homeInfo?.bathrooms),
+              square_footage: parseInteger(prop.livingArea || prop.area || prop.hdpData?.homeInfo?.livingArea),
+              living_sqf: parseInteger(prop.livingArea || prop.area || prop.hdpData?.homeInfo?.livingArea),
+              home_type: normalizeHomeType(prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType),
               status: scrapedStatus,
-              initial_status: prop.homeStatus || prop.statusText || '',
-              days_on_market: parseInteger(prop.daysOnZillow),
+              initial_status: prop.homeStatus || prop.statusText || prop.hdpData?.homeInfo?.homeStatus || '',
+              days_on_market: parseInteger(prop.daysOnZillow || prop.hdpData?.homeInfo?.daysOnZillow),
               date_listed: prop.datePostedString ? new Date(prop.datePostedString).toISOString().split('T')[0] : null,
               listing_url: listingUrl,
               url: listingUrl,
               is_new_listing: true,
               listing_discovered_at: new Date().toISOString(),
               last_scraped_at: new Date().toISOString()
-            });
+            };
+            
+            console.log(`      ➕ Adding to newListings array`);
+            console.log(`      🔍 DEBUG - New listing data:`, JSON.stringify(newListing, null, 2));
+            newListings.push(newListing);
           } else {
+            console.log(`      🔄 Found in existing properties - checking for updates`);
+            console.log(`      🔍 Existing property ID: ${existingProp.id}`);
             // EXISTING LISTING - CHECK FOR CHANGES
             const changes = [];
 
@@ -551,31 +596,56 @@ Deno.serve(async (req) => {
         }
 
         // Insert new listings ONE AT A TIME with error handling
+        console.log(`\n   💾 Attempting to insert ${newListings.length} new listings...`);
+        
         if (newListings.length > 0) {
           let successCount = 0;
           let duplicateCount = 0;
           let errorCount = 0;
 
-          for (const listing of newListings) {
-            const { error: insertError } = await supabase
+          for (let i = 0; i < newListings.length; i++) {
+            const listing = newListings[i];
+            console.log(`\n   💾 Inserting listing ${i + 1}/${newListings.length}:`);
+            console.log(`      Address: ${listing.address}, ${listing.city}, ${listing.state} ${listing.zip}`);
+            console.log(`      URL: ${listing.listing_url}`);
+            console.log(`      Buy Box ID: ${listing.buy_box_id}`);
+            console.log(`      Company ID: ${listing.company_id}`);
+            console.log(`      User ID: ${listing.user_id}`);
+            
+            const { data: insertData, error: insertError } = await supabase
               .from('properties')
-              .insert(listing);
+              .insert(listing)
+              .select();
 
             if (insertError) {
+              console.log(`      ❌ INSERT FAILED`);
+              console.log(`      Error code: ${insertError.code}`);
+              console.log(`      Error message: ${insertError.message}`);
+              console.log(`      Error details:`, JSON.stringify(insertError, null, 2));
+              
               if (insertError.code === '23505') {
                 // Unique constraint violation - duplicate property
-                console.log(`   ⚠️ Duplicate property skipped: ${listing.address}, ${listing.city}`);
+                console.log(`      ⚠️ Duplicate property skipped: ${listing.address}, ${listing.city}`);
                 duplicateCount++;
               } else {
-                console.error(`   ❌ Error inserting property ${listing.address}:`, insertError.message);
+                console.error(`      ❌ Error inserting property ${listing.address}:`, insertError.message);
                 errorCount++;
               }
             } else {
+              console.log(`      ✅ INSERT SUCCESSFUL`);
+              if (insertData) {
+                console.log(`      🔍 Inserted property ID: ${insertData[0]?.id}`);
+              }
               successCount++;
             }
           }
 
-          console.log(`   🆕 Added ${successCount} new listings (${duplicateCount} duplicates skipped, ${errorCount} errors)`);
+          console.log(`\n   📊 INSERTION SUMMARY:`);
+          console.log(`      🆕 Successfully added: ${successCount}`);
+          console.log(`      ⚠️ Duplicates skipped: ${duplicateCount}`);
+          console.log(`      ❌ Errors: ${errorCount}`);
+        } else {
+          console.log(`   ⚠️ No new listings to insert`);
         }
 
         // Record property changes
@@ -595,6 +665,13 @@ Deno.serve(async (req) => {
           success: true
         };
 
+        console.log('\n📊 ===== FINAL SUMMARY =====');
+        console.log(`   Buy Box: ${buyBox.name}`);
+        console.log(`   Properties after all filters: ${scrapedProperties.length}`);
+        console.log(`   New listings identified: ${newListings.length}`);
+        console.log(`   Existing listings updated: ${updatedListings.length}`);
+        console.log(`   Properties skipped (incomplete data): ${skippedCount}`);
+        console.log(`   Existing properties in DB for this buy box: ${(existingProperties || []).length}`);
         console.log('\n✅ Buy box update completed');
 
         return new Response(
