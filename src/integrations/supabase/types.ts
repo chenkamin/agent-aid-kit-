@@ -101,13 +101,16 @@ export type Database = {
           company_id: string
           created_at: string
           days_on_zillow: number | null
+          description: string | null
           filter_by_city_match: boolean | null
+          filter_by_neighborhoods: boolean | null
           filter_by_ppsf: boolean
           for_rent: boolean | null
           for_sale_by_agent: boolean | null
           for_sale_by_owner: boolean | null
           home_types: string[] | null
           id: string
+          last_scraped_at: string | null
           max_bathrooms: number | null
           max_bedrooms: number | null
           max_price: number | null
@@ -119,6 +122,7 @@ export type Database = {
           name: string
           neighborhoods: string[] | null
           price_max: number | null
+          price_min: number | null
           updated_at: string
           user_id: string
           zip_codes: string[] | null
@@ -129,13 +133,16 @@ export type Database = {
           company_id: string
           created_at?: string
           days_on_zillow?: number | null
+          description?: string | null
           filter_by_city_match?: boolean | null
+          filter_by_neighborhoods?: boolean | null
           filter_by_ppsf?: boolean
           for_rent?: boolean | null
           for_sale_by_agent?: boolean | null
           for_sale_by_owner?: boolean | null
           home_types?: string[] | null
           id?: string
+          last_scraped_at?: string | null
           max_bathrooms?: number | null
           max_bedrooms?: number | null
           max_price?: number | null
@@ -147,6 +154,7 @@ export type Database = {
           name: string
           neighborhoods?: string[] | null
           price_max?: number | null
+          price_min?: number | null
           updated_at?: string
           user_id: string
           zip_codes?: string[] | null
@@ -157,13 +165,16 @@ export type Database = {
           company_id?: string
           created_at?: string
           days_on_zillow?: number | null
+          description?: string | null
           filter_by_city_match?: boolean | null
+          filter_by_neighborhoods?: boolean | null
           filter_by_ppsf?: boolean
           for_rent?: boolean | null
           for_sale_by_agent?: boolean | null
           for_sale_by_owner?: boolean | null
           home_types?: string[] | null
           id?: string
+          last_scraped_at?: string | null
           max_bathrooms?: number | null
           max_bedrooms?: number | null
           max_price?: number | null
@@ -175,6 +186,7 @@ export type Database = {
           name?: string
           neighborhoods?: string[] | null
           price_max?: number | null
+          price_min?: number | null
           updated_at?: string
           user_id?: string
           zip_codes?: string[] | null
@@ -253,6 +265,9 @@ export type Database = {
           id: string
           name: string
           owner_id: string | null
+          sms_api_key: string | null
+          sms_phone_number: string | null
+          sms_provider: string | null
           updated_at: string | null
         }
         Insert: {
@@ -261,6 +276,9 @@ export type Database = {
           id?: string
           name: string
           owner_id?: string | null
+          sms_api_key?: string | null
+          sms_phone_number?: string | null
+          sms_provider?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -269,6 +287,9 @@ export type Database = {
           id?: string
           name?: string
           owner_id?: string | null
+          sms_api_key?: string | null
+          sms_phone_number?: string | null
+          sms_provider?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -407,6 +428,79 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          activity_id: string | null
+          company_id: string
+          created_at: string | null
+          id: string
+          message: string | null
+          metadata: Json | null
+          property_id: string | null
+          read: boolean | null
+          read_at: string | null
+          sent_by_user_id: string | null
+          title: string
+          type: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          activity_id?: string | null
+          company_id: string
+          created_at?: string | null
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          property_id?: string | null
+          read?: boolean | null
+          read_at?: string | null
+          sent_by_user_id?: string | null
+          title: string
+          type: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          activity_id?: string | null
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          message?: string | null
+          metadata?: Json | null
+          property_id?: string | null
+          read?: boolean | null
+          read_at?: string | null
+          sent_by_user_id?: string | null
+          title?: string
+          type?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
         ]
@@ -812,6 +906,72 @@ export type Database = {
           },
         ]
       }
+      sms_messages: {
+        Row: {
+          ai_analysis: string | null
+          ai_score: number | null
+          company_id: string
+          created_at: string | null
+          direction: Database["public"]["Enums"]["sms_direction"]
+          from_number: string
+          id: string
+          message: string
+          metadata: Json | null
+          property_id: string | null
+          provider_message_id: string | null
+          status: string | null
+          to_number: string
+          updated_at: string | null
+        }
+        Insert: {
+          ai_analysis?: string | null
+          ai_score?: number | null
+          company_id: string
+          created_at?: string | null
+          direction: Database["public"]["Enums"]["sms_direction"]
+          from_number: string
+          id?: string
+          message: string
+          metadata?: Json | null
+          property_id?: string | null
+          provider_message_id?: string | null
+          status?: string | null
+          to_number: string
+          updated_at?: string | null
+        }
+        Update: {
+          ai_analysis?: string | null
+          ai_score?: number | null
+          company_id?: string
+          created_at?: string | null
+          direction?: Database["public"]["Enums"]["sms_direction"]
+          from_number?: string
+          id?: string
+          message?: string
+          metadata?: Json | null
+          property_id?: string | null
+          provider_message_id?: string | null
+          status?: string | null
+          to_number?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sms_templates: {
         Row: {
           body: string
@@ -992,12 +1152,13 @@ export type Database = {
       }
     }
     Functions: {
+      create_activity_due_notifications: { Args: never; Returns: undefined }
       create_company_with_owner: {
         Args: { company_name: string; owner_uuid: string }
         Returns: string
       }
       get_cron_status: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           is_active: boolean
           job_name: string
@@ -1008,20 +1169,14 @@ export type Database = {
           total_executions: number
         }[]
       }
-      get_user_company_id: {
-        Args: { user_uuid: string }
-        Returns: string
-      }
+      get_user_company_id: { Args: { user_uuid: string }; Returns: string }
       get_user_company_ids: {
         Args: { check_user_id: string }
         Returns: {
           company_id: string
         }[]
       }
-      trigger_daily_property_update: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
+      trigger_daily_property_update: { Args: never; Returns: undefined }
       user_is_in_company: {
         Args: { check_company_id: string; check_user_id: string }
         Returns: boolean
@@ -1072,6 +1227,7 @@ export type Database = {
         | "Not Relevant"
         | "Follow Up"
         | "Waiting for Response"
+      sms_direction: "outgoing" | "incoming"
       workflow_state:
         | "Initial"
         | "Reviewing"
@@ -1259,6 +1415,7 @@ export const Constants = {
         "Follow Up",
         "Waiting for Response",
       ],
+      sms_direction: ["outgoing", "incoming"],
       workflow_state: [
         "Initial",
         "Reviewing",

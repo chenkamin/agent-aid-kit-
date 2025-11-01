@@ -58,14 +58,39 @@ export default function Layout({ children }: LayoutProps) {
         .select(`
           *,
           property:properties(address, city),
-          activity:activities(title, type),
-          sent_by:sent_by_user_id(email)
+          activity:activities(title, type)
         `)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(50);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Error fetching notifications:", error);
+        throw error;
+      }
+      
+      // If there are notifications with sent_by_user_id, fetch the sender info separately
+      if (data && data.length > 0) {
+        const notificationsWithSenders = await Promise.all(
+          data.map(async (notification) => {
+            if (notification.sent_by_user_id) {
+              const { data: senderProfile } = await supabase
+                .from("profiles")
+                .select("email, full_name")
+                .eq("id", notification.sent_by_user_id)
+                .single();
+              
+              return {
+                ...notification,
+                sent_by: senderProfile
+              };
+            }
+            return notification;
+          })
+        );
+        return notificationsWithSenders;
+      }
+      
       return data || [];
     },
     enabled: !!user?.id,
