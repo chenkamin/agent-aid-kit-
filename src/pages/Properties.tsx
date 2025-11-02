@@ -160,6 +160,8 @@ export default function Properties() {
   });
   const [isSendingBulkSMS, setIsSendingBulkSMS] = useState(false);
   const [bulkSMSMessage, setBulkSMSMessage] = useState("");
+  const [bulkSMSTemplateId, setBulkSMSTemplateId] = useState("");
+  const [isSendingBulkSMSInProgress, setIsSendingBulkSMSInProgress] = useState(false);
   const [showBuyBoxAnalytics, setShowBuyBoxAnalytics] = useState(false);
   const [selectedBuyBoxForAnalytics, setSelectedBuyBoxForAnalytics] = useState<{
     id: string;
@@ -1298,6 +1300,98 @@ export default function Properties() {
     // Close dialog and reset form
     setIsSendingBulkEmail(false);
     setBulkEmailForm({ templateId: "", offerPrice: "" });
+    setSelectedPropertyIds([]);
+  };
+
+  const handleBulkSendSMS = async () => {
+    console.log('handleBulkSendSMS called', { bulkSMSMessage, bulkSMSTemplateId, selectedPropertyIds });
+    
+    if (!bulkSMSMessage.trim()) {
+      toast({
+        title: "Message required",
+        description: "Please enter a message",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get properties with valid phone numbers
+    const propertiesWithPhone = selectedPropertyIds
+      .map(id => properties?.find(p => p.id === id))
+      .filter(prop => prop && prop.seller_agent_phone);
+
+    if (propertiesWithPhone.length === 0) {
+      toast({
+        title: "No recipients",
+        description: "None of the selected properties have agent phone numbers",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log(`Sending ${propertiesWithPhone.length} SMS messages...`);
+    setIsSendingBulkSMSInProgress(true);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Send SMS messages sequentially
+    for (const property of propertiesWithPhone) {
+      try {
+        // Replace template variables (support both single and double curly braces)
+        const finalMessage = bulkSMSMessage
+          // Double curly braces format ({{VARIABLE}})
+          .replace(/\{\{AGENT_NAME\}\}/gi, property.seller_agent_name || 'Agent')
+          .replace(/\{\{PROPERTY\}\}/gi, property.address || 'N/A')
+          .replace(/\{\{ADDRESS\}\}/gi, property.address || 'N/A')
+          .replace(/\{\{PRICE\}\}/gi, property.price ? `$${property.price.toLocaleString()}` : 'N/A')
+          .replace(/\{\{BEDROOMS\}\}/gi, property.bedrooms?.toString() || 'N/A')
+          .replace(/\{\{BEDS\}\}/gi, property.bedrooms?.toString() || 'N/A')
+          .replace(/\{\{BATHROOMS\}\}/gi, property.bathrooms?.toString() || 'N/A')
+          .replace(/\{\{BATHS\}\}/gi, property.bathrooms?.toString() || 'N/A')
+          .replace(/\{\{SQFT\}\}/gi, property.square_footage?.toString() || property.living_sqf?.toString() || 'N/A')
+          // Single curly braces format ({variable})
+          .replace(/\{agent_name\}/gi, property.seller_agent_name || 'Agent')
+          .replace(/\{address\}/gi, property.address || 'N/A')
+          .replace(/\{price\}/gi, property.price ? `$${property.price.toLocaleString()}` : 'N/A')
+          .replace(/\{beds\}/gi, property.bedrooms?.toString() || 'N/A')
+          .replace(/\{baths\}/gi, property.bathrooms?.toString() || 'N/A');
+
+        await sendSMSMutation.mutateAsync({
+          to: property.seller_agent_phone!,
+          message: finalMessage,
+          propertyId: property.id
+        });
+        successCount++;
+        console.log(`SMS ${successCount}/${propertiesWithPhone.length} sent to ${property.address}`);
+      } catch (error) {
+        console.error(`Failed to send SMS to ${property.address}:`, error);
+        failCount++;
+      }
+    }
+
+    setIsSendingBulkSMSInProgress(false);
+    
+    // Show result toast
+    if (successCount > 0) {
+      toast({
+        title: "SMS Sent!",
+        description: `${successCount} message${successCount === 1 ? '' : 's'} sent successfully${failCount > 0 ? `, ${failCount} failed` : ''}`,
+      });
+    }
+    
+    if (failCount > 0 && successCount === 0) {
+      toast({
+        title: "Failed to send SMS",
+        description: `All ${failCount} messages failed to send`,
+        variant: "destructive",
+      });
+    }
+
+    // Close dialog and reset form
+    setIsSendingBulkSMS(false);
+    setBulkSMSMessage("");
+    setBulkSMSTemplateId("");
     setSelectedPropertyIds([]);
   };
 
@@ -4210,8 +4304,19 @@ export default function Properties() {
                               });
                               return;
                             }
-                            // Replace template variables
+                            // Replace template variables (support both single and double curly braces)
                             const finalMessage = smsForm.message
+                              // Double curly braces format ({{VARIABLE}})
+                              .replace(/\{\{AGENT_NAME\}\}/gi, smsForm.agentName)
+                              .replace(/\{\{PROPERTY\}\}/gi, selectedProperty?.address || 'N/A')
+                              .replace(/\{\{ADDRESS\}\}/gi, selectedProperty?.address || 'N/A')
+                              .replace(/\{\{PRICE\}\}/gi, selectedProperty?.price ? `$${selectedProperty.price.toLocaleString()}` : 'N/A')
+                              .replace(/\{\{BEDROOMS\}\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
+                              .replace(/\{\{BEDS\}\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
+                              .replace(/\{\{BATHROOMS\}\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A')
+                              .replace(/\{\{BATHS\}\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A')
+                              .replace(/\{\{SQFT\}\}/gi, selectedProperty?.square_footage?.toString() || selectedProperty?.living_sqf?.toString() || 'N/A')
+                              // Single curly braces format ({variable})
                               .replace(/\{agent_name\}/gi, smsForm.agentName)
                               .replace(/\{address\}/gi, selectedProperty?.address || 'N/A')
                               .replace(/\{price\}/gi, selectedProperty?.price ? `$${selectedProperty.price.toLocaleString()}` : 'N/A')
@@ -5556,17 +5661,53 @@ export default function Properties() {
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
+              <Label htmlFor="bulk-sms-template" className="text-sm">SMS Template (Optional)</Label>
+              <Select
+                value={bulkSMSTemplateId}
+                onValueChange={(value) => {
+                  setBulkSMSTemplateId(value);
+                  // Auto-fill message from template
+                  const template = smsTemplates?.find((t: any) => t.id === value);
+                  if (template) {
+                    setBulkSMSMessage(template.body);
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {smsTemplates && smsTemplates.length > 0 ? (
+                    smsTemplates.map((template: any) => (
+                      <SelectItem key={template.id} value={template.id}>
+                        {template.name}
+                        {template.is_default && " 🛡️"}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="none" disabled>
+                      No templates available - Create one in Communication
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select a template to auto-fill the message below
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="bulk-sms-message" className="text-sm">Message *</Label>
               <Textarea
                 id="bulk-sms-message"
                 value={bulkSMSMessage}
                 onChange={(e) => setBulkSMSMessage(e.target.value)}
-                placeholder="Hi {agent_name}, I'm interested in your property at {address}..."
+                placeholder="Hi {{AGENT_NAME}}, I'm interested in your property at {{PROPERTY}}..."
                 rows={6}
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground">
-                Available variables: {"{agent_name}"}, {"{address}"}, {"{price}"}, {"{beds}"}, {"{baths}"}
+                Available variables: {"{{AGENT_NAME}}"}, {"{{PROPERTY}}"}, {"{{PRICE}}"}, {"{{BEDS}}"}, {"{{BATHS}}"}, {"{{SQFT}}"}
               </p>
             </div>
 
@@ -5594,30 +5735,20 @@ export default function Properties() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsSendingBulkSMS(false)} className="w-full sm:w-auto text-sm">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsSendingBulkSMS(false)} 
+                className="w-full sm:w-auto text-sm"
+                disabled={isSendingBulkSMSInProgress}
+              >
                 Cancel
               </Button>
-              <Button onClick={() => {
-                if (!bulkSMSMessage.trim()) {
-                  toast({
-                    title: "Message required",
-                    description: "Please enter a message",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-                const recipientCount = selectedPropertyIds.filter(id => {
-                  const prop = properties?.find(p => p.id === id);
-                  return prop?.seller_agent_phone;
-                }).length;
-                toast({
-                  title: "SMS Sent!",
-                  description: `${recipientCount} messages sent successfully`,
-                });
-                setIsSendingBulkSMS(false);
-                setBulkSMSMessage("");
-              }} className="w-full sm:w-auto text-sm">
-                Send All SMS
+              <Button 
+                onClick={handleBulkSendSMS} 
+                className="w-full sm:w-auto text-sm"
+                disabled={isSendingBulkSMSInProgress}
+              >
+                {isSendingBulkSMSInProgress ? 'Sending...' : 'Send All SMS'}
               </Button>
             </div>
           </div>
