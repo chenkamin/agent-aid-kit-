@@ -10,10 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, MessageSquare, Plus, Trash2, Edit, Sparkles, Loader2, Save } from "lucide-react";
+import { Mail, MessageSquare, Plus, Trash2, Edit, Sparkles, Loader2, Save, Shield } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 interface EmailTemplate {
   id: string;
@@ -21,6 +22,8 @@ interface EmailTemplate {
   subject: string;
   body: string;
   created_at: string;
+  is_default?: boolean | null;
+  user_id?: string | null;
 }
 
 interface SMSTemplate {
@@ -28,6 +31,8 @@ interface SMSTemplate {
   name: string;
   body: string;
   created_at: string;
+  is_default?: boolean | null;
+  user_id?: string | null;
 }
 
 interface CommunicationSettings {
@@ -120,29 +125,40 @@ export default function Communication() {
 
   // Fetch email templates
   const { data: emailTemplates = [] } = useQuery({
-    queryKey: ["email_templates", userCompany?.company_id],
+    queryKey: ["email_templates", userCompany?.company_id, user?.id],
     queryFn: async () => {
-      if (!userCompany?.company_id) return [];
+      if (!user?.id) return [];
+      
+      // Fetch both user's templates and default templates
+      // RLS policy handles the access control
       const { data, error } = await supabase
         .from("email_templates")
         .select("*")
-        .eq("company_id", userCompany.company_id)
+        .or(`and(company_id.eq.${userCompany?.company_id},user_id.eq.${user.id}),is_default.eq.true`)
+        .order("is_default", { ascending: false })
         .order("created_at", { ascending: false });
+      
       if (error) throw error;
       return data as EmailTemplate[];
     },
-    enabled: !!userCompany?.company_id,
+    enabled: !!user?.id && !!userCompany?.company_id,
   });
 
   // Fetch SMS templates
   const { data: smsTemplates = [] } = useQuery({
     queryKey: ["sms_templates", user?.id],
     queryFn: async () => {
+      if (!user?.id) return [];
+      
+      // Fetch both user's templates and default templates
+      // RLS policy handles the access control
       const { data, error } = await supabase
         .from("sms_templates")
         .select("*")
-        .eq("user_id", user?.id)
+        .or(`user_id.eq.${user.id},is_default.eq.true`)
+        .order("is_default", { ascending: false })
         .order("created_at", { ascending: false });
+      
       if (error) throw error;
       return data as SMSTemplate[];
     },
@@ -562,8 +578,18 @@ export default function Communication() {
               </TableHeader>
               <TableBody>
                 {emailTemplates.map((template) => (
-                  <TableRow key={template.id}>
-                    <TableCell className="font-medium">{template.name}</TableCell>
+                  <TableRow key={template.id} className={template.is_default ? "bg-blue-50/50 dark:bg-blue-950/20" : ""}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {template.name}
+                        {template.is_default && (
+                          <Badge variant="secondary" className="text-xs gap-1">
+                            <Shield className="h-3 w-3" />
+                            Default
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {template.subject}
                     </TableCell>
@@ -590,31 +616,37 @@ export default function Communication() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex gap-2 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEmailTemplateForm({
-                              name: template.name,
-                              subject: template.subject,
-                              body: template.body,
-                            });
-                            setEditingEmailTemplateId(template.id);
-                            setIsCreatingEmailTemplate(true);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteEmailTemplateMutation.mutate(template.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      {template.is_default ? (
+                        <Badge variant="outline" className="text-xs">
+                          View Only
+                        </Badge>
+                      ) : (
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setEmailTemplateForm({
+                                name: template.name,
+                                subject: template.subject,
+                                body: template.body,
+                              });
+                              setEditingEmailTemplateId(template.id);
+                              setIsCreatingEmailTemplate(true);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteEmailTemplateMutation.mutate(template.id)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -660,8 +692,18 @@ export default function Communication() {
               </TableHeader>
               <TableBody>
                 {smsTemplates.map((template) => (
-                  <TableRow key={template.id}>
-                    <TableCell className="font-medium">{template.name}</TableCell>
+                  <TableRow key={template.id} className={template.is_default ? "bg-blue-50/50 dark:bg-blue-950/20" : ""}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {template.name}
+                        {template.is_default && (
+                          <Badge variant="secondary" className="text-xs gap-1">
+                            <Shield className="h-3 w-3" />
+                            Default
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-md">
                       <div className="line-clamp-2">{template.body}</div>
                     </TableCell>
@@ -687,26 +729,32 @@ export default function Communication() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex gap-2 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSmsTemplateForm(template);
-                            setIsCreatingSMSTemplate(true);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteSMSTemplateMutation.mutate(template.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      {template.is_default ? (
+                        <Badge variant="outline" className="text-xs">
+                          View Only
+                        </Badge>
+                      ) : (
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSmsTemplateForm(template);
+                              setIsCreatingSMSTemplate(true);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteSMSTemplateMutation.mutate(template.id)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

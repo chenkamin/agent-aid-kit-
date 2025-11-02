@@ -575,7 +575,7 @@ export default function UserSettings() {
       </div>
 
       <Tabs defaultValue="info" className="space-y-6">
-        <TabsList className={`grid w-full ${userRole === "owner" ? "grid-cols-4" : "grid-cols-3"}`}>
+        <TabsList className={`grid w-full ${userRole === "owner" ? "grid-cols-5" : userCompany ? "grid-cols-4" : "grid-cols-3"}`}>
           <TabsTrigger value="info" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Info</span>
@@ -588,6 +588,12 @@ export default function UserSettings() {
             <CreditCard className="h-4 w-4" />
             <span className="hidden sm:inline">Payments</span>
           </TabsTrigger>
+          {userCompany && (
+            <TabsTrigger value="company" className="flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              <span className="hidden sm:inline">Company</span>
+            </TabsTrigger>
+          )}
           {userRole === "owner" && (
             <TabsTrigger value="team" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
@@ -726,6 +732,90 @@ export default function UserSettings() {
           </Card>
         </TabsContent>
 
+        {/* Company Tab - Visible to all company members */}
+        {userCompany && (
+          <TabsContent value="company">
+            <div className="space-y-6">
+              {/* Company Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    {userCompany.name}
+                  </CardTitle>
+                  <CardDescription>
+                    Your company workspace for collaborative property tracking
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              {/* Email Signature */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Mail className="h-5 w-5" />
+                    Email Signature
+                  </CardTitle>
+                  <CardDescription>
+                    Company email signature for all outgoing emails
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="emailSignature">Company Email Signature</Label>
+                      <Textarea
+                        id="emailSignature"
+                        value={emailSignature}
+                        onChange={(e) => setEmailSignature(e.target.value)}
+                        placeholder={`PANORAMA INVESTMENTS\nReal Estate Investments – Cleveland & Surrounding Areas\n\nAlon Kaminsky – (618) 591-2449\nChen Kaminsky – (567) 654-3624\n\nEmail - deals.cak@gmail.com`}
+                        className="min-h-[200px] font-mono text-sm"
+                        disabled={!isEditingSignature}
+                      />
+                      <p className="text-xs text-muted-foreground mt-2">
+                        This signature will be automatically added to all emails sent from the Properties page.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {!isEditingSignature ? (
+                        <Button onClick={() => setIsEditingSignature(true)}>
+                          Edit Signature
+                        </Button>
+                      ) : (
+                        <>
+                          <Button 
+                            onClick={handleSaveSignature}
+                            disabled={updateSignatureMutation.isPending}
+                          >
+                            {updateSignatureMutation.isPending ? "Saving..." : "Save Signature"}
+                          </Button>
+                          <Button 
+                            variant="outline"
+                            onClick={() => {
+                              setEmailSignature(userCompany?.email_signature || "");
+                              setIsEditingSignature(false);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {emailSignature && !isEditingSignature && (
+                      <div className="mt-4 p-4 bg-muted rounded-lg border">
+                        <p className="text-sm font-medium mb-2">Preview:</p>
+                        <pre className="whitespace-pre-wrap text-sm font-mono">
+                          {emailSignature}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        )}
+
         {/* Team Tab - Only for owners */}
         {userRole === "owner" && (
           <TabsContent value="team">
@@ -775,70 +865,6 @@ export default function UserSettings() {
                       Your company workspace for collaborative property tracking
                     </CardDescription>
                   </CardHeader>
-                </Card>
-
-                {/* Email Signature */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Mail className="h-5 w-5" />
-                      Email Signature
-                    </CardTitle>
-                    <CardDescription>
-                      Set up your company email signature for all outgoing emails
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="emailSignature">Company Email Signature</Label>
-                        <Textarea
-                          id="emailSignature"
-                          value={emailSignature}
-                          onChange={(e) => setEmailSignature(e.target.value)}
-                          placeholder={`PANORAMA INVESTMENTS\nReal Estate Investments – Cleveland & Surrounding Areas\n\nAlon Kaminsky – (618) 591-2449\nChen Kaminsky – (567) 654-3624\n\nEmail - deals.cak@gmail.com`}
-                          className="min-h-[200px] font-mono text-sm"
-                          disabled={!isEditingSignature}
-                        />
-                        <p className="text-xs text-muted-foreground mt-2">
-                          This signature will be automatically added to all emails sent from the Properties page.
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        {!isEditingSignature ? (
-                          <Button onClick={() => setIsEditingSignature(true)}>
-                            Edit Signature
-                          </Button>
-                        ) : (
-                          <>
-                            <Button 
-                              onClick={handleSaveSignature}
-                              disabled={updateSignatureMutation.isPending}
-                            >
-                              {updateSignatureMutation.isPending ? "Saving..." : "Save Signature"}
-                            </Button>
-                            <Button 
-                              variant="outline"
-                              onClick={() => {
-                                setEmailSignature(userCompany?.email_signature || "");
-                                setIsEditingSignature(false);
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                      {emailSignature && !isEditingSignature && (
-                        <div className="mt-4 p-4 bg-muted rounded-lg border">
-                          <p className="text-sm font-medium mb-2">Preview:</p>
-                          <pre className="whitespace-pre-wrap text-sm font-mono">
-                            {emailSignature}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
                 </Card>
 
                 {/* Invite Team Member */}

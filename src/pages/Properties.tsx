@@ -149,9 +149,11 @@ export default function Properties() {
     toPhone: "",
     agentName: "",
     message: "",
+    templateId: "",
   });
   const [contactSelectorOpen, setContactSelectorOpen] = useState(false);
   const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
+  const [isSendingBulkEmailInProgress, setIsSendingBulkEmailInProgress] = useState(false);
   const [bulkEmailForm, setBulkEmailForm] = useState({
     templateId: "",
     offerPrice: "",
@@ -578,17 +580,40 @@ export default function Properties() {
 
   // Query for email templates
   const { data: emailTemplates } = useQuery({
-    queryKey: ["email_templates", userCompany?.company_id],
+    queryKey: ["email_templates", userCompany?.company_id, user?.id],
     queryFn: async () => {
-      if (!userCompany?.company_id) return [];
+      if (!user?.id || !userCompany?.company_id) return [];
+      
+      // Fetch both user's templates and default templates
       const { data } = await supabase
         .from("email_templates")
         .select("*")
-        .eq("company_id", userCompany.company_id)
+        .or(`and(company_id.eq.${userCompany.company_id},user_id.eq.${user.id}),is_default.eq.true`)
+        .order("is_default", { ascending: false })
         .order("created_at", { ascending: false });
+      
       return data || [];
     },
-    enabled: !!userCompany?.company_id,
+    enabled: !!user?.id && !!userCompany?.company_id,
+  });
+
+  // Fetch SMS templates (user templates + default templates)
+  const { data: smsTemplates } = useQuery({
+    queryKey: ["sms_templates", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      
+      // Fetch both user's templates and default templates
+      const { data } = await supabase
+        .from("sms_templates")
+        .select("*")
+        .or(`user_id.eq.${user.id},is_default.eq.true`)
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: false });
+      
+      return data || [];
+    },
+    enabled: !!user?.id,
   });
 
   // All filtering is now done at the database level, so we just use properties directly
@@ -1077,12 +1102,27 @@ export default function Properties() {
   // Send email mutation
   const sendEmailMutation = useMutation({
     mutationFn: async (data: { toEmail: string; agentName: string; templateId: string; offerPrice: string; property: any }) => {
-      if (!user?.id) throw new Error("User not authenticated");
-      if (!userCompany?.company_id) throw new Error("No company found");
+      console.log('sendEmailMutation started', data);
+      
+      if (!user?.id) {
+        console.error('User not authenticated');
+        throw new Error("User not authenticated");
+      }
+      if (!userCompany?.company_id) {
+        console.error('No company found');
+        throw new Error("No company found");
+      }
+      
+      console.log('Email templates available:', emailTemplates);
       
       // Get the template
       const template = emailTemplates?.find((t: any) => t.id === data.templateId);
-      if (!template) throw new Error("Template not found");
+      console.log('Found template:', template);
+      
+      if (!template) {
+        console.error('Template not found for ID:', data.templateId);
+        throw new Error("Template not found");
+      }
       
       // Replace variables in subject and body
       const replaceVariables = (text: string) => {
@@ -1098,7 +1138,10 @@ export default function Properties() {
       const emailContent = replaceVariables(template.body);
       const emailSubject = replaceVariables(template.subject);
       
+      console.log('Prepared email:', { emailSubject, emailContent });
+      
       // Send email via Supabase Edge Function (Nodemailer + Gmail)
+      console.log('Invoking send-email-nodemailer function...');
       const { data: functionData, error: functionError } = await supabase.functions.invoke('send-email-nodemailer', {
         body: {
           toEmail: data.toEmail,
@@ -1110,11 +1153,15 @@ export default function Properties() {
         },
       });
       
+      console.log('Function response:', { functionData, functionError });
+      
       if (functionError) {
+        console.error('Function error:', functionError);
         throw new Error(functionError.message || 'Failed to send email');
       }
       
       if (!functionData?.success) {
+        console.error('Function returned error:', functionData);
         throw new Error(functionData?.error || 'Failed to send email');
       }
       
@@ -1157,7 +1204,14 @@ export default function Properties() {
   });
 
   const handleSendEmail = () => {
+    console.log('handleSendEmail called', { emailForm, selectedProperty });
+    
     if (!emailForm.toEmail || !emailForm.agentName || !emailForm.templateId) {
+      console.log('Validation failed', { 
+        toEmail: emailForm.toEmail, 
+        agentName: emailForm.agentName, 
+        templateId: emailForm.templateId 
+      });
       toast({
         title: "Error",
         description: "Please fill in all required fields",
@@ -1165,10 +1219,86 @@ export default function Properties() {
       });
       return;
     }
+    
+    console.log('Sending email mutation...', emailForm);
     sendEmailMutation.mutate({
       ...emailForm,
       property: selectedProperty
     });
+  };
+
+  const handleBulkSendEmail = async () => {
+    console.log('handleBulkSendEmail called', { bulkEmailForm, selectedPropertyIds });
+    
+    if (!bulkEmailForm.templateId) {
+      toast({
+        title: "Template required",
+        description: "Please select an email template",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get properties with valid email addresses
+    const propertiesWithEmail = selectedPropertyIds
+      .map(id => properties?.find(p => p.id === id))
+      .filter(prop => prop && prop.seller_agent_email);
+
+    if (propertiesWithEmail.length === 0) {
+      toast({
+        title: "No recipients",
+        description: "None of the selected properties have agent email addresses",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log(`Sending ${propertiesWithEmail.length} emails...`);
+    setIsSendingBulkEmailInProgress(true);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Send emails sequentially
+    for (const property of propertiesWithEmail) {
+      try {
+        await sendEmailMutation.mutateAsync({
+          toEmail: property.seller_agent_email!,
+          agentName: property.seller_agent_name || 'Agent',
+          templateId: bulkEmailForm.templateId,
+          offerPrice: bulkEmailForm.offerPrice,
+          property: property
+        });
+        successCount++;
+        console.log(`Email ${successCount}/${propertiesWithEmail.length} sent to ${property.address}`);
+      } catch (error) {
+        console.error(`Failed to send email to ${property.address}:`, error);
+        failCount++;
+      }
+    }
+
+    setIsSendingBulkEmailInProgress(false);
+    
+    // Show result toast
+    if (successCount > 0) {
+      toast({
+        title: "Emails Sent!",
+        description: `${successCount} email${successCount === 1 ? '' : 's'} sent successfully${failCount > 0 ? `, ${failCount} failed` : ''}`,
+      });
+    }
+    
+    if (failCount > 0 && successCount === 0) {
+      toast({
+        title: "Failed to send emails",
+        description: `All ${failCount} emails failed to send`,
+        variant: "destructive",
+      });
+    }
+
+    // Close dialog and reset form
+    setIsSendingBulkEmail(false);
+    setBulkEmailForm({ templateId: "", offerPrice: "" });
+    setSelectedPropertyIds([]);
   };
 
   const handleBulkAddActivity = () => {
@@ -1679,6 +1809,7 @@ export default function Properties() {
         toPhone: "",
         agentName: "",
         message: "",
+        templateId: "",
       });
       // Invalidate property SMS messages if we sent to a specific property
       if (variables.propertyId) {
@@ -3802,6 +3933,7 @@ export default function Properties() {
                               emailTemplates.map((template: any) => (
                                 <SelectItem key={template.id} value={template.id}>
                                   {template.name}
+                                  {template.is_default && " 🛡️"}
                                 </SelectItem>
                               ))
                             ) : (
@@ -3811,6 +3943,9 @@ export default function Properties() {
                             )}
                           </SelectContent>
                         </Select>
+                        <p className="text-xs text-muted-foreground">
+                          🛡️ indicates default templates available to all users
+                        </p>
                       </div>
 
                       <div className="space-y-2">
@@ -3874,6 +4009,7 @@ export default function Properties() {
                       toPhone: selectedProperty.seller_agent_phone || "",
                       agentName: selectedProperty.seller_agent_name || "",
                       message: "",
+                      templateId: "",
                     });
                   } else {
                     // Reset form when closing
@@ -3902,6 +4038,42 @@ export default function Properties() {
                           </p>
                         </div>
                       )}
+
+                      <div className="space-y-2">
+                        <Label htmlFor="sms-template" className="text-sm">SMS Template (Optional)</Label>
+                        <Select
+                          value={smsForm.templateId}
+                          onValueChange={(value) => {
+                            setSmsForm(prev => ({ ...prev, templateId: value }));
+                            // Auto-fill message from template
+                            const template = smsTemplates?.find((t: any) => t.id === value);
+                            if (template) {
+                              setSmsForm(prev => ({ ...prev, message: template.body }));
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a template..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {smsTemplates && smsTemplates.length > 0 ? (
+                              smsTemplates.map((template: any) => (
+                                <SelectItem key={template.id} value={template.id}>
+                                  {template.name}
+                                  {template.is_default && " 🛡️"}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="none" disabled>
+                                No templates available - Create one in Communication
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Select a template to auto-fill the message below
+                        </p>
+                      </div>
 
                       <div className="space-y-2">
                         <Label className="text-sm">Select from Contacts (Optional)</Label>
@@ -5313,6 +5485,7 @@ export default function Properties() {
                     emailTemplates.map((template: any) => (
                       <SelectItem key={template.id} value={template.id}>
                         {template.name}
+                        {template.is_default && " 🛡️"}
                       </SelectItem>
                     ))
                   ) : (
@@ -5322,6 +5495,9 @@ export default function Properties() {
                   )}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                🛡️ indicates default templates available to all users
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -5362,27 +5538,8 @@ export default function Properties() {
               <Button variant="outline" onClick={() => setIsSendingBulkEmail(false)} className="w-full sm:w-auto text-sm">
                 Cancel
               </Button>
-              <Button onClick={() => {
-                if (!bulkEmailForm.templateId) {
-                  toast({
-                    title: "Template required",
-                    description: "Please select an email template",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-                const recipientCount = selectedPropertyIds.filter(id => {
-                  const prop = properties?.find(p => p.id === id);
-                  return prop?.seller_agent_email;
-                }).length;
-                toast({
-                  title: "Emails Sent!",
-                  description: `${recipientCount} emails sent successfully`,
-                });
-                setIsSendingBulkEmail(false);
-                setBulkEmailForm({ templateId: "", offerPrice: "" });
-              }} className="w-full sm:w-auto text-sm">
-                Send All Emails
+              <Button onClick={handleBulkSendEmail} disabled={isSendingBulkEmailInProgress} className="w-full sm:w-auto text-sm">
+                {isSendingBulkEmailInProgress ? "Sending..." : "Send All Emails"}
               </Button>
             </div>
           </div>
