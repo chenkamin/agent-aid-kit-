@@ -128,6 +128,22 @@ export default function Dashboard() {
     enabled: !!userCompany?.company_id,
   });
 
+  // Fetch email messages from this week
+  const { data: emailMessages } = useQuery({
+    queryKey: ["dashboard-emails", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      const weekStart = startOfWeek(new Date());
+      const { data } = await supabase
+        .from("email_messages" as any)
+        .select("*")
+        .eq("company_id", userCompany.company_id)
+        .gte("created_at", weekStart.toISOString());
+      return data || [];
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
   // Calculate workflow state distribution
   const workflowStateData = properties?.reduce((acc, prop) => {
     const state = prop.workflow_state || "Initial";
@@ -171,6 +187,9 @@ export default function Dashboard() {
   const thisWeekStart = startOfWeek(new Date());
   const thisWeekEnd = endOfWeek(new Date());
   const smsThisWeek = smsMessages?.filter((msg) =>
+    isWithinInterval(new Date(msg.created_at), { start: thisWeekStart, end: thisWeekEnd })
+  ).length || 0;
+  const emailsThisWeek = emailMessages?.filter((msg) =>
     isWithinInterval(new Date(msg.created_at), { start: thisWeekStart, end: thisWeekEnd })
   ).length || 0;
 
@@ -240,19 +259,19 @@ export default function Dashboard() {
         </Card>
 
         <Card className="hover:shadow-md transition-shadow">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
               Total Contacts
-            </CardTitle>
+                  </CardTitle>
             <Users className="h-5 w-5 text-green-600" />
-          </CardHeader>
-          <CardContent>
+                </CardHeader>
+                <CardContent>
             <div className="text-2xl font-bold text-foreground">{contacts?.length || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Agents, sellers, buyers
             </p>
-          </CardContent>
-        </Card>
+                </CardContent>
+              </Card>
       </div>
 
       {/* Quick Actions */}
@@ -406,7 +425,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Emails Sent</p>
-                  <p className="text-2xl font-bold">Coming Soon</p>
+                  <p className="text-2xl font-bold">{emailsThisWeek}</p>
                 </div>
               </div>
               <ArrowRight className="h-5 w-5 text-muted-foreground" />
@@ -422,11 +441,11 @@ export default function Dashboard() {
         </Card>
 
         {/* Recent Open Activities */}
-        <Card>
-          <CardHeader>
+      <Card>
+        <CardHeader>
             <CardTitle className="text-lg">Upcoming Activities</CardTitle>
             <CardDescription>Your next {activities?.length || 0} open tasks</CardDescription>
-          </CardHeader>
+        </CardHeader>
           <CardContent>
             {activities && activities.length > 0 ? (
               <div className="space-y-3">
@@ -460,8 +479,8 @@ export default function Dashboard() {
                   <Button variant="outline" className="w-full mt-2">
                     View All Activities
                     <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
+            </Button>
+          </Link>
               </div>
             ) : (
               <div className="text-center py-12 text-muted-foreground">
@@ -474,7 +493,7 @@ export default function Dashboard() {
                   onClick={() => navigate("/activities")}
                 >
                   Create Activity
-                </Button>
+            </Button>
               </div>
             )}
           </CardContent>
@@ -537,8 +556,8 @@ export default function Dashboard() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-1">Buy boxes configured</p>
-          </CardContent>
-        </Card>
+        </CardContent>
+      </Card>
       </div>
     </div>
   );

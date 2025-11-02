@@ -41,6 +41,8 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function Activities() {
   const { user } = useAuth();
@@ -847,7 +849,7 @@ export default function Activities() {
               </div>
 
               <div className="space-y-2">
-                <Label>Assigned To</Label>
+                <Label>Owner</Label>
                 <Select
                   value={filters.assignedTo}
                   onValueChange={(value) => setFilters(prev => ({ ...prev, assignedTo: value }))}
@@ -980,117 +982,144 @@ export default function Activities() {
         </Card>
       ) : viewMode === "list" ? (
         // List View
-        <div className="space-y-2">
-          {activities?.map((activity) => (
-            <Card 
-              key={activity.id} 
-              className="hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => openActivity(activity)}
-            >
-              <CardContent className="py-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex-shrink-0">
-                    {getStatusIcon(activity.status)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-base font-semibold text-foreground truncate">
+        <Card>
+          <ScrollArea className="h-[600px]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[80px]">Status</TableHead>
+                  <TableHead className="w-[250px]">Title</TableHead>
+                  <TableHead className="w-[100px]">Type</TableHead>
+                  <TableHead className="w-[200px]">Property</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="w-[120px]">Due Date</TableHead>
+                  <TableHead className="w-[150px]">Assigned To</TableHead>
+                  <TableHead className="w-[180px] text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activities && activities.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      No activities found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  activities?.map((activity) => (
+                    <TableRow 
+                      key={activity.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => openActivity(activity)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(activity.status)}
+                          <Badge className={getStatusColor(activity.status) + " text-xs"}>
+                            {activity.status}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
                         {activity.title || "Untitled Activity"}
-                      </h3>
-                      <Badge variant="outline" className="capitalize text-xs flex-shrink-0">
-                        {activity.type.replace("-", " ")}
-                      </Badge>
-                    </div>
-                    {activity.properties && (
-                      <p className="text-sm text-muted-foreground truncate">
-                        📍 <span 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/properties?property=${activity.property_id}`);
-                          }}
-                          className="text-primary hover:underline cursor-pointer"
-                        >
-                          {activity.properties.address || "Unknown property"}
-                        </span>
-                        {activity.properties.city && ` • ${activity.properties.city}`}
-                      </p>
-                    )}
-                    {activity.body && (
-                      <p className="text-sm text-muted-foreground line-clamp-1 mt-1">
-                        {activity.body.length > 100 ? `${activity.body.substring(0, 100)}...` : activity.body}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-2">
-                      {activity.due_at && (
-                        <span>📅 {format(new Date(activity.due_at), "MMM d, yyyy")}</span>
-                      )}
-                      {activity.assigned_to && (
-                        <span>👤 {getTeamMemberDisplayName(activity.assigned_to)}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-shrink-0 flex items-center gap-2">
-                    <Badge className={getStatusColor(activity.status)}>
-                      {activity.status}
-                    </Badge>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-1">
-                      {activity.status !== 'done' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateStatusMutation.mutate({ id: activity.id, status: 'done' });
-                          }}
-                          title="Mark Done"
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {activity.status !== 'snoozed' && activity.status !== 'done' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateStatusMutation.mutate({ id: activity.id, status: 'snoozed' });
-                          }}
-                          title="Snooze"
-                        >
-                          <Clock className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditActivity(activity);
-                        }}
-                        title="Edit"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCloneActivity(activity);
-                        }}
-                        title="Clone"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize text-xs">
+                          {activity.type.replace("-", " ")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {activity.properties ? (
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/properties?property=${activity.property_id}`);
+                            }}
+                            className="text-primary hover:underline cursor-pointer text-sm"
+                          >
+                            {activity.properties.address || "Unknown property"}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground italic text-sm">No property</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-md">
+                        <p className="text-sm line-clamp-2 text-muted-foreground">
+                          {activity.body || "-"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {activity.due_at ? (
+                          format(new Date(activity.due_at), "MMM d, yyyy")
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {activity.assigned_to ? (
+                          getTeamMemberDisplayName(activity.assigned_to)
+                        ) : (
+                          <span className="text-muted-foreground italic">Unassigned</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          {activity.status !== 'done' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateStatusMutation.mutate({ id: activity.id, status: 'done' });
+                              }}
+                              title="Mark Done"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {activity.status !== 'snoozed' && activity.status !== 'done' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateStatusMutation.mutate({ id: activity.id, status: 'snoozed' });
+                              }}
+                              title="Snooze"
+                            >
+                              <Clock className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditActivity(activity);
+                            }}
+                            title="Edit"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCloneActivity(activity);
+                            }}
+                            title="Clone"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        </Card>
       ) : (
         // Calendar View
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

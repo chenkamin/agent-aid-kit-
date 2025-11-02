@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -532,6 +533,21 @@ export default function Properties() {
       if (!selectedProperty?.id) return [];
       const { data } = await supabase
         .from("sms_messages" as any)
+        .select("*")
+        .eq("property_id", selectedProperty.id)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!selectedProperty?.id,
+  });
+
+  // Query for property email messages
+  const { data: propertyEmailMessages } = useQuery({
+    queryKey: ["property-emails", selectedProperty?.id],
+    queryFn: async () => {
+      if (!selectedProperty?.id) return [];
+      const { data } = await supabase
+        .from("email_messages" as any)
         .select("*")
         .eq("property_id", selectedProperty.id)
         .order("created_at", { ascending: false });
@@ -1167,6 +1183,31 @@ export default function Properties() {
         throw new Error(functionData?.error || 'Failed to send email');
       }
       
+      // Save email to email_messages table
+      const { error: emailError } = await supabase.from("email_messages").insert([{
+        company_id: userCompany.company_id,
+        property_id: data.property.id,
+        direction: 'outgoing',
+        from_email: functionData.fromEmail || user.email || '', // Get from function response or user email
+        to_email: data.toEmail,
+        subject: emailSubject,
+        body: emailContent,
+        status: 'sent',
+        template_id: data.templateId,
+        offer_price: data.offerPrice ? parseFloat(data.offerPrice) : null,
+        provider_message_id: functionData.messageId || null,
+        metadata: {
+          agent_name: data.agentName,
+          property_address: data.property.address,
+          sent_by_user_id: user.id,
+        },
+      }]);
+      
+      if (emailError) {
+        console.error('Error saving email to database:', emailError);
+        // Don't throw - email was sent successfully, just log the error
+      }
+      
       // Save email activity
       const { error } = await supabase.from("activities").insert([{
         type: 'email',
@@ -1184,6 +1225,8 @@ export default function Properties() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["activities", selectedProperty?.id] });
+      queryClient.invalidateQueries({ queryKey: ["property-emails", selectedProperty?.id] });
+      queryClient.invalidateQueries({ queryKey: ["email-messages-history"] });
       toast({
         title: "Email sent",
         description: "Your email has been sent successfully and logged as an activity.",
@@ -1360,7 +1403,8 @@ export default function Properties() {
         await sendSMSMutation.mutateAsync({
           to: property.seller_agent_phone!,
           message: finalMessage,
-          propertyId: property.id
+          propertyId: property.id,
+          agentName: property.seller_agent_name || property.seller_agent_phone!,
         });
         successCount++;
         console.log(`SMS ${successCount}/${propertiesWithPhone.length} sent to ${property.address}`);
@@ -1880,7 +1924,10 @@ export default function Properties() {
 
   // Send SMS mutation
   const sendSMSMutation = useMutation({
-    mutationFn: async (data: { to: string; message: string; propertyId?: string }) => {
+    mutationFn: async (data: { to: string; message: string; propertyId?: string; agentName?: string }) => {
+      if (!user?.id) throw new Error("User not authenticated");
+      if (!userCompany?.company_id) throw new Error("No company found");
+
       const { data: responseData, error } = await supabase.functions.invoke('send-sms', {
         body: {
           type: 'single',
@@ -1891,6 +1938,25 @@ export default function Properties() {
       });
 
       if (error) throw error;
+
+      // Create activity for SMS
+      if (data.propertyId) {
+        const { error: activityError } = await supabase.from("activities").insert([{
+          type: 'sms',
+          title: `SMS sent to ${data.agentName || data.to}`,
+          body: data.message,
+          property_id: data.propertyId,
+          user_id: user.id,
+          company_id: userCompany.company_id,
+          status: 'done',
+        }]);
+        
+        if (activityError) {
+          console.error('Error creating SMS activity:', activityError);
+          // Don't throw - SMS was sent successfully
+        }
+      }
+
       return responseData;
     },
     onSuccess: (data, variables) => {
@@ -1909,6 +1975,8 @@ export default function Properties() {
       if (variables.propertyId) {
         queryClient.invalidateQueries({ queryKey: ["property-sms", variables.propertyId] });
       }
+      // Invalidate communication history
+      queryClient.invalidateQueries({ queryKey: ["sms-messages-history"] });
     },
     onError: (error: any) => {
       toast({
@@ -3850,7 +3918,7 @@ export default function Properties() {
                   {/* Assigned To Dropdown */}
                   <div className="w-full lg:w-auto lg:min-w-[200px] lg:max-w-[280px]">
                     <Label htmlFor="assigned-to" className="text-xs md:text-sm font-bold text-blue-900 dark:text-blue-100 mb-2 block">
-                      👤 Assigned To
+                      👤 Owner
                     </Label>
                     <Select
                       value={selectedProperty.assigned_to || "unassigned"}
@@ -4327,6 +4395,7 @@ export default function Properties() {
                               to: smsForm.toPhone,
                               message: finalMessage,
                               propertyId: selectedProperty?.id,
+                              agentName: smsForm.agentName,
                             });
                           }} 
                           className="w-full sm:w-auto text-sm"
@@ -4437,39 +4506,23 @@ export default function Properties() {
 
             <Tabs defaultValue="general" className="mt-4">
               <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-                <TabsList className="grid w-full grid-cols-7 min-w-max md:min-w-0">
-                  <TabsTrigger value="general" className="text-xs md:text-sm px-2 md:px-4">
-                    <Home className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
-                    <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">General</span>
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="general" className="text-sm md:text-base">
+                    <Home className="h-4 w-4 md:h-5 md:w-5 mr-2" />
+                    General
                   </TabsTrigger>
-                <TabsTrigger value="listing" className="text-xs md:text-sm px-2 md:px-4">
-                  <Calendar className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
-                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Listing</span>
-                </TabsTrigger>
-                <TabsTrigger value="financial" className="text-xs md:text-sm px-2 md:px-4">
-                  <DollarSign className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
-                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Financial</span>
-                </TabsTrigger>
-                <TabsTrigger value="details" className="text-xs md:text-sm px-2 md:px-4">
-                  <Building2 className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
-                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Details</span>
-                </TabsTrigger>
-                <TabsTrigger value="history" className="text-xs md:text-sm px-2 md:px-4">
-                  <Clock className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
-                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">History</span>
-                </TabsTrigger>
-                <TabsTrigger value="comps" className="text-xs md:text-sm px-2 md:px-4">
-                  <Ruler className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
-                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">Comps</span>
-                </TabsTrigger>
-                <TabsTrigger value="communication" className="text-xs md:text-sm px-2 md:px-4">
-                  <MessageSquare className="h-3 w-3 md:h-4 md:w-4 mr-0.5 md:mr-2" />
-                  <span className="hidden xs:inline text-[10px] sm:text-xs md:text-sm">SMS</span>
-                </TabsTrigger>
+                  <TabsTrigger value="comps" className="text-sm md:text-base">
+                    <Ruler className="h-4 w-4 md:h-5 md:w-5 mr-2" />
+                    Comps
+                  </TabsTrigger>
+                  <TabsTrigger value="history" className="text-sm md:text-base">
+                    <Clock className="h-4 w-4 md:h-5 md:w-5 mr-2" />
+                    History/Activities
+                  </TabsTrigger>
               </TabsList>
               </div>
 
-              {/* General Tab */}
+              {/* General Tab with Accordion */}
               <TabsContent value="general" className="space-y-4 mt-4">
                 {/* Save Button */}
                 <div className="flex flex-col sm:flex-row justify-end gap-2 pb-4 border-b">
@@ -4490,192 +4543,457 @@ export default function Properties() {
                   </Button>
                 </div>
 
-                <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg">Financial Details</h3>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-price">Price</Label>
-                    <Input
-                      id="edit-price"
-                      type="number"
-                      value={editedProperty?.price || ''}
-                      onChange={(e) => handlePropertyFieldChange('price', parseFloat(e.target.value) || null)}
-                      placeholder="Enter price"
-                    />
+                <Accordion type="multiple" defaultValue={[]} className="w-full">
+                  {/* Basic Information */}
+                  <AccordionItem value="basic">
+                    <AccordionTrigger className="text-lg font-semibold">
+                      <div className="flex items-center gap-2">
+                        <Home className="h-5 w-5" />
+                        Basic Information
                       </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="grid gap-4 md:grid-cols-2 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-home-type">Home Type</Label>
+                          <Select
+                            value={editedProperty?.home_type || ''}
+                            onValueChange={(value) => handlePropertyFieldChange('home_type', value)}
+                          >
+                            <SelectTrigger id="edit-home-type">
+                              <SelectValue placeholder="Select home type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Single Family">Single Family</SelectItem>
+                              <SelectItem value="Multi Family">Multi Family</SelectItem>
+                              <SelectItem value="Condo">Condo</SelectItem>
+                              <SelectItem value="Townhouse">Townhouse</SelectItem>
+                              <SelectItem value="Land">Land</SelectItem>
+                              <SelectItem value="Commercial">Commercial</SelectItem>
+                              <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-arv">ARV Estimate</Label>
-                    <Input
-                      id="edit-arv"
-                      type="number"
-                      value={editedProperty?.arv_estimate || ''}
-                      onChange={(e) => handlePropertyFieldChange('arv_estimate', parseFloat(e.target.value) || null)}
-                      placeholder="Enter ARV estimate"
-                    />
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-status">Property Status</Label>
+                          <Select
+                            value={editedProperty?.status || ''}
+                            onValueChange={(value) => handlePropertyFieldChange('status', value)}
+                          >
+                            <SelectTrigger id="edit-status">
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="For Sale">For Sale</SelectItem>
+                              <SelectItem value="Under Contract">Under Contract</SelectItem>
+                              <SelectItem value="Sold">Sold</SelectItem>
+                              <SelectItem value="Off Market">Off Market</SelectItem>
+                              <SelectItem value="Pending">Pending</SelectItem>
+                              <SelectItem value="Tracking">Tracking</SelectItem>
+                              <SelectItem value="Not Relevant">Not Relevant</SelectItem>
+                              <SelectItem value="Follow Up">Follow Up</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-neighborhood">Neighborhood</Label>
+                          <Input
+                            id="edit-neighborhood"
+                            value={editedProperty?.neighborhood || ''}
+                            onChange={(e) => handlePropertyFieldChange('neighborhood', e.target.value)}
+                            placeholder="Enter neighborhood"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-year-built">Year Built</Label>
+                          <Input
+                            id="edit-year-built"
+                            type="number"
+                            value={editedProperty?.year_built || ''}
+                            onChange={(e) => handlePropertyFieldChange('year_built', parseInt(e.target.value) || null)}
+                            placeholder="Enter year built"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-source">Source</Label>
+                          <Input
+                            id="edit-source"
+                            value={editedProperty?.source || ''}
+                            onChange={(e) => handlePropertyFieldChange('source', e.target.value)}
+                            placeholder="Enter source"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-buy-box">Buy Box (Optional)</Label>
+                          <Select
+                            value={editedProperty?.buy_box_id || "none"}
+                            onValueChange={(value) => handlePropertyFieldChange('buy_box_id', value === "none" ? null : value)}
+                          >
+                            <SelectTrigger id="edit-buy-box">
+                              <SelectValue placeholder="Select a buy box..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {buyBoxes?.map((buyBox: any) => (
+                                <SelectItem key={buyBox.id} value={buyBox.id}>
+                                  {buyBox.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
+                    </AccordionContent>
+                  </AccordionItem>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-mls">MLS Number</Label>
-                    <Input
-                      id="edit-mls"
-                      value={editedProperty?.mls_number || ''}
-                      onChange={(e) => handlePropertyFieldChange('mls_number', e.target.value)}
-                      placeholder="Enter MLS number"
-                    />
-                    </div>
-                </div>
+                  {/* Financial Details */}
+                  <AccordionItem value="financial">
+                    <AccordionTrigger className="text-lg font-semibold">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-5 w-5" />
+                        Financial Details
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="grid gap-4 md:grid-cols-2 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-price">Price</Label>
+                          <Input
+                            id="edit-price"
+                            type="number"
+                            value={editedProperty?.price || ''}
+                            onChange={(e) => handlePropertyFieldChange('price', parseFloat(e.target.value) || null)}
+                            placeholder="Enter price"
+                          />
+                        </div>
 
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg">Property Details</h3>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-arv">ARV Estimate</Label>
+                          <Input
+                            id="edit-arv"
+                            type="number"
+                            value={editedProperty?.arv_estimate || ''}
+                            onChange={(e) => handlePropertyFieldChange('arv_estimate', parseFloat(e.target.value) || null)}
+                            placeholder="Enter ARV estimate"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-bedrooms">Bedrooms</Label>
-                    <Input
-                      id="edit-bedrooms"
-                      type="number"
-                      value={editedProperty?.bedrooms || ''}
-                      onChange={(e) => handlePropertyFieldChange('bedrooms', parseInt(e.target.value) || null)}
-                      placeholder="Enter bedrooms"
-                    />
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-rent">Est. Monthly Rent</Label>
+                          <Input
+                            id="edit-rent"
+                            type="number"
+                            value={editedProperty?.rentometer_monthly_rent || ''}
+                            onChange={(e) => handlePropertyFieldChange('rentometer_monthly_rent', parseFloat(e.target.value) || null)}
+                            placeholder="Enter monthly rent"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-bathrooms">Bathrooms</Label>
-                    <Input
-                      id="edit-bathrooms"
-                      type="number"
-                      step="0.5"
-                      value={editedProperty?.bathrooms || ''}
-                      onChange={(e) => handlePropertyFieldChange('bathrooms', parseFloat(e.target.value) || null)}
-                      placeholder="Enter bathrooms"
-                    />
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-mls">MLS Number</Label>
+                          <Input
+                            id="edit-mls"
+                            value={editedProperty?.mls_number || ''}
+                            onChange={(e) => handlePropertyFieldChange('mls_number', e.target.value)}
+                            placeholder="Enter MLS number"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-sqft">Square Footage</Label>
-                    <Input
-                      id="edit-sqft"
-                      type="number"
-                      value={editedProperty?.square_footage || ''}
-                      onChange={(e) => handlePropertyFieldChange('square_footage', parseInt(e.target.value) || null)}
-                      placeholder="Enter square footage"
-                    />
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-last-sold-price">Last Sold Price</Label>
+                          <Input
+                            id="edit-last-sold-price"
+                            type="number"
+                            value={editedProperty?.last_sold_price || ''}
+                            onChange={(e) => handlePropertyFieldChange('last_sold_price', parseFloat(e.target.value) || null)}
+                            placeholder="Enter last sold price"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-lot-size">Lot Size</Label>
-                    <Input
-                      id="edit-lot-size"
-                      value={editedProperty?.lot_size || ''}
-                      onChange={(e) => handlePropertyFieldChange('lot_size', e.target.value)}
-                      placeholder="Enter lot size"
-                    />
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-last-sold-date">Last Sold Date</Label>
+                          <Input
+                            id="edit-last-sold-date"
+                            type="date"
+                            value={editedProperty?.last_sold_date || ''}
+                            onChange={(e) => handlePropertyFieldChange('last_sold_date', e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-year-built">Year Built</Label>
-                    <Input
-                      id="edit-year-built"
-                      type="number"
-                      value={editedProperty?.year_built || ''}
-                      onChange={(e) => handlePropertyFieldChange('year_built', parseInt(e.target.value) || null)}
-                      placeholder="Enter year built"
-                    />
-                    </div>
+                  {/* Property Details */}
+                  <AccordionItem value="property">
+                    <AccordionTrigger className="text-lg font-semibold">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-5 w-5" />
+                        Property Details
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="grid gap-4 md:grid-cols-2 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-bedrooms">Bedrooms</Label>
+                          <Input
+                            id="edit-bedrooms"
+                            type="number"
+                            value={editedProperty?.bedrooms || ''}
+                            onChange={(e) => handlePropertyFieldChange('bedrooms', parseInt(e.target.value) || null)}
+                            placeholder="Enter bedrooms"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-home-type">Home Type</Label>
-                    <Select
-                      value={editedProperty?.home_type || ''}
-                      onValueChange={(value) => handlePropertyFieldChange('home_type', value)}
-                    >
-                      <SelectTrigger id="edit-home-type">
-                        <SelectValue placeholder="Select home type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Single Family">Single Family</SelectItem>
-                        <SelectItem value="Multi Family">Multi Family</SelectItem>
-                        <SelectItem value="Condo">Condo</SelectItem>
-                        <SelectItem value="Townhouse">Townhouse</SelectItem>
-                        <SelectItem value="Land">Land</SelectItem>
-                        <SelectItem value="Commercial">Commercial</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-bathrooms">Bathrooms</Label>
+                          <Input
+                            id="edit-bathrooms"
+                            type="number"
+                            step="0.5"
+                            value={editedProperty?.bathrooms || ''}
+                            onChange={(e) => handlePropertyFieldChange('bathrooms', parseFloat(e.target.value) || null)}
+                            placeholder="Enter bathrooms"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-neighborhood">Neighborhood</Label>
-                    <Input
-                      id="edit-neighborhood"
-                      value={editedProperty?.neighborhood || ''}
-                      onChange={(e) => handlePropertyFieldChange('neighborhood', e.target.value)}
-                      placeholder="Enter neighborhood"
-                    />
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-full-bath">Full Baths</Label>
+                          <Input
+                            id="edit-full-bath"
+                            type="number"
+                            value={editedProperty?.full_bath || ''}
+                            onChange={(e) => handlePropertyFieldChange('full_bath', parseInt(e.target.value) || null)}
+                            placeholder="Enter full baths"
+                          />
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-buy-box">Buy Box (Optional)</Label>
-                    <Select
-                      value={editedProperty?.buy_box_id || "none"}
-                      onValueChange={(value) => handlePropertyFieldChange('buy_box_id', value === "none" ? null : value)}
-                    >
-                      <SelectTrigger id="edit-buy-box">
-                        <SelectValue placeholder="Select a buy box..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {buyBoxes?.map((buyBox: any) => (
-                          <SelectItem key={buyBox.id} value={buyBox.id}>
-                            {buyBox.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-sqft">Square Footage</Label>
+                          <Input
+                            id="edit-sqft"
+                            type="number"
+                            value={editedProperty?.square_footage || ''}
+                            onChange={(e) => handlePropertyFieldChange('square_footage', parseInt(e.target.value) || null)}
+                            placeholder="Enter square footage"
+                          />
+                        </div>
 
-              {/* Additional Information - Always Visible */}
-              <div className="space-y-4 pt-6 border-t mt-6">
-                <h3 className="font-semibold text-lg">Additional Information</h3>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="edit-description">Description</Label>
-                  <Textarea
-                    id="edit-description"
-                    value={editedProperty?.description || ''}
-                    onChange={(e) => handlePropertyFieldChange('description', e.target.value)}
-                    placeholder="Property description, condition, features, etc."
-                    rows={4}
-                  />
-                </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-lot-size">Lot Size</Label>
+                          <Input
+                            id="edit-lot-size"
+                            value={editedProperty?.lot_size || ''}
+                            onChange={(e) => handlePropertyFieldChange('lot_size', e.target.value)}
+                            placeholder="Enter lot size"
+                          />
+                        </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit-notes">Internal Notes</Label>
-                  <Textarea
-                    id="edit-notes"
-                    value={editedProperty?.notes || ''}
-                    onChange={(e) => handlePropertyFieldChange('notes', e.target.value)}
-                    placeholder="Private notes, reminders, analysis, etc."
-                    rows={4}
-                  />
-                </div>
+                        <div className="flex items-center space-x-2 pt-6">
+                          <Checkbox
+                            id="edit-basement"
+                            checked={editedProperty?.basement || false}
+                            onCheckedChange={(checked) => handlePropertyFieldChange('basement', checked)}
+                          />
+                          <Label htmlFor="edit-basement" className="cursor-pointer">Has Basement</Label>
+                        </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit-agent-notes">Agent Notes</Label>
-                  <Textarea
-                    id="edit-agent-notes"
-                    value={editedProperty?.agent_notes || ''}
-                    onChange={(e) => handlePropertyFieldChange('agent_notes', e.target.value)}
-                    placeholder="Notes from agent, seller information, etc."
-                    rows={3}
-                  />
-                </div>
+                        <div className="flex items-center space-x-2 pt-6">
+                          <Checkbox
+                            id="edit-finished-basement"
+                            checked={editedProperty?.finished_basement || false}
+                            onCheckedChange={(checked) => handlePropertyFieldChange('finished_basement', checked)}
+                          />
+                          <Label htmlFor="edit-finished-basement" className="cursor-pointer">Finished Basement</Label>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
 
-                {/* Save Button at bottom for convenience */}
+                  {/* Agent & Listing Info */}
+                  <AccordionItem value="agent">
+                    <AccordionTrigger className="text-lg font-semibold">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-5 w-5" />
+                        Agent & Listing Info
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="grid gap-4 md:grid-cols-2 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-agent-name">Agent Name</Label>
+                          <Input
+                            id="edit-agent-name"
+                            value={editedProperty?.seller_agent_name || ''}
+                            onChange={(e) => handlePropertyFieldChange('seller_agent_name', e.target.value)}
+                            placeholder="Enter agent name"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-agent-phone">Agent Phone</Label>
+                          <Input
+                            id="edit-agent-phone"
+                            value={editedProperty?.seller_agent_phone || ''}
+                            onChange={(e) => handlePropertyFieldChange('seller_agent_phone', e.target.value)}
+                            placeholder="Enter agent phone"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-agent-email">Agent Email</Label>
+                          <Input
+                            id="edit-agent-email"
+                            type="email"
+                            value={editedProperty?.seller_agent_email || ''}
+                            onChange={(e) => handlePropertyFieldChange('seller_agent_email', e.target.value)}
+                            placeholder="Enter agent email"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-listing-url">Listing URL</Label>
+                          <Input
+                            id="edit-listing-url"
+                            value={editedProperty?.listing_url || ''}
+                            onChange={(e) => handlePropertyFieldChange('listing_url', e.target.value)}
+                            placeholder="Enter listing URL"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-days-market">Days on Market</Label>
+                          <Input
+                            id="edit-days-market"
+                            type="number"
+                            value={editedProperty?.days_on_market || ''}
+                            onChange={(e) => handlePropertyFieldChange('days_on_market', parseInt(e.target.value) || null)}
+                            placeholder="Enter days on market"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-date-listed">Date Listed</Label>
+                          <Input
+                            id="edit-date-listed"
+                            type="date"
+                            value={editedProperty?.date_listed || ''}
+                            onChange={(e) => handlePropertyFieldChange('date_listed', e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Size & Features */}
+                  <AccordionItem value="size">
+                    <AccordionTrigger className="text-lg font-semibold">
+                      <div className="flex items-center gap-2">
+                        <Ruler className="h-5 w-5" />
+                        Size & Features
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="grid gap-4 md:grid-cols-2 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-living-sqf">Living Sq Ft</Label>
+                          <Input
+                            id="edit-living-sqf"
+                            type="number"
+                            value={editedProperty?.living_sqf || ''}
+                            onChange={(e) => handlePropertyFieldChange('living_sqf', parseInt(e.target.value) || null)}
+                            placeholder="Enter living square footage"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-building-sqf">Building Sq Ft</Label>
+                          <Input
+                            id="edit-building-sqf"
+                            type="number"
+                            value={editedProperty?.building_sqf || ''}
+                            onChange={(e) => handlePropertyFieldChange('building_sqf', parseInt(e.target.value) || null)}
+                            placeholder="Enter building square footage"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-lot-sqf">Lot Sq Ft</Label>
+                          <Input
+                            id="edit-lot-sqf"
+                            type="number"
+                            value={editedProperty?.lot_sqf || ''}
+                            onChange={(e) => handlePropertyFieldChange('lot_sqf', parseInt(e.target.value) || null)}
+                            placeholder="Enter lot square footage"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-basement-sqf">Basement Sq Ft</Label>
+                          <Input
+                            id="edit-basement-sqf"
+                            type="number"
+                            value={editedProperty?.basement_sqf || ''}
+                            onChange={(e) => handlePropertyFieldChange('basement_sqf', parseInt(e.target.value) || null)}
+                            placeholder="Enter basement square footage"
+                          />
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Notes & Description */}
+                  <AccordionItem value="notes">
+                    <AccordionTrigger className="text-lg font-semibold">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5" />
+                        Notes & Description
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="space-y-4 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-description">Description</Label>
+                          <Textarea
+                            id="edit-description"
+                            value={editedProperty?.description || ''}
+                            onChange={(e) => handlePropertyFieldChange('description', e.target.value)}
+                            placeholder="Property description, condition, features, etc."
+                            rows={4}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-notes">Internal Notes</Label>
+                          <Textarea
+                            id="edit-notes"
+                            value={editedProperty?.notes || ''}
+                            onChange={(e) => handlePropertyFieldChange('notes', e.target.value)}
+                            placeholder="Private notes, reminders, analysis, etc."
+                            rows={4}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-agent-notes">Agent Notes</Label>
+                          <Textarea
+                            id="edit-agent-notes"
+                            value={editedProperty?.agent_notes || ''}
+                            onChange={(e) => handlePropertyFieldChange('agent_notes', e.target.value)}
+                            placeholder="Notes from agent, seller information, etc."
+                            rows={3}
+                          />
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+
+                {/* Save Button at bottom */}
                 <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
                   <Button
                     variant="outline"
@@ -4693,301 +5011,9 @@ export default function Properties() {
                     {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
-              </div>
-            </TabsContent>
-
-              {/* Listing Tab */}
-              <TabsContent value="listing" className="space-y-4 mt-4">
-                {/* Save Button */}
-                <div className="flex flex-col sm:flex-row justify-end gap-2 pb-4 border-b">
-                  <Button
-                    variant="outline"
-                    onClick={() => setEditedProperty({ ...selectedProperty })}
-                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    Reset Changes
-                  </Button>
-                  <Button
-                    onClick={handleSaveProperty}
-                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
-                    </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-agent-name">Agent Name</Label>
-                    <Input
-                      id="edit-agent-name"
-                      value={editedProperty?.seller_agent_name || ''}
-                      onChange={(e) => handlePropertyFieldChange('seller_agent_name', e.target.value)}
-                      placeholder="Enter agent name"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-agent-phone">Agent Phone</Label>
-                    <Input
-                      id="edit-agent-phone"
-                      value={editedProperty?.seller_agent_phone || ''}
-                      onChange={(e) => handlePropertyFieldChange('seller_agent_phone', e.target.value)}
-                      placeholder="Enter agent phone"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-agent-email">Agent Email</Label>
-                    <Input
-                      id="edit-agent-email"
-                      type="email"
-                      value={editedProperty?.seller_agent_email || ''}
-                      onChange={(e) => handlePropertyFieldChange('seller_agent_email', e.target.value)}
-                      placeholder="Enter agent email"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-listing-url">Listing URL</Label>
-                    <Input
-                      id="edit-listing-url"
-                      value={editedProperty?.listing_url || ''}
-                      onChange={(e) => handlePropertyFieldChange('listing_url', e.target.value)}
-                      placeholder="Enter listing URL"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-days-market">Days on Market</Label>
-                    <Input
-                      id="edit-days-market"
-                      type="number"
-                      value={editedProperty?.days_on_market || ''}
-                      onChange={(e) => handlePropertyFieldChange('days_on_market', parseInt(e.target.value) || null)}
-                      placeholder="Enter days on market"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-date-listed">Date Listed</Label>
-                    <Input
-                      id="edit-date-listed"
-                      type="date"
-                      value={editedProperty?.date_listed || ''}
-                      onChange={(e) => handlePropertyFieldChange('date_listed', e.target.value)}
-                    />
-                  </div>
-                </div>
               </TabsContent>
 
-              {/* Financial Tab */}
-              <TabsContent value="financial" className="space-y-4 mt-4">
-                {/* Save Button */}
-                <div className="flex flex-col sm:flex-row justify-end gap-2 pb-4 border-b">
-                  <Button
-                    variant="outline"
-                    onClick={() => setEditedProperty({ ...selectedProperty })}
-                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    Reset Changes
-                  </Button>
-                  <Button
-                    onClick={handleSaveProperty}
-                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
-                      </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-price-financial">Price</Label>
-                    <Input
-                      id="edit-price-financial"
-                      type="number"
-                      value={editedProperty?.price || ''}
-                      onChange={(e) => handlePropertyFieldChange('price', parseFloat(e.target.value) || null)}
-                      placeholder="Enter price"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-arv-financial">ARV Estimate</Label>
-                    <Input
-                      id="edit-arv-financial"
-                      type="number"
-                      value={editedProperty?.arv_estimate || ''}
-                      onChange={(e) => handlePropertyFieldChange('arv_estimate', parseFloat(e.target.value) || null)}
-                      placeholder="Enter ARV estimate"
-                    />
-                      </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-rent">Est. Monthly Rent</Label>
-                    <Input
-                      id="edit-rent"
-                      type="number"
-                      value={editedProperty?.rentometer_monthly_rent || ''}
-                      onChange={(e) => handlePropertyFieldChange('rentometer_monthly_rent', parseFloat(e.target.value) || null)}
-                      placeholder="Enter monthly rent"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-last-sold-price">Last Sold Price</Label>
-                    <Input
-                      id="edit-last-sold-price"
-                      type="number"
-                      value={editedProperty?.last_sold_price || ''}
-                      onChange={(e) => handlePropertyFieldChange('last_sold_price', parseFloat(e.target.value) || null)}
-                      placeholder="Enter last sold price"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-last-sold-date">Last Sold Date</Label>
-                    <Input
-                      id="edit-last-sold-date"
-                      type="date"
-                      value={editedProperty?.last_sold_date || ''}
-                      onChange={(e) => handlePropertyFieldChange('last_sold_date', e.target.value)}
-                    />
-                      </div>
-                </div>
-              </TabsContent>
-
-              {/* Details Tab */}
-              <TabsContent value="details" className="space-y-4 mt-4">
-                {/* Save Button */}
-                <div className="flex justify-end gap-2 pb-4 border-b">
-                  <Button
-                    variant="outline"
-                    onClick={() => setEditedProperty({ ...selectedProperty })}
-                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                  >
-                    Reset Changes
-                  </Button>
-                  <Button
-                    onClick={handleSaveProperty}
-                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                  >
-                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
-                    </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-living-sqf">Living Sq Ft</Label>
-                    <Input
-                      id="edit-living-sqf"
-                      type="number"
-                      value={editedProperty?.living_sqf || ''}
-                      onChange={(e) => handlePropertyFieldChange('living_sqf', parseInt(e.target.value) || null)}
-                      placeholder="Enter living square footage"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-building-sqf">Building Sq Ft</Label>
-                    <Input
-                      id="edit-building-sqf"
-                      type="number"
-                      value={editedProperty?.building_sqf || ''}
-                      onChange={(e) => handlePropertyFieldChange('building_sqf', parseInt(e.target.value) || null)}
-                      placeholder="Enter building square footage"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-lot-sqf">Lot Sq Ft</Label>
-                    <Input
-                      id="edit-lot-sqf"
-                      type="number"
-                      value={editedProperty?.lot_sqf || ''}
-                      onChange={(e) => handlePropertyFieldChange('lot_sqf', parseInt(e.target.value) || null)}
-                      placeholder="Enter lot square footage"
-                    />
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-full-bath">Full Baths</Label>
-                    <Input
-                      id="edit-full-bath"
-                      type="number"
-                      value={editedProperty?.full_bath || ''}
-                      onChange={(e) => handlePropertyFieldChange('full_bath', parseInt(e.target.value) || null)}
-                      placeholder="Enter full baths"
-                    />
-                    </div>
-
-                  <div className="flex items-center space-x-2 pt-4">
-                    <Checkbox
-                      id="edit-basement"
-                      checked={editedProperty?.basement || false}
-                      onCheckedChange={(checked) => handlePropertyFieldChange('basement', checked)}
-                    />
-                    <Label htmlFor="edit-basement" className="cursor-pointer">Has Basement</Label>
-                    </div>
-
-                  <div className="flex items-center space-x-2 pt-4">
-                    <Checkbox
-                      id="edit-finished-basement"
-                      checked={editedProperty?.finished_basement || false}
-                      onCheckedChange={(checked) => handlePropertyFieldChange('finished_basement', checked)}
-                    />
-                    <Label htmlFor="edit-finished-basement" className="cursor-pointer">Finished Basement</Label>
-                    </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-basement-sqf">Basement Sq Ft</Label>
-                    <Input
-                      id="edit-basement-sqf"
-                      type="number"
-                      value={editedProperty?.basement_sqf || ''}
-                      onChange={(e) => handlePropertyFieldChange('basement_sqf', parseInt(e.target.value) || null)}
-                      placeholder="Enter basement square footage"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-status">Property Status</Label>
-                    <Select
-                      value={editedProperty?.status || ''}
-                      onValueChange={(value) => handlePropertyFieldChange('status', value)}
-                    >
-                      <SelectTrigger id="edit-status">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="For Sale">For Sale</SelectItem>
-                        <SelectItem value="Under Contract">Under Contract</SelectItem>
-                        <SelectItem value="Sold">Sold</SelectItem>
-                        <SelectItem value="Off Market">Off Market</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Tracking">Tracking</SelectItem>
-                        <SelectItem value="Not Relevant">Not Relevant</SelectItem>
-                        <SelectItem value="Follow Up">Follow Up</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-source">Source</Label>
-                    <Input
-                      id="edit-source"
-                      value={editedProperty?.source || ''}
-                      onChange={(e) => handlePropertyFieldChange('source', e.target.value)}
-                      placeholder="Enter source"
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* History Tab */}
+              {/* History/Activities Tab (merged history + communication) */}
               <TabsContent value="history" className="space-y-4 mt-4">
                 {/* Workflow Status Change History */}
                 <div className="space-y-4">
@@ -5127,6 +5153,200 @@ export default function Properties() {
                             <span>{format(new Date(activity.created_at), "MMM d, yyyy")}</span>
                             )}
                           </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Email Communications Section */}
+              <div className="space-y-4 pt-6 border-t">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-5 w-5 text-purple-600" />
+                    <h3 className="font-semibold text-lg">Email Communications</h3>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {propertyEmailMessages?.length || 0} emails
+                  </Badge>
+                </div>
+
+                {/* Email Messages List */}
+                {!propertyEmailMessages || propertyEmailMessages.length === 0 ? (
+                  <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                    <Mail className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground text-sm">No emails for this property yet</p>
+                    <p className="text-xs text-muted-foreground mt-2">Emails will appear here when you communicate about this property</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                    {propertyEmailMessages.map((email: any) => (
+                      <div
+                        key={email.id}
+                        className={`p-4 rounded-lg border ${
+                          email.direction === 'incoming'
+                            ? 'bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800'
+                            : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {email.direction === 'incoming' ? (
+                              <Badge variant="default" className="bg-purple-600 text-xs">
+                                Incoming
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">
+                                <Send className="h-3 w-3 mr-1" />
+                                Outgoing
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {email.status}
+                            </Badge>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(email.created_at), "MMM d, yyyy h:mm a")}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Mail className="h-3 w-3" />
+                            <span>
+                              {email.direction === 'incoming' 
+                                ? `From: ${email.from_email}` 
+                                : `To: ${email.to_email}`}
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-1">
+                            <p className="font-semibold text-sm">Subject: {email.subject}</p>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap line-clamp-4">
+                              {email.body}
+                            </p>
+                          </div>
+
+                          {/* Offer Price if available */}
+                          {email.offer_price && (
+                            <div className="mt-2 pt-2 border-t">
+                              <div className="flex items-center gap-2">
+                                <DollarSign className="h-4 w-4 text-green-600" />
+                                <span className="text-sm font-semibold text-green-600">
+                                  Offer Price: ${parseFloat(email.offer_price).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* SMS Communications Section */}
+              <div className="space-y-4 pt-6 border-t">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5 text-green-600" />
+                    <h3 className="font-semibold text-lg">SMS Communications</h3>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {propertySmsMessages?.length || 0} messages
+                  </Badge>
+                </div>
+
+                {/* SMS Messages List */}
+                {!propertySmsMessages || propertySmsMessages.length === 0 ? (
+                  <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                    <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground text-sm">No SMS messages for this property yet</p>
+                    <p className="text-xs text-muted-foreground mt-2">Messages will appear here when you communicate about this property</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                    {propertySmsMessages.map((sms: any) => (
+                      <div
+                        key={sms.id}
+                        className={`p-4 rounded-lg border ${
+                          sms.direction === 'incoming'
+                            ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
+                            : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {sms.direction === 'incoming' ? (
+                              <Badge variant="default" className="bg-blue-600 text-xs">
+                                Incoming
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">
+                                <Send className="h-3 w-3 mr-1" />
+                                Outgoing
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {sms.status}
+                            </Badge>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(sms.created_at), "MMM d, yyyy h:mm a")}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Phone className="h-3 w-3" />
+                            <span>
+                              {sms.direction === 'incoming' 
+                                ? `From: ${sms.from_number}` 
+                                : `To: ${sms.to_number}`}
+                            </span>
+                          </div>
+                          
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                            {sms.message}
+                          </p>
+
+                          {/* AI Analysis for incoming messages */}
+                          {sms.direction === 'incoming' && sms.ai_score && (
+                            <div className="mt-3 pt-3 border-t">
+                              <div className="flex items-center gap-2 mb-2">
+                                {sms.ai_score === 3 && (
+                                  <>
+                                    <Flame className="h-5 w-5 text-red-500" />
+                                    <Badge variant="destructive" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                      🔥 HOT LEAD
+                                    </Badge>
+                                  </>
+                                )}
+                                {sms.ai_score === 2 && (
+                                  <>
+                                    <ThermometerSun className="h-5 w-5 text-orange-500" />
+                                    <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+                                      Warm Lead
+                                    </Badge>
+                                  </>
+                                )}
+                                {sms.ai_score === 1 && (
+                                  <>
+                                    <Snowflake className="h-5 w-5 text-blue-400" />
+                                    <Badge variant="secondary" className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
+                                      Cold Lead
+                                    </Badge>
+                                  </>
+                                )}
+                              </div>
+                              {sms.ai_analysis && (
+                                <p className="text-xs text-muted-foreground italic bg-white dark:bg-gray-800 p-2 rounded">
+                                  💡 AI Analysis: {sms.ai_analysis}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}

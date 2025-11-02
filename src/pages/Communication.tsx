@@ -10,11 +10,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, MessageSquare, Plus, Trash2, Edit, Sparkles, Loader2, Save, Shield } from "lucide-react";
+import { Mail, MessageSquare, Plus, Trash2, Edit, Sparkles, Loader2, Save, Shield, History, Send, DollarSign, Search } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
 
 interface EmailTemplate {
   id: string;
@@ -80,6 +81,8 @@ export default function Communication() {
   const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
   const [generatingFor, setGeneratingFor] = useState<"email" | "sms" | null>(null);
   const [editingEmailTemplateId, setEditingEmailTemplateId] = useState<string | null>(null);
+  const [smsSearchTerm, setSmsSearchTerm] = useState("");
+  const [emailSearchTerm, setEmailSearchTerm] = useState("");
 
   const [emailTemplateForm, setEmailTemplateForm] = useState({
     name: "",
@@ -196,6 +199,40 @@ export default function Communication() {
     enabled: !!userCompany?.company_id,
   });
 
+  // Fetch SMS messages history
+  const { data: smsMessages = [] } = useQuery({
+    queryKey: ["sms-messages-history", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      const { data, error } = await supabase
+        .from("sms_messages")
+        .select("*, properties(address, city)")
+        .eq("company_id", userCompany.company_id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  // Fetch email messages history
+  const { data: emailMessages = [] } = useQuery({
+    queryKey: ["email-messages-history", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      const { data, error } = await supabase
+        .from("email_messages" as any)
+        .select("*, properties(address, city)")
+        .eq("company_id", userCompany.company_id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
   // Load settings into form when data is fetched
   useEffect(() => {
     if (settings || companyData) {
@@ -210,6 +247,31 @@ export default function Communication() {
       });
     }
   }, [settings, companyData]);
+
+  // Filtered SMS messages based on search
+  const filteredSmsMessages = smsMessages.filter((msg: any) => {
+    if (!smsSearchTerm) return true;
+    const searchLower = smsSearchTerm.toLowerCase();
+    return (
+      msg.message?.toLowerCase().includes(searchLower) ||
+      msg.to_number?.toLowerCase().includes(searchLower) ||
+      msg.from_number?.toLowerCase().includes(searchLower) ||
+      msg.properties?.address?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  // Filtered email messages based on search
+  const filteredEmailMessages = emailMessages.filter((email: any) => {
+    if (!emailSearchTerm) return true;
+    const searchLower = emailSearchTerm.toLowerCase();
+    return (
+      email.subject?.toLowerCase().includes(searchLower) ||
+      email.body?.toLowerCase().includes(searchLower) ||
+      email.to_email?.toLowerCase().includes(searchLower) ||
+      email.from_email?.toLowerCase().includes(searchLower) ||
+      email.properties?.address?.toLowerCase().includes(searchLower)
+    );
+  });
 
   // Create or Update email template mutation
   const saveEmailTemplateMutation = useMutation({
@@ -333,6 +395,7 @@ export default function Communication() {
       return result;
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["sms-messages-history"] });
       setIsSendingSMS(false);
       setSendSMSForm({ recipientName: "", phoneNumber: "", message: "" });
       toast({ 
@@ -478,79 +541,29 @@ export default function Communication() {
         </div>
       </div>
 
-      {/* AI Template Generator */}
-      <Card className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200 dark:border-purple-800">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-purple-600" />
-            AI Template Generator
-          </CardTitle>
-          <CardDescription>
-            Describe the template you need, and AI will create it for you
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <Textarea
-              placeholder="E.g., 'Create a follow-up email for a property I viewed last week' or 'Create an SMS to ask about property price reduction'"
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              className="flex-1 min-h-[80px]"
-            />
-            <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-              <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
-                💡 Available Variables
-              </p>
-              <p className="text-xs text-blue-700 dark:text-blue-300">
-                Your templates can include these variables: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{PROPERTY}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{PRICE}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{AGENT_NAME}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{BEDROOMS}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{BATHROOMS}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{SQFT}}'}</code>
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <Button
-              onClick={() => handleGenerateTemplate("email")}
-              disabled={isGeneratingTemplate}
-              className="flex-1"
-            >
-              {isGeneratingTemplate && generatingFor === "email" ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Mail className="h-4 w-4 mr-2" />
-              )}
-              Generate Email Template
-            </Button>
-            <Button
-              onClick={() => handleGenerateTemplate("sms")}
-              disabled={isGeneratingTemplate}
-              variant="secondary"
-              className="flex-1"
-            >
-              {isGeneratingTemplate && generatingFor === "sms" ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <MessageSquare className="h-4 w-4 mr-2" />
-              )}
-              Generate SMS Template
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tabs for Email and SMS */}
-      <Tabs defaultValue="email" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="email" className="flex items-center gap-2">
+      {/* Main Tabs */}
+      <Tabs defaultValue="email-templates" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="email-templates" className="flex items-center gap-2">
             <Mail className="h-4 w-4" />
             Email Templates
           </TabsTrigger>
-          <TabsTrigger value="sms" className="flex items-center gap-2">
+          <TabsTrigger value="sms-templates" className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
             SMS Templates
+          </TabsTrigger>
+          <TabsTrigger value="sms-history" className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4" />
+            SMS History
+          </TabsTrigger>
+          <TabsTrigger value="email-history" className="flex items-center gap-2">
+            <Mail className="h-4 w-4" />
+            Email History
           </TabsTrigger>
         </TabsList>
 
         {/* Email Templates Tab */}
-        <TabsContent value="email" className="space-y-4">
+        <TabsContent value="email-templates" className="space-y-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-muted-foreground">
               {emailTemplates.length} template{emailTemplates.length !== 1 ? "s" : ""} saved
@@ -668,7 +681,7 @@ export default function Communication() {
         </TabsContent>
 
         {/* SMS Templates Tab */}
-        <TabsContent value="sms" className="space-y-4">
+        <TabsContent value="sms-templates" className="space-y-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-muted-foreground">
               {smsTemplates.length} template{smsTemplates.length !== 1 ? "s" : ""} saved
@@ -774,6 +787,196 @@ export default function Communication() {
             </Card>
           )}
         </TabsContent>
+
+        {/* SMS Messages History */}
+        <TabsContent value="sms-history" className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search SMS messages..."
+                value={smsSearchTerm}
+                onChange={(e) => setSmsSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {filteredSmsMessages.length} of {smsMessages.length} messages
+            </p>
+          </div>
+
+          {smsMessages.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-lg font-semibold mb-2">No SMS messages yet</p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Your sent SMS messages will appear here
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <ScrollArea className="h-[600px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">Date/Time</TableHead>
+                      <TableHead className="w-[100px]">Direction</TableHead>
+                      <TableHead className="w-[150px]">Phone Number</TableHead>
+                      <TableHead className="w-[200px]">Property</TableHead>
+                      <TableHead>Message</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSmsMessages.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                          No messages found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredSmsMessages.map((message: any) => (
+                        <TableRow key={message.id}>
+                          <TableCell className="text-xs">
+                            {format(new Date(message.created_at), "MMM d, yyyy\nh:mm a")}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={message.direction === 'outgoing' ? 'default' : 'secondary'} className="gap-1 text-xs">
+                              <Send className="h-3 w-3" />
+                              {message.direction === 'outgoing' ? 'Out' : 'In'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm font-mono">
+                            {message.direction === 'outgoing' ? message.to_number : message.from_number}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {message.properties ? (
+                              <span className="text-blue-600">{message.properties.address}</span>
+                            ) : (
+                              <span className="text-muted-foreground italic">No property</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-md">
+                            <p className="text-sm line-clamp-2">{message.message}</p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {message.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Email Messages History */}
+        <TabsContent value="email-history" className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search emails..."
+                value={emailSearchTerm}
+                onChange={(e) => setEmailSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {filteredEmailMessages.length} of {emailMessages.length} emails
+            </p>
+          </div>
+
+          {emailMessages.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Mail className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-lg font-semibold mb-2">No emails yet</p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Your sent emails will appear here
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <ScrollArea className="h-[600px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">Date/Time</TableHead>
+                      <TableHead className="w-[100px]">Direction</TableHead>
+                      <TableHead className="w-[200px]">Email Address</TableHead>
+                      <TableHead className="w-[200px]">Property</TableHead>
+                      <TableHead className="w-[250px]">Subject</TableHead>
+                      <TableHead>Body Preview</TableHead>
+                      <TableHead className="w-[120px]">Offer Price</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredEmailMessages.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          No emails found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredEmailMessages.map((email: any) => (
+                        <TableRow key={email.id}>
+                          <TableCell className="text-xs">
+                            {format(new Date(email.created_at), "MMM d, yyyy\nh:mm a")}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={email.direction === 'outgoing' ? 'default' : 'secondary'} className="gap-1 text-xs bg-purple-600">
+                              <Send className="h-3 w-3" />
+                              {email.direction === 'outgoing' ? 'Out' : 'In'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {email.direction === 'outgoing' ? email.to_email : email.from_email}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {email.properties ? (
+                              <span className="text-purple-600">{email.properties.address}</span>
+                            ) : (
+                              <span className="text-muted-foreground italic">No property</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm font-medium">
+                            {email.subject}
+                          </TableCell>
+                          <TableCell className="max-w-md">
+                            <p className="text-sm line-clamp-2">{email.body}</p>
+                          </TableCell>
+                          <TableCell>
+                            {email.offer_price ? (
+                              <span className="text-sm font-semibold text-green-600">
+                                ${parseFloat(email.offer_price).toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {email.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Create/Edit Email Template Dialog */}
@@ -784,16 +987,68 @@ export default function Communication() {
           setEmailTemplateForm({ name: "", subject: "", body: "" });
         }
       }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>{editingEmailTemplateId ? "Edit Email Template" : "Create Email Template"}</DialogTitle>
             <DialogDescription>
               {editingEmailTemplateId ? "Update your email template" : "Create a new email template for quick communication"}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="email-name">Template Name</Label>
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <div className="space-y-4">
+              {/* AI Template Generator Section */}
+              {!editingEmailTemplateId && (
+                <Card className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200 dark:border-purple-800">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Sparkles className="h-4 w-4 text-purple-600" />
+                      AI Template Generator
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Describe the template you need, and AI will create it for you
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      <Textarea
+                        placeholder="E.g., 'Create a follow-up email for a property I viewed last week' or 'Create an SMS to ask about property price reduction'"
+                        value={aiPrompt}
+                        onChange={(e) => setAiPrompt(e.target.value)}
+                        className="min-h-[60px] text-sm"
+                      />
+                      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2">
+                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                          💡 Available Variables
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          Your templates can include these variables: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{PROPERTY}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{PRICE}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{AGENT_NAME}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{BEDROOMS}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{BATHROOMS}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{SQFT}}'}</code>
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => handleGenerateTemplate("email")}
+                        disabled={isGeneratingTemplate}
+                        className="w-full"
+                        size="sm"
+                      >
+                        {isGeneratingTemplate && generatingFor === "email" ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            Generate with AI
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              
+              <div>
+                <Label htmlFor="email-name">Template Name</Label>
               <Input
                 id="email-name"
                 value={emailTemplateForm.name}
@@ -875,38 +1130,90 @@ export default function Communication() {
                   Click a variable to insert it at cursor position
                 </p>
               </div>
+              </div>
             </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => {
-                setIsCreatingEmailTemplate(false);
-                setEditingEmailTemplateId(null);
-                setEmailTemplateForm({ name: "", subject: "", body: "" });
-              }}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => saveEmailTemplateMutation.mutate(emailTemplateForm)}
-                disabled={!emailTemplateForm.name || !emailTemplateForm.body}
-              >
-                {editingEmailTemplateId ? "Update Template" : "Save Template"}
-              </Button>
-            </div>
+          </ScrollArea>
+          <div className="flex gap-2 justify-end pt-4 border-t">
+            <Button variant="outline" onClick={() => {
+              setIsCreatingEmailTemplate(false);
+              setEditingEmailTemplateId(null);
+              setEmailTemplateForm({ name: "", subject: "", body: "" });
+              setAiPrompt("");
+            }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => saveEmailTemplateMutation.mutate(emailTemplateForm)}
+              disabled={!emailTemplateForm.name || !emailTemplateForm.body}
+            >
+              {editingEmailTemplateId ? "Update Template" : "Save Template"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Create/Edit SMS Template Dialog */}
       <Dialog open={isCreatingSMSTemplate} onOpenChange={setIsCreatingSMSTemplate}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>SMS Template</DialogTitle>
             <DialogDescription>
               Create or edit an SMS template for quick communication
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="sms-name">Template Name</Label>
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <div className="space-y-4">
+              {/* AI Template Generator Section */}
+              <Card className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 border-2 border-purple-200 dark:border-purple-800">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Sparkles className="h-4 w-4 text-purple-600" />
+                    AI Template Generator
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Describe the template you need, and AI will create it for you
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="E.g., 'Create a follow-up email for a property I viewed last week' or 'Create an SMS to ask about property price reduction'"
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      className="min-h-[60px] text-sm"
+                    />
+                    <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2">
+                      <p className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                        💡 Available Variables
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        Your templates can include these variables: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{PROPERTY}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{PRICE}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{AGENT_NAME}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{BEDROOMS}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{BATHROOMS}}'}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{'{{SQFT}}'}</code>
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handleGenerateTemplate("sms")}
+                      disabled={isGeneratingTemplate}
+                      className="w-full"
+                      size="sm"
+                    >
+                      {isGeneratingTemplate && generatingFor === "sms" ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          Generate with AI
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <div>
+                <Label htmlFor="sms-name">Template Name</Label>
               <Input
                 id="sms-name"
                 value={smsTemplateForm.name}
@@ -978,18 +1285,23 @@ export default function Communication() {
                   Click a variable to insert it at cursor position
                 </p>
               </div>
+              </div>
             </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setIsCreatingSMSTemplate(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => createSMSTemplateMutation.mutate(smsTemplateForm)}
-                disabled={!smsTemplateForm.name || !smsTemplateForm.body}
-              >
-                Save Template
-              </Button>
-            </div>
+          </ScrollArea>
+          <div className="flex gap-2 justify-end pt-4 border-t">
+            <Button variant="outline" onClick={() => {
+              setIsCreatingSMSTemplate(false);
+              setSmsTemplateForm({ name: "", body: "" });
+              setAiPrompt("");
+            }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createSMSTemplateMutation.mutate(smsTemplateForm)}
+              disabled={!smsTemplateForm.name || !smsTemplateForm.body}
+            >
+              Save Template
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
