@@ -65,6 +65,7 @@ export default function Lists() {
     zipCodes: "",
     priceMin: "",
     priceMax: "",
+    arv: "",
     daysOnZillow: "",
     forSaleByAgent: true,
     forSaleByOwner: true,
@@ -265,6 +266,7 @@ export default function Lists() {
         neighborhoods: data.neighborhoods ? data.neighborhoods.split(",").map((n: string) => n.trim()).filter(Boolean) : [],
         price_min: data.priceMin ? parseFloat(data.priceMin) : null,
         price_max: data.priceMax ? parseFloat(data.priceMax) : null,
+        arv: data.arv ? parseFloat(data.arv) : null,
         days_on_zillow: data.daysOnZillow ? parseInt(data.daysOnZillow) : null,
         for_sale_by_agent: data.forSaleByAgent,
         for_sale_by_owner: data.forSaleByOwner,
@@ -319,6 +321,7 @@ export default function Lists() {
           zipCodes: "",
           priceMin: "",
           priceMax: "",
+          arv: "",
           daysOnZillow: "",
           forSaleByAgent: true,
           forSaleByOwner: true,
@@ -380,6 +383,7 @@ export default function Lists() {
           zipCodes: "",
           priceMin: "",
           priceMax: "",
+          arv: "",
           daysOnZillow: "",
           forSaleByAgent: true,
           forSaleByOwner: true,
@@ -529,6 +533,7 @@ export default function Lists() {
       zipCodes: list.zip_codes ? list.zip_codes.join(", ") : "",
       priceMin: list.price_min ? list.price_min.toString() : "",
       priceMax: list.price_max ? list.price_max.toString() : "",
+      arv: list.arv ? list.arv.toString() : "",
       daysOnZillow: list.days_on_zillow ? list.days_on_zillow.toString() : "",
       forSaleByAgent: list.for_sale_by_agent ?? true,
       forSaleByOwner: list.for_sale_by_owner ?? true,
@@ -1211,6 +1216,22 @@ export default function Lists() {
                     />
                     <p className="text-xs text-muted-foreground">
                       {listForm.filterByPpsf ? "e.g., 150 = $150/sqft" : "e.g., 150000 = $150,000"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="arv" className="text-sm font-semibold">
+                      ARV - After Repair Value (Optional)
+                    </Label>
+                    <Input
+                      id="arv"
+                      type="number"
+                      placeholder="150000"
+                      value={listForm.arv}
+                      onChange={(e) => setListForm((prev) => ({ ...prev, arv: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Used to calculate offers based on company discount percentage
                     </p>
                   </div>
 

@@ -128,6 +128,8 @@ export default function UserSettings() {
   const [memberToRemove, setMemberToRemove] = useState<any>(null);
   const [emailSignature, setEmailSignature] = useState("");
   const [isEditingSignature, setIsEditingSignature] = useState(false);
+  const [discountPercentage, setDiscountPercentage] = useState("");
+  const [isEditingDiscount, setIsEditingDiscount] = useState(false);
 
   // Update state when profile loads
   useEffect(() => {
@@ -137,10 +139,13 @@ export default function UserSettings() {
     }
   }, [profile]);
 
-  // Load email signature when company loads
+  // Load email signature and discount percentage when company loads
   useEffect(() => {
     if (userCompany?.email_signature) {
       setEmailSignature(userCompany.email_signature);
+    }
+    if (userCompany?.discount_percentage !== undefined && userCompany?.discount_percentage !== null) {
+      setDiscountPercentage(userCompany.discount_percentage.toString());
     }
   }, [userCompany]);
 
@@ -453,6 +458,34 @@ export default function UserSettings() {
     },
   });
 
+  const updateDiscountMutation = useMutation({
+    mutationFn: async (discount: number) => {
+      if (!userCompany?.id) throw new Error("No company found");
+      
+      const { error } = await supabase
+        .from("companies")
+        .update({ discount_percentage: discount })
+        .eq("id", userCompany.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-company", user?.id] });
+      setIsEditingDiscount(false);
+      toast({
+        title: "Discount percentage updated",
+        description: "Your company discount percentage has been saved successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error updating discount",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSaveInfo = () => {
     updateProfileMutation.mutate({
       full_name: fullName || null,
@@ -497,6 +530,19 @@ export default function UserSettings() {
 
   const handleSaveSignature = () => {
     updateSignatureMutation.mutate(emailSignature);
+  };
+
+  const handleSaveDiscount = () => {
+    const discountNum = parseFloat(discountPercentage);
+    if (isNaN(discountNum) || discountNum < 0 || discountNum > 100) {
+      toast({
+        title: "Invalid discount",
+        description: "Please enter a valid percentage between 0 and 100",
+        variant: "destructive",
+      });
+      return;
+    }
+    updateDiscountMutation.mutate(discountNum);
   };
 
   const handleInviteTeamMember = (e: React.FormEvent) => {
@@ -807,6 +853,72 @@ export default function UserSettings() {
                         <pre className="whitespace-pre-wrap text-sm font-mono">
                           {emailSignature}
                         </pre>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Offer Discount Percentage</CardTitle>
+                  <CardDescription>
+                    Default discount percentage for calculating offers based on buy box ARV
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="discountPercentage">Discount Percentage (%)</Label>
+                      <Input
+                        id="discountPercentage"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={discountPercentage}
+                        onChange={(e) => setDiscountPercentage(e.target.value)}
+                        placeholder="e.g., 30 for 30% under ARV"
+                        disabled={!isEditingDiscount}
+                      />
+                      <p className="text-xs text-muted-foreground mt-2">
+                        When sending emails/SMS without a custom offer price, the system will calculate: <strong>ARV × (1 - discount% / 100)</strong>
+                        <br />
+                        For example: If ARV is $150,000 and discount is 30%, offer price will be $105,000
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {!isEditingDiscount ? (
+                        <Button onClick={() => setIsEditingDiscount(true)}>
+                          Edit Discount
+                        </Button>
+                      ) : (
+                        <>
+                          <Button 
+                            onClick={handleSaveDiscount}
+                            disabled={updateDiscountMutation.isPending}
+                          >
+                            {updateDiscountMutation.isPending ? "Saving..." : "Save Discount"}
+                          </Button>
+                          <Button 
+                            variant="outline"
+                            onClick={() => {
+                              setDiscountPercentage(userCompany?.discount_percentage?.toString() || "");
+                              setIsEditingDiscount(false);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {discountPercentage && !isEditingDiscount && (
+                      <div className="mt-4 p-4 bg-muted rounded-lg border">
+                        <p className="text-sm font-medium mb-2">Current Setting:</p>
+                        <p className="text-2xl font-bold text-green-600">{discountPercentage}%</p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          All offers will be calculated at {discountPercentage}% below the buy box ARV when no custom price is provided.
+                        </p>
                       </div>
                     )}
                   </div>

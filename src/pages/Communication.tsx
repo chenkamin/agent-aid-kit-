@@ -132,19 +132,17 @@ export default function Communication() {
     queryFn: async () => {
       if (!user?.id) return [];
       
-      // Fetch both user's templates and default templates
-      // RLS policy handles the access control
+      // Fetch all templates - RLS policy handles filtering (user's own + defaults)
       const { data, error } = await supabase
         .from("email_templates")
         .select("*")
-        .or(`and(company_id.eq.${userCompany?.company_id},user_id.eq.${user.id}),is_default.eq.true`)
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: false });
       
       if (error) throw error;
       return data as EmailTemplate[];
     },
-    enabled: !!user?.id && !!userCompany?.company_id,
+    enabled: !!user?.id,
   });
 
   // Fetch SMS templates
@@ -153,12 +151,10 @@ export default function Communication() {
     queryFn: async () => {
       if (!user?.id) return [];
       
-      // Fetch both user's templates and default templates
-      // RLS policy handles the access control
+      // Fetch all templates - RLS policy handles filtering (user's own + defaults)
       const { data, error } = await supabase
         .from("sms_templates")
         .select("*")
-        .or(`user_id.eq.${user.id},is_default.eq.true`)
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: false });
       

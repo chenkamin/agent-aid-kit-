@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload, Send, Flame, ThermometerSun, Snowflake, Edit } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload, Send, Flame, ThermometerSun, Snowflake, Edit, Target } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -166,8 +166,8 @@ export default function Properties() {
     offerPrice: "",
   });
   const [isSendingBulkSMS, setIsSendingBulkSMS] = useState(false);
-  const [bulkSMSMessage, setBulkSMSMessage] = useState("");
   const [bulkSMSTemplateId, setBulkSMSTemplateId] = useState("");
+  const [bulkSMSOfferPrice, setBulkSMSOfferPrice] = useState("");
   const [isSendingBulkSMSInProgress, setIsSendingBulkSMSInProgress] = useState(false);
   const [showBuyBoxAnalytics, setShowBuyBoxAnalytics] = useState(false);
   const [selectedBuyBoxForAnalytics, setSelectedBuyBoxForAnalytics] = useState<{
@@ -231,7 +231,7 @@ export default function Properties() {
       if (!user?.id) return null;
       const { data } = await supabase
         .from("team_members")
-        .select("company_id, companies(id, name)")
+        .select("company_id, companies(id, name, discount_percentage)")
         .eq("user_id", user.id)
         .single();
       return data;
@@ -593,7 +593,7 @@ export default function Properties() {
       // Fetch all buy boxes for the company
       const { data } = await supabase
         .from("buy_boxes")
-        .select("id, name")
+        .select("*")
         .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false});
       
@@ -1145,6 +1145,66 @@ export default function Properties() {
     },
   });
 
+  // Helper function to calculate offer price
+  const calculateOfferPrice = (property: any, customOfferPrice?: string): string => {
+    console.log('=== calculateOfferPrice START ===');
+    console.log('Property:', { 
+      address: property.address, 
+      buy_box_id: property.buy_box_id, 
+      price: property.price 
+    });
+    console.log('Custom Offer Price:', customOfferPrice);
+    console.log('Company Discount %:', userCompany?.companies?.discount_percentage);
+    console.log('Available Buy Boxes:', buyBoxes?.length);
+    
+    // If custom offer price is provided, use it
+    if (customOfferPrice && customOfferPrice.trim() !== '') {
+      console.log('✓ Using custom offer price:', customOfferPrice);
+      return customOfferPrice;
+    }
+
+    // Try to calculate from buy box ARV and company discount
+    if (property.buy_box_id && userCompany?.companies?.discount_percentage) {
+      console.log('✓ Property has buy_box_id, searching for buy box...');
+      const buyBox = buyBoxes?.find((bb: any) => bb.id === property.buy_box_id);
+      console.log('Found Buy Box:', buyBox ? {
+        id: buyBox.id,
+        name: buyBox.name,
+        arv: buyBox.arv,
+        price_min: buyBox.price_min,
+        price_max: buyBox.price_max
+      } : 'NOT FOUND');
+      
+      if (buyBox?.arv) {
+        const arvValue = Number(buyBox.arv);
+        const discountPercent = Number(userCompany.companies.discount_percentage);
+        const calculatedPrice = arvValue * (1 - discountPercent / 100);
+        const finalPrice = Math.round(calculatedPrice).toString();
+        
+        console.log('✓ ARV Calculation:');
+        console.log(`  ARV: $${arvValue.toLocaleString()}`);
+        console.log(`  Discount: ${discountPercent}%`);
+        console.log(`  Formula: ${arvValue} × (1 - ${discountPercent}/100)`);
+        console.log(`  Result: $${Number(finalPrice).toLocaleString()}`);
+        console.log('=== calculateOfferPrice END (using ARV) ===');
+        
+        return finalPrice;
+      } else {
+        console.log('✗ Buy box has no ARV, falling back to listing price');
+      }
+    } else {
+      console.log('✗ Missing requirements for ARV calculation:');
+      console.log('  - Has buy_box_id?', !!property.buy_box_id);
+      console.log('  - Has discount_percentage?', !!userCompany?.companies?.discount_percentage);
+    }
+
+    // Fall back to property listing price
+    const fallbackPrice = property.price?.toString() || '';
+    console.log('✗ Using fallback listing price:', fallbackPrice);
+    console.log('=== calculateOfferPrice END (fallback) ===');
+    return fallbackPrice;
+  };
+
   // Send email mutation
   const sendEmailMutation = useMutation({
     mutationFn: async (data: { toEmail: string; agentName: string; templateId: string; offerPrice: string; property: any }) => {
@@ -1170,12 +1230,15 @@ export default function Properties() {
         throw new Error("Template not found");
       }
       
+      // Calculate the offer price using helper function
+      const finalOfferPrice = calculateOfferPrice(data.property, data.offerPrice);
+      
       // Replace variables in subject and body
       const replaceVariables = (text: string) => {
         return text
           .replace(/\{\{PROPERTY\}\}/g, data.property.address || '')
-          .replace(/\{\{PRICE\}\}/g, data.offerPrice || data.property.price || '')
-          .replace(/\{\{AGENT_NAME\}\}/g, data.agentName)
+          .replace(/\{\{PRICE\}\}/g, finalOfferPrice ? `$${Number(finalOfferPrice).toLocaleString()}` : '')
+          .replace(/\{\{AGENT_NAME\}\}/g, data.agentName || '')
           .replace(/\{\{BEDROOMS\}\}/g, data.property.bedrooms || '')
           .replace(/\{\{BATHROOMS\}\}/g, data.property.bathrooms || '')
           .replace(/\{\{SQFT\}\}/g, data.property.square_footage || data.property.living_sqf || '');
@@ -1375,12 +1438,24 @@ export default function Properties() {
   };
 
   const handleBulkSendSMS = async () => {
-    console.log('handleBulkSendSMS called', { bulkSMSMessage, bulkSMSTemplateId, selectedPropertyIds });
+    console.log('handleBulkSendSMS called', { bulkSMSTemplateId, bulkSMSOfferPrice, selectedPropertyIds });
     
-    if (!bulkSMSMessage.trim()) {
+    // Validate template selection
+    if (!bulkSMSTemplateId) {
       toast({
-        title: "Message required",
-        description: "Please enter a message",
+        title: "Template required",
+        description: "Please select an SMS template",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get the template
+    const template = smsTemplates?.find((t: any) => t.id === bulkSMSTemplateId);
+    if (!template) {
+      toast({
+        title: "Template not found",
+        description: "The selected template could not be found",
         variant: "destructive",
       });
       return;
@@ -1409,22 +1484,26 @@ export default function Properties() {
     // Send SMS messages sequentially
     for (const property of propertiesWithPhone) {
       try {
+        // Calculate offer price for this property (use custom price or calculate from ARV)
+        const calculatedOfferPrice = calculateOfferPrice(property, bulkSMSOfferPrice);
+        const formattedPrice = calculatedOfferPrice ? `$${Number(calculatedOfferPrice).toLocaleString()}` : 'N/A';
+        
         // Replace template variables (support both single and double curly braces)
-        const finalMessage = bulkSMSMessage
+        const finalMessage = template.body
           // Double curly braces format ({{VARIABLE}})
-          .replace(/\{\{AGENT_NAME\}\}/gi, property.seller_agent_name || 'Agent')
+          .replace(/\{\{AGENT_NAME\}\}/gi, property.seller_agent_name || '')
           .replace(/\{\{PROPERTY\}\}/gi, property.address || 'N/A')
           .replace(/\{\{ADDRESS\}\}/gi, property.address || 'N/A')
-          .replace(/\{\{PRICE\}\}/gi, property.price ? `$${property.price.toLocaleString()}` : 'N/A')
+          .replace(/\{\{PRICE\}\}/gi, formattedPrice)
           .replace(/\{\{BEDROOMS\}\}/gi, property.bedrooms?.toString() || 'N/A')
           .replace(/\{\{BEDS\}\}/gi, property.bedrooms?.toString() || 'N/A')
           .replace(/\{\{BATHROOMS\}\}/gi, property.bathrooms?.toString() || 'N/A')
           .replace(/\{\{BATHS\}\}/gi, property.bathrooms?.toString() || 'N/A')
           .replace(/\{\{SQFT\}\}/gi, property.square_footage?.toString() || property.living_sqf?.toString() || 'N/A')
           // Single curly braces format ({variable})
-          .replace(/\{agent_name\}/gi, property.seller_agent_name || 'Agent')
+          .replace(/\{agent_name\}/gi, property.seller_agent_name || '')
           .replace(/\{address\}/gi, property.address || 'N/A')
-          .replace(/\{price\}/gi, property.price ? `$${property.price.toLocaleString()}` : 'N/A')
+          .replace(/\{price\}/gi, formattedPrice)
           .replace(/\{beds\}/gi, property.bedrooms?.toString() || 'N/A')
           .replace(/\{baths\}/gi, property.bathrooms?.toString() || 'N/A');
 
@@ -1462,8 +1541,8 @@ export default function Properties() {
 
     // Close dialog and reset form
     setIsSendingBulkSMS(false);
-    setBulkSMSMessage("");
     setBulkSMSTemplateId("");
+    setBulkSMSOfferPrice("");
     setSelectedPropertyIds([]);
   };
 
@@ -4478,22 +4557,26 @@ export default function Properties() {
                               });
                               return;
                             }
+                            // Calculate offer price (from custom input, buy box ARV, or property price)
+                            const smsOfferPrice = calculateOfferPrice(selectedProperty);
+                            const formattedPrice = smsOfferPrice ? `$${Number(smsOfferPrice).toLocaleString()}` : 'N/A';
+                            
                             // Replace template variables (support both single and double curly braces)
                             const finalMessage = smsForm.message
                               // Double curly braces format ({{VARIABLE}})
-                              .replace(/\{\{AGENT_NAME\}\}/gi, smsForm.agentName)
+                              .replace(/\{\{AGENT_NAME\}\}/gi, smsForm.agentName || '')
                               .replace(/\{\{PROPERTY\}\}/gi, selectedProperty?.address || 'N/A')
                               .replace(/\{\{ADDRESS\}\}/gi, selectedProperty?.address || 'N/A')
-                              .replace(/\{\{PRICE\}\}/gi, selectedProperty?.price ? `$${selectedProperty.price.toLocaleString()}` : 'N/A')
+                              .replace(/\{\{PRICE\}\}/gi, formattedPrice)
                               .replace(/\{\{BEDROOMS\}\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
                               .replace(/\{\{BEDS\}\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
                               .replace(/\{\{BATHROOMS\}\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A')
                               .replace(/\{\{BATHS\}\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A')
                               .replace(/\{\{SQFT\}\}/gi, selectedProperty?.square_footage?.toString() || selectedProperty?.living_sqf?.toString() || 'N/A')
                               // Single curly braces format ({variable})
-                              .replace(/\{agent_name\}/gi, smsForm.agentName)
+                              .replace(/\{agent_name\}/gi, smsForm.agentName || '')
                               .replace(/\{address\}/gi, selectedProperty?.address || 'N/A')
-                              .replace(/\{price\}/gi, selectedProperty?.price ? `$${selectedProperty.price.toLocaleString()}` : 'N/A')
+                              .replace(/\{price\}/gi, formattedPrice)
                               .replace(/\{beds\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
                               .replace(/\{baths\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A');
                             
@@ -5105,6 +5188,120 @@ export default function Properties() {
                       </div>
                     </AccordionContent>
                   </AccordionItem>
+
+                  {/* Buy Box Information */}
+                  {selectedProperty?.buy_box_id && (() => {
+                    const buyBox = buyBoxes?.find((bb: any) => bb.id === selectedProperty.buy_box_id);
+                    return buyBox ? (
+                      <AccordionItem value="buybox">
+                        <AccordionTrigger className="text-lg font-semibold">
+                          <div className="flex items-center gap-2">
+                            <Target className="h-5 w-5" />
+                            Buy Box: {buyBox.name}
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-4 pt-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {buyBox.arv && (
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">ARV (After Repair Value)</Label>
+                                  <p className="font-semibold text-green-600">${Number(buyBox.arv).toLocaleString()}</p>
+                                </div>
+                              )}
+                              
+                              {(buyBox.price_min || buyBox.price_max) && (
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Price Range</Label>
+                                  <p className="font-semibold">
+                                    {buyBox.price_min ? `$${Number(buyBox.price_min).toLocaleString()}` : 'Any'} - {buyBox.price_max ? `$${Number(buyBox.price_max).toLocaleString()}` : 'Any'}
+                                  </p>
+                                </div>
+                              )}
+
+                              {(buyBox.min_bedrooms || buyBox.max_bedrooms) && (
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Bedrooms</Label>
+                                  <p className="font-semibold">
+                                    {buyBox.min_bedrooms || 'Any'} - {buyBox.max_bedrooms || 'Any'}
+                                  </p>
+                                </div>
+                              )}
+
+                              {(buyBox.min_bathrooms || buyBox.max_bathrooms) && (
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Bathrooms</Label>
+                                  <p className="font-semibold">
+                                    {buyBox.min_bathrooms || 'Any'} - {buyBox.max_bathrooms || 'Any'}
+                                  </p>
+                                </div>
+                              )}
+
+                              {(buyBox.min_square_footage || buyBox.max_square_footage) && (
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Square Footage</Label>
+                                  <p className="font-semibold">
+                                    {buyBox.min_square_footage ? `${Number(buyBox.min_square_footage).toLocaleString()} sqft` : 'Any'} - {buyBox.max_square_footage ? `${Number(buyBox.max_square_footage).toLocaleString()} sqft` : 'Any'}
+                                  </p>
+                                </div>
+                              )}
+
+                              {buyBox.home_types && buyBox.home_types.length > 0 && (
+                                <div className="space-y-1 md:col-span-2">
+                                  <Label className="text-xs text-muted-foreground">Property Types</Label>
+                                  <div className="flex flex-wrap gap-1">
+                                    {buyBox.home_types.map((type: string) => (
+                                      <Badge key={type} variant="secondary">{type}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {buyBox.cities && buyBox.cities.length > 0 && (
+                                <div className="space-y-1 md:col-span-2">
+                                  <Label className="text-xs text-muted-foreground">Cities</Label>
+                                  <div className="flex flex-wrap gap-1">
+                                    {buyBox.cities.map((city: string) => (
+                                      <Badge key={city} variant="outline">{city}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {buyBox.neighborhoods && buyBox.neighborhoods.length > 0 && (
+                                <div className="space-y-1 md:col-span-2">
+                                  <Label className="text-xs text-muted-foreground">Neighborhoods</Label>
+                                  <div className="flex flex-wrap gap-1">
+                                    {buyBox.neighborhoods.map((neighborhood: string) => (
+                                      <Badge key={neighborhood} variant="outline">{neighborhood}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {buyBox.zip_codes && buyBox.zip_codes.length > 0 && (
+                                <div className="space-y-1 md:col-span-2">
+                                  <Label className="text-xs text-muted-foreground">Zip Codes</Label>
+                                  <div className="flex flex-wrap gap-1">
+                                    {buyBox.zip_codes.map((zip: string) => (
+                                      <Badge key={zip} variant="outline">{zip}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {buyBox.description && (
+                                <div className="space-y-1 md:col-span-2">
+                                  <Label className="text-xs text-muted-foreground">Description</Label>
+                                  <p className="text-sm">{buyBox.description}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    ) : null;
+                  })()}
                 </Accordion>
 
                 {/* Save Button at bottom */}
@@ -6049,17 +6246,10 @@ export default function Properties() {
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label htmlFor="bulk-sms-template" className="text-sm">SMS Template (Optional)</Label>
+              <Label htmlFor="bulk-sms-template" className="text-sm">SMS Template *</Label>
               <Select
                 value={bulkSMSTemplateId}
-                onValueChange={(value) => {
-                  setBulkSMSTemplateId(value);
-                  // Auto-fill message from template
-                  const template = smsTemplates?.find((t: any) => t.id === value);
-                  if (template) {
-                    setBulkSMSMessage(template.body);
-                  }
-                }}
+                onValueChange={(value) => setBulkSMSTemplateId(value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a template..." />
@@ -6080,22 +6270,21 @@ export default function Properties() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Select a template to auto-fill the message below
+                🛡️ indicates default templates available to all users
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="bulk-sms-message" className="text-sm">Message *</Label>
-              <Textarea
-                id="bulk-sms-message"
-                value={bulkSMSMessage}
-                onChange={(e) => setBulkSMSMessage(e.target.value)}
-                placeholder="Hi {{AGENT_NAME}}, I'm interested in your property at {{PROPERTY}}..."
-                rows={6}
-                className="resize-none"
+              <Label htmlFor="bulk-sms-offer-price" className="text-sm">Offer Price (Optional)</Label>
+              <Input
+                id="bulk-sms-offer-price"
+                type="number"
+                value={bulkSMSOfferPrice}
+                onChange={(e) => setBulkSMSOfferPrice(e.target.value)}
+                placeholder="150000"
               />
               <p className="text-xs text-muted-foreground">
-                Available variables: {"{{AGENT_NAME}}"}, {"{{PROPERTY}}"}, {"{{PRICE}}"}, {"{{BEDS}}"}, {"{{BATHS}}"}, {"{{SQFT}}"}
+                Leave empty to calculate from buy box ARV and company discount. Same price will be used for all properties.
               </p>
             </div>
 
