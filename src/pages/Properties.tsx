@@ -155,6 +155,12 @@ export default function Properties() {
   const [contactSelectorOpen, setContactSelectorOpen] = useState(false);
   const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
   const [isSendingBulkEmailInProgress, setIsSendingBulkEmailInProgress] = useState(false);
+  const [documentationForm, setDocumentationForm] = useState({
+    id: "",
+    content: "",
+    documentation_date: "",
+  });
+  const [isEditingDocumentation, setIsEditingDocumentation] = useState(false);
   const [bulkEmailForm, setBulkEmailForm] = useState({
     templateId: "",
     offerPrice: "",
@@ -320,6 +326,28 @@ export default function Properties() {
       return data || [];
     },
     enabled: !!userCompany?.company_id,
+  });
+
+  // Fetch documentation for selected property
+  const { data: propertyDocumentation = [] } = useQuery({
+    queryKey: ["property-documentation", selectedProperty?.id],
+    queryFn: async () => {
+      if (!selectedProperty?.id) return [];
+      
+      const { data, error } = await supabase
+        .from("property_documentation")
+        .select("*")
+        .eq("property_id", selectedProperty.id)
+        .order("documentation_date", { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching property documentation:", error);
+        return [];
+      }
+      
+      return data || [];
+    },
+    enabled: !!selectedProperty?.id,
   });
 
   // Helper function to apply all filters to a query
@@ -1921,6 +1949,84 @@ export default function Properties() {
     }
     bulkUpdateWorkflowMutation.mutate({ propertyIds: selectedPropertyIds, workflowState });
   };
+
+  // Save documentation mutation (create/update)
+  const saveDocumentationMutation = useMutation({
+    mutationFn: async (data: { id?: string; content: string; documentation_date: string }) => {
+      if (!user?.id || !userCompany?.company_id || !selectedProperty?.id) {
+        throw new Error("Missing required data");
+      }
+
+      if (data.id) {
+        // Update existing
+        const { error } = await supabase
+          .from("property_documentation")
+          .update({
+            content: data.content,
+            documentation_date: data.documentation_date,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", data.id);
+        
+        if (error) throw error;
+      } else {
+        // Create new
+        const { error } = await supabase
+          .from("property_documentation")
+          .insert([{
+            property_id: selectedProperty.id,
+            company_id: userCompany.company_id,
+            user_id: user.id,
+            content: data.content,
+            documentation_date: data.documentation_date,
+          }]);
+        
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["property-documentation", selectedProperty?.id] });
+      setDocumentationForm({ id: "", content: "", documentation_date: "" });
+      setIsEditingDocumentation(false);
+      toast({
+        title: "Success",
+        description: "Documentation saved successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: `Failed to save documentation: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete documentation mutation
+  const deleteDocumentationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("property_documentation")
+        .delete()
+        .eq("id", id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["property-documentation", selectedProperty?.id] });
+      toast({
+        title: "Success",
+        description: "Documentation deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: `Failed to delete documentation: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
 
   // Send SMS mutation
   const sendSMSMutation = useMutation({
@@ -4506,7 +4612,7 @@ export default function Properties() {
 
             <Tabs defaultValue="general" className="mt-4">
               <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="general" className="text-sm md:text-base">
                     <Home className="h-4 w-4 md:h-5 md:w-5 mr-2" />
                     General
@@ -4515,11 +4621,19 @@ export default function Properties() {
                     <Ruler className="h-4 w-4 md:h-5 md:w-5 mr-2" />
                     Comps
                   </TabsTrigger>
+                  <TabsTrigger value="documentation" className="text-sm md:text-base">
+                    <FileText className="h-4 w-4 md:h-5 md:w-5 mr-2" />
+                    Documentation
+                  </TabsTrigger>
+                  <TabsTrigger value="communication" className="text-sm md:text-base">
+                    <MessageSquare className="h-4 w-4 md:h-5 md:w-5 mr-2" />
+                    Communication
+                  </TabsTrigger>
                   <TabsTrigger value="history" className="text-sm md:text-base">
                     <Clock className="h-4 w-4 md:h-5 md:w-5 mr-2" />
                     History/Activities
                   </TabsTrigger>
-              </TabsList>
+                </TabsList>
               </div>
 
               {/* General Tab with Accordion */}
@@ -5159,200 +5273,6 @@ export default function Properties() {
                   </div>
                 )}
               </div>
-
-              {/* Email Communications Section */}
-              <div className="space-y-4 pt-6 border-t">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-5 w-5 text-purple-600" />
-                    <h3 className="font-semibold text-lg">Email Communications</h3>
-                  </div>
-                  <Badge variant="outline" className="text-xs">
-                    {propertyEmailMessages?.length || 0} emails
-                  </Badge>
-                </div>
-
-                {/* Email Messages List */}
-                {!propertyEmailMessages || propertyEmailMessages.length === 0 ? (
-                  <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                    <Mail className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                    <p className="text-muted-foreground text-sm">No emails for this property yet</p>
-                    <p className="text-xs text-muted-foreground mt-2">Emails will appear here when you communicate about this property</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                    {propertyEmailMessages.map((email: any) => (
-                      <div
-                        key={email.id}
-                        className={`p-4 rounded-lg border ${
-                          email.direction === 'incoming'
-                            ? 'bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800'
-                            : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            {email.direction === 'incoming' ? (
-                              <Badge variant="default" className="bg-purple-600 text-xs">
-                                Incoming
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary" className="text-xs">
-                                <Send className="h-3 w-3 mr-1" />
-                                Outgoing
-                              </Badge>
-                            )}
-                            <Badge variant="outline" className="text-xs capitalize">
-                              {email.status}
-                            </Badge>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(email.created_at), "MMM d, yyyy h:mm a")}
-                          </span>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Mail className="h-3 w-3" />
-                            <span>
-                              {email.direction === 'incoming' 
-                                ? `From: ${email.from_email}` 
-                                : `To: ${email.to_email}`}
-                            </span>
-                          </div>
-                          
-                          <div className="space-y-1">
-                            <p className="font-semibold text-sm">Subject: {email.subject}</p>
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap line-clamp-4">
-                              {email.body}
-                            </p>
-                          </div>
-
-                          {/* Offer Price if available */}
-                          {email.offer_price && (
-                            <div className="mt-2 pt-2 border-t">
-                              <div className="flex items-center gap-2">
-                                <DollarSign className="h-4 w-4 text-green-600" />
-                                <span className="text-sm font-semibold text-green-600">
-                                  Offer Price: ${parseFloat(email.offer_price).toLocaleString()}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* SMS Communications Section */}
-              <div className="space-y-4 pt-6 border-t">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-5 w-5 text-green-600" />
-                    <h3 className="font-semibold text-lg">SMS Communications</h3>
-                  </div>
-                  <Badge variant="outline" className="text-xs">
-                    {propertySmsMessages?.length || 0} messages
-                  </Badge>
-                </div>
-
-                {/* SMS Messages List */}
-                {!propertySmsMessages || propertySmsMessages.length === 0 ? (
-                  <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                    <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                    <p className="text-muted-foreground text-sm">No SMS messages for this property yet</p>
-                    <p className="text-xs text-muted-foreground mt-2">Messages will appear here when you communicate about this property</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                    {propertySmsMessages.map((sms: any) => (
-                      <div
-                        key={sms.id}
-                        className={`p-4 rounded-lg border ${
-                          sms.direction === 'incoming'
-                            ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
-                            : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            {sms.direction === 'incoming' ? (
-                              <Badge variant="default" className="bg-blue-600 text-xs">
-                                Incoming
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary" className="text-xs">
-                                <Send className="h-3 w-3 mr-1" />
-                                Outgoing
-                              </Badge>
-                            )}
-                            <Badge variant="outline" className="text-xs capitalize">
-                              {sms.status}
-                            </Badge>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(sms.created_at), "MMM d, yyyy h:mm a")}
-                          </span>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            <span>
-                              {sms.direction === 'incoming' 
-                                ? `From: ${sms.from_number}` 
-                                : `To: ${sms.to_number}`}
-                            </span>
-                          </div>
-                          
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {sms.message}
-                          </p>
-
-                          {/* AI Analysis for incoming messages */}
-                          {sms.direction === 'incoming' && sms.ai_score && (
-                            <div className="mt-3 pt-3 border-t">
-                              <div className="flex items-center gap-2 mb-2">
-                                {sms.ai_score === 3 && (
-                                  <>
-                                    <Flame className="h-5 w-5 text-red-500" />
-                                    <Badge variant="destructive" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                      🔥 HOT LEAD
-                                    </Badge>
-                                  </>
-                                )}
-                                {sms.ai_score === 2 && (
-                                  <>
-                                    <ThermometerSun className="h-5 w-5 text-orange-500" />
-                                    <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
-                                      Warm Lead
-                                    </Badge>
-                                  </>
-                                )}
-                                {sms.ai_score === 1 && (
-                                  <>
-                                    <Snowflake className="h-5 w-5 text-blue-400" />
-                                    <Badge variant="secondary" className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
-                                      Cold Lead
-                                    </Badge>
-                                  </>
-                                )}
-                              </div>
-                              {sms.ai_analysis && (
-                                <p className="text-xs text-muted-foreground italic bg-white dark:bg-gray-800 p-2 rounded">
-                                  💡 AI Analysis: {sms.ai_analysis}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
               </TabsContent>
 
               {/* Comps Tab */}
@@ -5597,16 +5517,103 @@ export default function Properties() {
 
               {/* Communication Tab */}
               <TabsContent value="communication" className="space-y-4 mt-4">
+                {/* Email Communications Section */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-lg">SMS Communications</h3>
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-5 w-5 text-purple-600" />
+                      <h3 className="font-semibold text-lg">Email Communications</h3>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {propertyEmailMessages?.length || 0} emails
+                    </Badge>
+                  </div>
+
+                  {/* Email Messages List */}
+                  {!propertyEmailMessages || propertyEmailMessages.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                      <Mail className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                      <p className="text-muted-foreground text-sm">No emails for this property yet</p>
+                      <p className="text-xs text-muted-foreground mt-2">Emails will appear here when you communicate about this property</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                      {propertyEmailMessages.map((email: any) => (
+                        <div
+                          key={email.id}
+                          className={`p-4 rounded-lg border ${
+                            email.direction === 'incoming'
+                              ? 'bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800'
+                              : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              {email.direction === 'incoming' ? (
+                                <Badge variant="default" className="bg-purple-600 text-xs">
+                                  Incoming
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Send className="h-3 w-3 mr-1" />
+                                  Outgoing
+                                </Badge>
+                              )}
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {email.status}
+                              </Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(email.created_at), "MMM d, yyyy h:mm a")}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Mail className="h-3 w-3" />
+                              <span>
+                                {email.direction === 'incoming' 
+                                  ? `From: ${email.from_email}` 
+                                  : `To: ${email.to_email}`}
+                              </span>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <p className="font-semibold text-sm">Subject: {email.subject}</p>
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap line-clamp-4">
+                                {email.body}
+                              </p>
+                            </div>
+
+                            {/* Offer Price if available */}
+                            {email.offer_price && (
+                              <div className="mt-2 pt-2 border-t">
+                                <div className="flex items-center gap-2">
+                                  <DollarSign className="h-4 w-4 text-green-600" />
+                                  <span className="text-sm font-semibold text-green-600">
+                                    Offer Price: ${parseFloat(email.offer_price).toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* SMS Communications Section */}
+                <div className="space-y-4 pt-6 border-t">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-5 w-5 text-green-600" />
+                      <h3 className="font-semibold text-lg">SMS Communications</h3>
+                    </div>
                     <Badge variant="outline" className="text-xs">
                       {propertySmsMessages?.length || 0} messages
                     </Badge>
                   </div>
-
-                  {/* AI Score Summary */}
-                 
 
                   {/* SMS Messages List */}
                   {!propertySmsMessages || propertySmsMessages.length === 0 ? (
@@ -5700,6 +5707,167 @@ export default function Properties() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* Documentation Tab */}
+              <TabsContent value="documentation" className="space-y-4 mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-blue-600" />
+                      <h3 className="font-semibold text-lg">Property Documentation</h3>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setDocumentationForm({ id: "", content: "", documentation_date: format(new Date(), "yyyy-MM-dd") });
+                        setIsEditingDocumentation(true);
+                      }}
+                      size="sm"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Documentation
+                    </Button>
+                  </div>
+
+                  {/* Documentation Form (Create/Edit) */}
+                  {isEditingDocumentation && (
+                    <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+                      <CardContent className="pt-4 space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="documentation-date">Date</Label>
+                          <Input
+                            id="documentation-date"
+                            type="date"
+                            value={documentationForm.documentation_date}
+                            onChange={(e) => setDocumentationForm(prev => ({ ...prev, documentation_date: e.target.value }))}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="documentation-content">Documentation</Label>
+                          <Textarea
+                            id="documentation-content"
+                            value={documentationForm.content}
+                            onChange={(e) => setDocumentationForm(prev => ({ ...prev, content: e.target.value }))}
+                            placeholder="Enter documentation notes, observations, or important information about this property..."
+                            rows={6}
+                          />
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => {
+                              if (!documentationForm.content || !documentationForm.documentation_date) {
+                                toast({
+                                  title: "Error",
+                                  description: "Please fill in all fields",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              saveDocumentationMutation.mutate({
+                                id: documentationForm.id || undefined,
+                                content: documentationForm.content,
+                                documentation_date: documentationForm.documentation_date,
+                              });
+                            }}
+                            disabled={saveDocumentationMutation.isPending}
+                          >
+                            {saveDocumentationMutation.isPending ? "Saving..." : "Save"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setDocumentationForm({ id: "", content: "", documentation_date: "" });
+                              setIsEditingDocumentation(false);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Documentation List */}
+                  {propertyDocumentation && propertyDocumentation.length > 0 ? (
+                    <div className="space-y-3">
+                      {propertyDocumentation.map((doc: any, index: number) => (
+                        <Card key={doc.id} className="hover:shadow-md transition-shadow">
+                          <CardContent className="pt-4">
+                            <div className="flex gap-4">
+                              {/* Timeline connector */}
+                              <div className="relative flex flex-col items-center">
+                                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                                  <FileText className="h-4 w-4 text-blue-600" />
+                                </div>
+                                {index < propertyDocumentation.length - 1 && (
+                                  <div className="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-2 min-h-[20px]" />
+                                )}
+                              </div>
+
+                              {/* Content */}
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="text-xs">
+                                        {format(new Date(doc.documentation_date), "MMM d, yyyy")}
+                                      </Badge>
+                                      <span className="text-xs text-muted-foreground">
+                                        Added {format(new Date(doc.created_at), "MMM d, yyyy 'at' h:mm a")}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex gap-1 flex-shrink-0">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setDocumentationForm({
+                                          id: doc.id,
+                                          content: doc.content,
+                                          documentation_date: doc.documentation_date,
+                                        });
+                                        setIsEditingDocumentation(true);
+                                      }}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        if (confirm("Are you sure you want to delete this documentation entry?")) {
+                                          deleteDocumentationMutation.mutate(doc.id);
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-red-600" />
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                                  {doc.content}
+                                </p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                      <p className="text-muted-foreground">No documentation entries yet</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Add your first documentation entry to track important information
+                      </p>
                     </div>
                   )}
                 </div>
