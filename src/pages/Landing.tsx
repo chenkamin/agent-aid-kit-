@@ -55,7 +55,7 @@ export default function Landing() {
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Agent Aid Kit
+            Dealio
           </h1>
           
           <p className="text-xl md:text-2xl text-muted-foreground mb-8 leading-relaxed">
@@ -148,7 +148,7 @@ export default function Landing() {
         {/* Benefits Section */}
         <div className="mb-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-12 text-white">
           <h2 className="text-3xl md:text-4xl font-bold mb-8 text-center">
-            Why Real Estate Investors Choose Agent Aid Kit
+            Why Real Estate Investors Choose Dealio
           </h2>
           <div className="grid md:grid-cols-3 gap-8">
             <div className="text-center">
@@ -192,7 +192,7 @@ export default function Landing() {
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground mb-4">
-                  "Agent Aid Kit has completely transformed how we manage our property portfolio. 
+                  "Dealio has completely transformed how we manage our property portfolio. 
                   We've closed 30% more deals since switching to this platform."
                 </p>
                 <div className="flex items-center gap-3">
@@ -341,7 +341,7 @@ export default function Landing() {
               <AccordionContent className="text-muted-foreground">
                 We offer email support for all users. Premium plan subscribers get priority support 
                 with faster response times. We also have comprehensive documentation and video tutorials 
-                to help you get the most out of Agent Aid Kit.
+                to help you get the most out of Dealio.
               </AccordionContent>
             </AccordionItem>
 
@@ -364,7 +364,7 @@ export default function Landing() {
             Ready to Transform Your Real Estate Business?
           </h2>
           <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
-            Join hundreds of successful real estate investors who are closing more deals with Agent Aid Kit.
+            Join hundreds of successful real estate investors who are closing more deals with Dealio.
           </p>
           <Link to="/signup">
             <Button size="lg" variant="secondary" className="text-lg px-8 py-6">
@@ -379,7 +379,7 @@ export default function Landing() {
 
         {/* Footer */}
         <div className="mt-16 pt-8 border-t text-center text-muted-foreground">
-          <p className="mb-4">© 2025 Agent Aid Kit. All rights reserved.</p>
+          <p className="mb-4">© 2025 Dealio. All rights reserved.</p>
           <div className="flex justify-center gap-6 text-sm">
             <Link to="/login" className="hover:text-foreground transition-colors">
               Sign In

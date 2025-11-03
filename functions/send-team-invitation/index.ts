@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             from: Deno.env.get('EMAIL_FROM') || 'noreply@yourdomain.com',
             to: [email],
-            subject: `You've been invited to join ${companyName} on Real Estate CRM`,
+            subject: `You've been invited to join ${companyName} on Dealio`,
             html: generateEmailHTML(companyName, inviterName, invitationLink),
           }),
         });
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
             from: {
               email: Deno.env.get('EMAIL_FROM') || 'noreply@yourdomain.com',
             },
-            subject: `You've been invited to join ${companyName} on Real Estate CRM`,
+            subject: `You've been invited to join ${companyName} on Dealio`,
             content: [{
               type: 'text/html',
               value: generateEmailHTML(companyName, inviterName, invitationLink),
@@ -200,14 +200,14 @@ function generateEmailHTML(companyName: string, inviterName: string, invitationL
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 28px;">🏠 Real Estate CRM</h1>
+    <h1 style="color: white; margin: 0; font-size: 28px;">🏠 Dealio</h1>
   </div>
   
   <div style="background: #ffffff; padding: 40px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 10px 10px;">
     <h2 style="color: #333; margin-top: 0;">You've Been Invited!</h2>
     
     <p style="font-size: 16px; color: #555;">
-      <strong>${inviterName}</strong> has invited you to join <strong>${companyName}</strong> on Real Estate CRM.
+      <strong>${inviterName}</strong> has invited you to join <strong>${companyName}</strong> on Dealio.
     </p>
     
     <p style="font-size: 16px; color: #555;">
@@ -251,7 +251,7 @@ function generateEmailHTML(companyName: string, inviterName: string, invitationL
   </div>
   
   <div style="text-align: center; padding: 20px; font-size: 12px; color: #999;">
-    <p>© 2025 Real Estate CRM. All rights reserved.</p>
+    <p>© 2025 Dealio. All rights reserved.</p>
   </div>
 </body>
 </html>

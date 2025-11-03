@@ -54,7 +54,7 @@ export default function Login() {
           </div>
           <CardTitle className="text-2xl text-center">Welcome back</CardTitle>
           <CardDescription className="text-center">
-            Sign in to your Real Estate CRM account
+            Sign in to your Dealio account
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

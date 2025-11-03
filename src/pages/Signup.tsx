@@ -65,7 +65,7 @@ export default function Signup() {
           </div>
           <CardTitle className="text-2xl text-center">Create an account</CardTitle>
           <CardDescription className="text-center">
-            Enter your details to get started with Real Estate CRM
+            Enter your details to get started with Dealio
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

@@ -199,7 +199,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="flex h-16 items-center justify-between px-4 border-b">
           <Link to="/" className={cn("flex items-center space-x-2", !isMobile && !sidebarOpen && "justify-center w-full")}>
             <Building2 className="h-6 w-6 text-primary flex-shrink-0" />
-            {(isMobile || sidebarOpen) && <span className="text-lg font-bold text-foreground">Real Estate CRM</span>}
+            {(isMobile || sidebarOpen) && <span className="text-lg font-bold text-foreground">Dealio</span>}
           </Link>
           {(isMobile || sidebarOpen) && (
             <Button
@@ -304,7 +304,7 @@ export default function Layout({ children }: LayoutProps) {
             </Button>
           )}
           <h1 className="text-base md:text-lg font-semibold truncate flex-1">
-            {navigation.find((item) => item.href === location.pathname)?.name || "Real Estate CRM"}
+            {navigation.find((item) => item.href === location.pathname)?.name || "Dealio"}
           </h1>
           
           {/* Notifications Bell */}
