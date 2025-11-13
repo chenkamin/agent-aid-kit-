@@ -76,7 +76,7 @@ export default function Activities() {
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
   
   // Handle URL parameter for activity ID
-  const activityId = searchParams.get('activity');
+  const activityId = searchParams.get('activityId');
   
   const [activityForm, setActivityForm] = useState({
     type: "other",
@@ -115,7 +115,7 @@ export default function Activities() {
   // Helper functions to update URL when opening/closing activities
   const openActivity = (activity: any) => {
     setSelectedActivity(activity);
-    setSearchParams({ activity: activity.id });
+    setSearchParams({ activityId: activity.id });
   };
 
   const closeActivity = () => {
@@ -197,13 +197,22 @@ export default function Activities() {
 
   // Open activity from URL parameter
   useEffect(() => {
+    console.log('🔄 Activity URL Effect triggered:', { activityId, hasActivities: !!allActivities, selectedActivity: !!selectedActivity });
+    
     if (activityId && allActivities) {
+      console.log('🔍 Looking for activity:', activityId);
       const activity = allActivities.find((a: any) => a.id === activityId);
-      if (activity) {
+      if (activity && (!selectedActivity || selectedActivity.id !== activityId)) {
+        console.log('📖 Opening activity:', activity.title);
         setSelectedActivity(activity);
+      } else if (!activity) {
+        console.warn('❌ Activity not found in list:', activityId);
       }
+    } else if (!activityId && selectedActivity) {
+      console.log('❌ Closing activity - no URL parameter');
+      setSelectedActivity(null);
     }
-  }, [activityId, allActivities]);
+  }, [activityId, allActivities, selectedActivity]);
 
   // Fetch properties for dropdown - only properties with open activities
   const { data: properties } = useQuery({

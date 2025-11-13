@@ -20,6 +20,7 @@ import Activities from "./pages/Activities";
 import Lists from "./pages/Lists";
 import Communication from "./pages/Communication";
 import UserSettings from "./pages/UserSettings";
+import Pricing from "./pages/Pricing";
 import AcceptInvite from "./pages/AcceptInvite";
 import NotFound from "./pages/NotFound";
 
@@ -139,6 +140,16 @@ const App = () => (
                 <ProtectedRoute>
                   <Layout>
                     <UserSettings />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pricing"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Pricing />
                   </Layout>
                 </ProtectedRoute>
               }

@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { User, Lock, CreditCard, Save, Users, UserPlus, Mail, Trash2, Shield, Crown, User as UserIcon, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { canAddUser, getLimitMessage, getUpgradeMessage, type SubscriptionTier } from "@/lib/subscriptionLimits";
+import { useNavigate } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +35,7 @@ export default function UserSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // Fetch user profile
   const { data: profile, isLoading } = useQuery({
@@ -243,6 +246,14 @@ export default function UserSettings() {
     mutationFn: async (email: string) => {
       if (!userCompany?.id || !user?.id) throw new Error("Company not found");
 
+      // Check subscription limits
+      const subscriptionTier = (userCompany?.subscription_tier || 'basic') as SubscriptionTier;
+      const currentUserCount = teamMembers?.length || 0;
+      
+      if (!canAddUser(currentUserCount, subscriptionTier)) {
+        throw new Error(`You've reached the limit of ${getLimitMessage('users', subscriptionTier)}. ${getUpgradeMessage(subscriptionTier)}`);
+      }
+
       const { data: profile } = await supabase
         .from("profiles")
         .select("email")
@@ -308,10 +319,23 @@ export default function UserSettings() {
       setInviteEmail("");
     },
     onError: (error: any) => {
+      const isLimitError = error.message.includes('limit') || error.message.includes('Upgrade');
+      
       toast({
-        title: "Error sending invitation",
+        title: isLimitError ? "Subscription Limit Reached" : "Error sending invitation",
         description: error.message,
         variant: "destructive",
+        action: isLimitError ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/pricing')}
+            className="bg-white"
+          >
+            <Crown className="mr-2 h-4 w-4" />
+            Upgrade
+          </Button>
+        ) : undefined,
       });
     },
   });

@@ -29,34 +29,96 @@ function parseInteger(value: any): number | null {
 
 function extractAddressFromUrl(url: string) {
   try {
+    // Example: https://www.zillow.com/homedetails/1691-Harwich-Rd-Lyndhurst-OH-44124/33423858_zpid/
     const match = url.match(/\/homedetails\/(.+?)\/(\d+)_zpid/);
+    if (!match) {
+      console.error(`⚠️ URL doesn't match expected pattern (no /homedetails/ or _zpid): ${url}`);
+      return { address: '', city: '', state: '', zip: '' };
+    }
+    
     if (match && match[1]) {
-      const parts = match[1].split('-');
+      const urlPart = match[1];
+      const parts = urlPart.split('-');
+      
+      console.log(`   🔍 Parsing URL: ${url}`);
+      console.log(`      URL Part: ${urlPart}`);
+      console.log(`      Parts (split by '-'): [${parts.join(', ')}]`);
+      console.log(`      Parts count: ${parts.length}`);
+      
+      // Last part is zip, second to last is state
+      if (parts.length < 3) {
+        console.error(`      ⚠️ URL format unexpected - not enough parts (need at least 3, got ${parts.length})`);
+        console.error(`      URL: ${url}`);
+        console.error(`      Parts: [${parts.join(', ')}]`);
+        return { address: '', city: '', state: '', zip: '' };
+      }
+      
       const zip = parts[parts.length - 1];
       const state = parts[parts.length - 2];
-      const cityParts = [];
-      const addressParts = [];
-      let foundCity = false;
-
-      for (let i = parts.length - 3; i >= 0; i--) {
-        if (!foundCity && parts[i].length > 2) {
-          cityParts.unshift(parts[i]);
+      
+      // Everything before state and zip
+      const addressAndCity = parts.slice(0, -2);
+      
+      // Strategy: Cities are typically the LAST 1-2 words before state
+      // Common patterns:
+      // - "Cleveland" (1 word)
+      // - "Maple Heights" (2 words) 
+      // - "University Heights" (2 words)
+      // Addresses are everything before the city
+      
+      let cityParts: string[] = [];
+      let addressParts: string[] = [];
+      
+      // Check if last word is likely a city (capitalized, no numbers, common city indicators)
+      // For now, assume last 1 word is city if total parts > 3, otherwise last 2 words
+      if (addressAndCity.length > 3) {
+        // Most common: city is last word, but could be last 2
+        // Check if second-to-last looks like part of city name (no numbers, short words like "Heights", "Park")
+        const lastWord = addressAndCity[addressAndCity.length - 1];
+        const secondToLast = addressAndCity[addressAndCity.length - 2];
+        
+        // Common multi-word city indicators
+        const cityIndicators = ['heights', 'park', 'hills', 'beach', 'city', 'lake', 'springs', 'grove', 'falls'];
+        
+        if (cityIndicators.includes(lastWord.toLowerCase()) || cityIndicators.includes(secondToLast.toLowerCase())) {
+          // Two-word city
+          cityParts = addressAndCity.slice(-2);
+          addressParts = addressAndCity.slice(0, -2);
         } else {
-          foundCity = true;
-          addressParts.unshift(parts[i]);
+          // One-word city
+          cityParts = addressAndCity.slice(-1);
+          addressParts = addressAndCity.slice(0, -1);
         }
+      } else {
+        // Short format, assume last word is city
+        cityParts = addressAndCity.slice(-1);
+        addressParts = addressAndCity.slice(0, -1);
       }
 
-      return {
+      const result = {
         address: addressParts.join(' '),
         city: cityParts.join(' '),
-        state: state,
+        state: state.toUpperCase(),
         zip: zip
       };
+      
+      // Log extracted address details
+      console.log(`      📍 Extracted Address Components:`);
+      console.log(`         Address Parts: [${addressParts.join(', ')}] → "${result.address}"`);
+      console.log(`         City Parts: [${cityParts.join(', ')}] → "${result.city}"`);
+      console.log(`         State: "${result.state}"`);
+      console.log(`         Zip: "${result.zip}"`);
+      console.log(`      ✅ Final: "${result.address}, ${result.city}, ${result.state} ${result.zip}"`);
+      
+      return result;
     }
   } catch (e) {
-    console.error('Error extracting address from URL:', e);
+    console.error('❌ Error extracting address from URL:', e);
+    console.error(`   URL that caused error: ${url}`);
+    console.error(`   Error details: ${e.message || e}`);
   }
+  
+  console.error(`⚠️ Returning empty address data for URL: ${url}`);
   return {
     address: '',
     city: '',
@@ -76,8 +138,112 @@ function normalizeHomeType(homeType: string): string {
   if (type.includes('land') || type.includes('lot')) return 'Land';
   if (type.includes('commercial')) return 'Commercial';
   if (type.includes('apartment')) return 'Apartment';
+  // Handle generic "house" or "house for sale" as Single Family
+  if (type.includes('house')) {
+    console.log(`   📍 Treating "${homeType}" as "Single Family"`);
+    return 'Single Family';
+  }
 
+  console.log(`   ⚠️ Unknown home type: "${homeType}" - defaulting to "Other"`);
   return 'Other';
+}
+
+async function scrapePropertyDetails(addresses: string[], apifyToken: string) {
+  console.log(`\n   🔍 DETAILED SCRAPING FUNCTION CALLED`);
+  console.log(`      Scraping detailed info for ${addresses.length} properties...`);
+  
+  // Apify Property Details Actor ID - CONFIGURED
+  const PROPERTY_DETAILS_ACTOR_ID = 'ENK9p4RZHg0iVso52';
+  
+  console.log(`      Actor ID: "${PROPERTY_DETAILS_ACTOR_ID}"`);
+  
+  const detailsConfig = {
+    addresses: addresses,
+    extractBuildingUnits: "all",
+    propertyStatus: "FOR_SALE"
+  };
+
+  console.log(`      Making Apify API call...`);
+  console.log(`      API endpoint: https://api.apify.com/v2/acts/${PROPERTY_DETAILS_ACTOR_ID}/runs`);
+  console.log(`      Config: ${JSON.stringify(detailsConfig).substring(0, 200)}...`);
+
+  const apifyResponse = await fetch(
+    `https://api.apify.com/v2/acts/${PROPERTY_DETAILS_ACTOR_ID}/runs`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apifyToken}`
+      },
+      body: JSON.stringify(detailsConfig)
+    }
+  );
+
+  console.log(`      Apify response status: ${apifyResponse.status}`);
+
+  if (!apifyResponse.ok) {
+    const errorText = await apifyResponse.text();
+    console.error(`      ❌ Property details API error: ${apifyResponse.status}`);
+    console.error(`      Error details: ${errorText.substring(0, 500)}`);
+    return [];
+  }
+
+  const runData = await apifyResponse.json();
+  const runId = runData.data.id;
+  const defaultDatasetId = runData.data.defaultDatasetId;
+
+  console.log(`✅ Property details scrape started: ${runId}`);
+
+  // Wait for completion
+  let runStatus = 'RUNNING';
+  let attempts = 0;
+  const maxAttempts = 60;
+
+  while (runStatus === 'RUNNING' && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    const statusResponse = await fetch(
+      `https://api.apify.com/v2/actor-runs/${runId}`,
+      { headers: { 'Authorization': `Bearer ${apifyToken}` } }
+    );
+
+    const statusData = await statusResponse.json();
+    runStatus = statusData.data.status;
+    attempts++;
+
+    console.log(`📊 Details scraping status: ${runStatus} (attempt ${attempts}/${maxAttempts})`);
+  }
+
+  if (runStatus !== 'SUCCEEDED') {
+    console.error(`⚠️ Property details scraping failed: ${runStatus}`);
+    return [];
+  }
+
+  console.log(`      Fetching results from dataset...`);
+  const resultsResponse = await fetch(
+    `https://api.apify.com/v2/datasets/${defaultDatasetId}/items`,
+    { headers: { 'Authorization': `Bearer ${apifyToken}` } }
+  );
+
+  console.log(`      Results response status: ${resultsResponse.status}`);
+
+  if (!resultsResponse.ok) {
+    const errorText = await resultsResponse.text();
+    console.error(`      ❌ Failed to fetch property details: ${resultsResponse.status}`);
+    console.error(`      Error: ${errorText.substring(0, 500)}`);
+    return [];
+  }
+
+  const detailedProperties = await resultsResponse.json();
+  console.log(`      ✅ Retrieved ${detailedProperties.length} detailed property records`);
+  
+  if (detailedProperties.length > 0) {
+    const sample = detailedProperties[0];
+    console.log(`      Sample record fields: ${Object.keys(sample).join(', ')}`);
+    console.log(`      Sample has listedBy: ${!!sample.listedBy}`);
+  }
+  
+  return detailedProperties;
 }
 
 async function recordPropertyChanges(supabase: any, updates: any[]) {
@@ -297,7 +463,25 @@ Deno.serve(async (req) => {
         }
 
         let scrapedProperties = await resultsResponse.json();
+        console.log(`\n   ${'='.repeat(70)}`);
+        console.log(`   🎯 INITIAL ZILLOW SEARCH RESULTS`);
+        console.log(`   ${'='.repeat(70)}`);
         console.log(`   ✅ Found ${scrapedProperties.length} properties from Zillow (before filtering)`);
+        
+        // LOG EVERY LISTING FROM ZILLOW
+        console.log(`\n   📋 LISTING ALL ${scrapedProperties.length} PROPERTIES FROM ZILLOW:\n`);
+        scrapedProperties.forEach((prop: any, index: number) => {
+          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
+          const price = parseNumber(prop.price || prop.unformattedPrice || prop.hdpData?.homeInfo?.price);
+          const homeType = prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType || 'undefined';
+          console.log(`   ${index + 1}. ${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`);
+          console.log(`      URL: ${prop.detailUrl || prop.url || 'N/A'}`);
+          console.log(`      Price: $${price?.toLocaleString() || 'N/A'}`);
+          console.log(`      Type: ${homeType}`);
+          console.log(`      ZPID: ${prop.zpid || 'N/A'}`);
+          console.log(``);
+        });
+        console.log(`   ${'='.repeat(70)}\n`);
         
         // DEBUG: Log first property to see what data we're getting
         if (scrapedProperties.length > 0) {
@@ -348,27 +532,30 @@ Deno.serve(async (req) => {
           const normalizedFilterTypes = buyBox.home_types.map((type: string) => normalizeHomeType(type));
           console.log(`   🏠 Normalized filter types: ${normalizedFilterTypes.join(', ')}`);
           
-          // DEBUG: Check first few properties to see what's happening
-          if (scrapedProperties.length > 0) {
-            console.log(`   🔍 DEBUG - Checking first 3 properties for home type matching:`);
-            for (let i = 0; i < Math.min(3, scrapedProperties.length); i++) {
-              const prop = scrapedProperties[i];
-              const rawHomeType = prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType || 'undefined';
-              const normalizedHomeType = normalizeHomeType(rawHomeType);
-              const matches = normalizedFilterTypes.includes(normalizedHomeType);
-              console.log(`      Property ${i + 1}:`);
-              console.log(`         Raw home type: "${rawHomeType}"`);
-              console.log(`         Normalized: "${normalizedHomeType}"`);
-              console.log(`         Looking for: [${normalizedFilterTypes.join(', ')}]`);
-              console.log(`         Match: ${matches ? '✅ YES' : '❌ NO'}`);
-            }
-          }
+          let filteredOutCount = 0;
+          const typeCounts: Record<string, number> = {};
           
           scrapedProperties = scrapedProperties.filter((prop: any) => {
-            const homeType = normalizeHomeType(prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType);
-            return normalizedFilterTypes.includes(homeType);
+            const homeTypeValue = prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType || 'undefined';
+            const homeType = normalizeHomeType(homeTypeValue);
+            
+            // Count this type
+            typeCounts[homeType] = (typeCounts[homeType] || 0) + 1;
+            
+            const matches = normalizedFilterTypes.includes(homeType);
+            
+            // Log when filtering out
+            if (!matches) {
+              const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
+              console.log(`      ❌ FILTERED OUT by home type: ${addressData.address}, ${addressData.city} - Type: "${homeTypeValue}" → "${homeType}" (looking for: ${normalizedFilterTypes.join(', ')})`);
+              filteredOutCount++;
+            }
+            
+            return matches;
           });
           
+          console.log(`   📊 Property types found:`, typeCounts);
+          console.log(`   📊 Filtered out ${filteredOutCount} properties due to home type mismatch`);
           console.log(`   📊 After home type filtering: ${scrapedProperties.length} of ${beforeTypeFilter} properties passed`);
         }
 
@@ -382,17 +569,127 @@ Deno.serve(async (req) => {
           // Normalize cities to lowercase for comparison
           const allowedCities = buyBox.cities.map((c: string) => c.toLowerCase().trim());
           
+          let filteredOutCount = 0;
+          const cityCounts: Record<string, number> = {};
+          
           scrapedProperties = scrapedProperties.filter((prop: any) => {
             const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
             const propCity = (addressData.city || '').toLowerCase().trim();
             
+            // Track cities
+            if (propCity) {
+              cityCounts[propCity] = (cityCounts[propCity] || 0) + 1;
+            }
+            
             const cityMatches = allowedCities.includes(propCity);
+            
+            // Log when filtering out
+            if (!cityMatches) {
+              console.log(`      ❌ FILTERED OUT by city: ${addressData.address}, ${addressData.city} - City: "${propCity}" not in [${allowedCities.join(', ')}]`);
+              filteredOutCount++;
+            }
             
             return cityMatches;
           });
           
+          console.log(`   📊 Cities found:`, cityCounts);
+          console.log(`   📊 Filtered out ${filteredOutCount} properties due to city mismatch`);
           console.log(`   📊 After city filtering: ${scrapedProperties.length} of ${beforeCityFilter} properties passed`);
         }
+
+        // ============================================
+        // STEP 2: Scrape detailed property information
+        // ============================================
+        console.log('\n   🔍 STEP 2: Fetching detailed property information...');
+        
+        // Collect all full addresses for detailed scraping
+        const addressesForDetailScraping: string[] = [];
+        const addressToPropertyMap = new Map();
+        
+        console.log(`\n   🔍 Collecting addresses for detailed scraping...`);
+        for (const prop of scrapedProperties) {
+          const listingUrl = prop.detailUrl || prop.url || '';
+          const addressData = extractAddressFromUrl(listingUrl);
+          
+          if (addressData.address && addressData.city && addressData.state && addressData.zip) {
+            const fullAddress = `${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`;
+            addressesForDetailScraping.push(fullAddress);
+            addressToPropertyMap.set(fullAddress.toLowerCase(), prop);
+            
+            // Log first 3 addresses as samples
+            if (addressesForDetailScraping.length <= 3) {
+              console.log(`      ✓ Address ${addressesForDetailScraping.length}: ${fullAddress}`);
+            }
+          } else {
+            console.log(`      ⚠️ Skipping URL (incomplete address): ${listingUrl}`);
+          }
+        }
+        
+        console.log(`   📋 Prepared ${addressesForDetailScraping.length} addresses for detailed scraping`);
+        if (addressesForDetailScraping.length === 0) {
+          console.log(`   ⚠️ WARNING: No valid addresses collected! Agent info will be null for all properties.`);
+        }
+        
+        // Scrape property details in batches to get agent info
+        const detailedPropertiesData: any[] = [];
+        if (addressesForDetailScraping.length > 0) {
+          console.log(`\n   🚀 Starting detailed property scraping...`);
+          console.log(`      Total addresses to scrape: ${addressesForDetailScraping.length}`);
+          
+          // Batch size of 50 to avoid overwhelming the API
+          const batchSize = 50;
+          for (let i = 0; i < addressesForDetailScraping.length; i += batchSize) {
+            const batch = addressesForDetailScraping.slice(i, i + batchSize);
+            console.log(`\n   📦 Processing batch ${Math.floor(i / batchSize) + 1} (${batch.length} addresses)...`);
+            console.log(`      Sample addresses in batch: ${batch.slice(0, 2).join(', ')}`);
+            
+            const batchResults = await scrapePropertyDetails(batch, apifyToken);
+            
+            console.log(`      ✅ Batch returned ${batchResults.length} results`);
+            if (batchResults.length > 0) {
+              console.log(`      Sample result keys: ${Object.keys(batchResults[0]).join(', ')}`);
+              console.log(`      Sample result has listedBy: ${!!batchResults[0].listedBy}`);
+            } else {
+              console.log(`      ⚠️ WARNING: Batch returned ZERO results!`);
+            }
+            
+            detailedPropertiesData.push(...batchResults);
+            
+            // Small delay between batches to be respectful to the API
+            if (i + batchSize < addressesForDetailScraping.length) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+          
+          console.log(`\n   ✅ Detailed scraping complete! Total results: ${detailedPropertiesData.length}`);
+        } else {
+          console.log(`\n   ⚠️ Skipping detailed scraping - no addresses collected`);
+        }
+        
+        // Create a map of address -> detailed property data
+        const detailsMap = new Map();
+        console.log(`\n   📋 Creating address map from ${detailedPropertiesData.length} detailed property records...`);
+        
+        for (const detailedProp of detailedPropertiesData) {
+          // Try multiple address formats to match
+          const addresses = [
+            detailedProp.address,
+            detailedProp.streetAddress && detailedProp.city && detailedProp.state && detailedProp.zipcode 
+              ? `${detailedProp.streetAddress}, ${detailedProp.city}, ${detailedProp.state} ${detailedProp.zipcode}`
+              : null,
+            detailedProp.streetAddress || detailedProp.address
+          ]
+            .filter(a => a && typeof a === 'string')
+            .map(a => a.toLowerCase());
+          
+          if (addresses.length > 0) {
+            for (const addr of addresses) {
+              detailsMap.set(addr, detailedProp);
+            }
+          }
+        }
+        
+        console.log(`   ✅ Mapped ${detailsMap.size} unique address keys to detailed property data`);
 
         // Initialize map to store verified neighborhoods
         const propertyNeighborhoodMap = new Map();
@@ -480,33 +777,123 @@ Deno.serve(async (req) => {
         const updatedListings = [];
         const propertyUpdates = [];
         let skippedCount = 0;
+        let agentInfoFoundCount = 0;
+        let agentInfoMissingCount = 0;
 
-        console.log(`\n   🔄 Processing ${scrapedProperties.length} scraped properties after all filters...`);
+        console.log(`\n   ${'='.repeat(70)}`);
+        console.log(`   🔄 PROCESSING ${scrapedProperties.length} PROPERTIES AFTER ALL FILTERS`);
+        console.log(`   ${'='.repeat(70)}\n`);
 
         for (const prop of scrapedProperties) {
           const listingUrl = prop.detailUrl || prop.url || '';
           const addressData = extractAddressFromUrl(listingUrl);
           const scrapedPrice = parseNumber(prop.price || prop.unformattedPrice || prop.hdpData?.homeInfo?.price);
           const scrapedStatus = 'For Sale';
+          const homeTypeValue = prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType || 'undefined';
 
-          console.log(`\n   🏠 Checking property: ${listingUrl}`);
-          console.log(`      Address extracted: ${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`);
-          console.log(`      Price: ${scrapedPrice}`);
+          console.log(`\n   📋 Processing property:`);
+          console.log(`      URL: ${listingUrl}`);
+          console.log(`      Address: ${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`);
+          console.log(`      Price: $${scrapedPrice?.toLocaleString() || 'N/A'}`);
+          console.log(`      Home Type: "${homeTypeValue}" → "${normalizeHomeType(homeTypeValue)}"`);
 
           const existingProp = existingPropsMap.get(listingUrl);
 
           if (!existingProp) {
-            console.log(`      ✅ NOT found in existing properties - this is a NEW listing`);
+            console.log(`      ✅ NEW PROPERTY - Will be added to database`);
             
             // NEW LISTING - Skip if address is incomplete
             if (!addressData.address || !addressData.city) {
               console.log(`      ⚠️ Skipping - incomplete address data`);
+              console.log(`      🔍 INCOMPLETE ADDRESS DEBUG:`);
+              console.log(`         Address: "${addressData.address}" ${!addressData.address ? '❌ MISSING' : '✓'}`);
+              console.log(`         City: "${addressData.city}" ${!addressData.city ? '❌ MISSING' : '✓'}`);
+              console.log(`         State: "${addressData.state}" ${!addressData.state ? '❌ MISSING' : '✓'}`);
+              console.log(`         Zip: "${addressData.zip}" ${!addressData.zip ? '❌ MISSING' : '✓'}`);
+              console.log(`         Listing URL: ${listingUrl}`);
+              console.log(`         URL Format: ${listingUrl.includes('/homedetails/') ? '✓ Contains /homedetails/' : '❌ Missing /homedetails/'}`);
               skippedCount++;
               continue;
             }
 
             // Get verified neighborhood if available (only for buy boxes with neighborhood filter)
             const verifiedNeighborhood = propertyNeighborhoodMap.get(listingUrl) || null;
+
+            // Look up detailed property data for agent information
+            const fullAddress = `${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`;
+            const detailedData = detailsMap.get(fullAddress.toLowerCase());
+            
+            // Extract agent information from detailed data
+            let agentName = null;
+            let agentPhone = null;
+            let agentEmail = null;
+            
+            if (detailedData) {
+              console.log(`      ✅ Found detailed data for ${addressData.address}`);
+              
+              // Parse listedBy array structure for agent info
+              if (detailedData.listedBy && Array.isArray(detailedData.listedBy)) {
+                const listingAgentSection = detailedData.listedBy.find(
+                  (section: any) => section.id === 'LISTING_AGENT'
+                );
+                
+                if (listingAgentSection && listingAgentSection.elements) {
+                  // Extract name
+                  const nameElement = listingAgentSection.elements.find(
+                    (el: any) => el.id === 'NAME'
+                  );
+                  if (nameElement) agentName = nameElement.text;
+                  
+                  // Extract phone
+                  const phoneElement = listingAgentSection.elements.find(
+                    (el: any) => el.id === 'PHONE'
+                  );
+                  if (phoneElement) agentPhone = phoneElement.text;
+                  
+                  // Extract email if present
+                  const emailElement = listingAgentSection.elements.find(
+                    (el: any) => el.id === 'EMAIL'
+                  );
+                  if (emailElement) agentEmail = emailElement.text;
+                }
+              }
+              
+              // Fallback to other possible field structures
+              if (!agentName) {
+                agentName = detailedData.agentName || 
+                           detailedData.listingAgentName || 
+                           detailedData.attributionInfo?.agentName ||
+                           detailedData.attributionInfo?.listingAgentName ||
+                           null;
+              }
+              
+              if (!agentPhone) {
+                agentPhone = detailedData.agentPhone || 
+                            detailedData.listingAgentPhone || 
+                            detailedData.attributionInfo?.agentPhoneNumber ||
+                            detailedData.attributionInfo?.phoneNumber ||
+                            null;
+              }
+              
+              if (!agentEmail) {
+                agentEmail = detailedData.agentEmail || 
+                            detailedData.listingAgentEmail || 
+                            detailedData.attributionInfo?.agentEmail ||
+                            detailedData.attributionInfo?.email ||
+                            null;
+              }
+              
+              if (agentName || agentPhone || agentEmail) {
+                console.log(`      📞 Agent Info - Name: ${agentName}, Phone: ${agentPhone}, Email: ${agentEmail}`);
+                agentInfoFoundCount++;
+              } else {
+                console.log(`      ⚠️ No agent info found in detailed data`);
+                agentInfoMissingCount++;
+              }
+            } else {
+              console.log(`      ⚠️ No detailed data found for this address`);
+              agentInfoMissingCount++;
+            }
 
             const newListing = {
               user_id: buyBox.user_id,
@@ -533,11 +920,13 @@ Deno.serve(async (req) => {
               url: listingUrl,
               is_new_listing: true,
               listing_discovered_at: new Date().toISOString(),
-              last_scraped_at: new Date().toISOString()
+              last_scraped_at: new Date().toISOString(),
+              seller_agent_name: agentName,
+              seller_agent_phone: agentPhone,
+              seller_agent_email: agentEmail
             };
             
             console.log(`      ➕ Adding to newListings array`);
-            console.log(`      🔍 DEBUG - New listing data:`, JSON.stringify(newListing, null, 2));
             newListings.push(newListing);
           } else {
             console.log(`      🔄 Found in existing properties - checking for updates`);
@@ -665,14 +1054,19 @@ Deno.serve(async (req) => {
           success: true
         };
 
-        console.log('\n📊 ===== FINAL SUMMARY =====');
-        console.log(`   Buy Box: ${buyBox.name}`);
+        console.log(`\n   ${'='.repeat(70)}`);
+        console.log(`   📊 FINAL SUMMARY FOR BUY BOX: ${buyBox.name}`);
+        console.log(`   ${'='.repeat(70)}`);
         console.log(`   Properties after all filters: ${scrapedProperties.length}`);
         console.log(`   New listings identified: ${newListings.length}`);
         console.log(`   Existing listings updated: ${updatedListings.length}`);
         console.log(`   Properties skipped (incomplete data): ${skippedCount}`);
+        console.log(`   Properties with agent info: ${agentInfoFoundCount}`);
+        console.log(`   Properties without agent info: ${agentInfoMissingCount}`);
+        console.log(`   Agent info success rate: ${agentInfoFoundCount > 0 ? Math.round((agentInfoFoundCount / (agentInfoFoundCount + agentInfoMissingCount)) * 100) : 0}%`);
         console.log(`   Existing properties in DB for this buy box: ${(existingProperties || []).length}`);
-        console.log('\n✅ Buy box update completed');
+        console.log(`   ${'='.repeat(70)}\n`);
+        console.log('✅ Buy box update completed');
 
         return new Response(
           JSON.stringify({

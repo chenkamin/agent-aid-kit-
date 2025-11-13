@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -72,6 +73,7 @@ export default function Communication() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [isCreatingEmailTemplate, setIsCreatingEmailTemplate] = useState(false);
   const [isCreatingSMSTemplate, setIsCreatingSMSTemplate] = useState(false);
@@ -518,64 +520,76 @@ export default function Communication() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center">
         <div>
-          <h1 className="text-3xl font-bold">Communication</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-2xl md:text-3xl font-bold">Communication</h1>
+          <p className="text-muted-foreground mt-1 text-sm md:text-base">
             Manage your email and SMS communication templates
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setIsSendingSMS(true)} variant="default">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button onClick={() => setIsSendingSMS(true)} variant="default" className="w-full sm:w-auto">
             <MessageSquare className="h-4 w-4 mr-2" />
-            Send SMS
+            <span className="hidden sm:inline">Send SMS</span>
+            <span className="sm:hidden">SMS</span>
           </Button>
-          <Button onClick={() => setIsEditingSettings(true)} variant="outline">
+          <Button onClick={() => setIsEditingSettings(true)} variant="outline" className="w-full sm:w-auto">
             <Save className="h-4 w-4 mr-2" />
-            Connection Settings
+            <span className="hidden sm:inline">Connection Settings</span>
+            <span className="sm:hidden">Settings</span>
           </Button>
         </div>
       </div>
 
       {/* Main Tabs */}
       <Tabs defaultValue="email-templates" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="email-templates" className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            Email Templates
-          </TabsTrigger>
-          <TabsTrigger value="sms-templates" className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />
-            SMS Templates
-          </TabsTrigger>
-          <TabsTrigger value="sms-history" className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />
-            SMS History
-          </TabsTrigger>
-          <TabsTrigger value="email-history" className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            Email History
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <TabsList className="grid w-full grid-cols-4 min-w-[600px] md:min-w-0">
+            <TabsTrigger value="email-templates" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
+              <Mail className="h-3 w-3 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Email Templates</span>
+              <span className="sm:hidden">Email</span>
+            </TabsTrigger>
+            <TabsTrigger value="sms-templates" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
+              <MessageSquare className="h-3 w-3 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">SMS Templates</span>
+              <span className="sm:hidden">SMS</span>
+            </TabsTrigger>
+            <TabsTrigger value="sms-history" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
+              <MessageSquare className="h-3 w-3 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">SMS History</span>
+              <span className="sm:hidden">SMS Log</span>
+            </TabsTrigger>
+            <TabsTrigger value="email-history" className="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
+              <Mail className="h-3 w-3 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">Email History</span>
+              <span className="sm:hidden">Email Log</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Email Templates Tab */}
         <TabsContent value="email-templates" className="space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
             <p className="text-sm text-muted-foreground">
               {emailTemplates.length} template{emailTemplates.length !== 1 ? "s" : ""} saved
             </p>
-            <Button onClick={() => {
-              setEditingEmailTemplateId(null);
-              setEmailTemplateForm({ name: "", subject: "", body: "" });
-              setIsCreatingEmailTemplate(true);
-            }}>
+            <Button 
+              onClick={() => {
+                setEditingEmailTemplateId(null);
+                setEmailTemplateForm({ name: "", subject: "", body: "" });
+                setIsCreatingEmailTemplate(true);
+              }}
+              className="w-full sm:w-auto"
+            >
               <Plus className="h-4 w-4 mr-2" />
               New Email Template
             </Button>
           </div>
 
-          <Card>
-            <Table>
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[200px]">Name</TableHead>
@@ -661,6 +675,7 @@ export default function Communication() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </Card>
 
           {emailTemplates.length === 0 && (
@@ -678,18 +693,19 @@ export default function Communication() {
 
         {/* SMS Templates Tab */}
         <TabsContent value="sms-templates" className="space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
             <p className="text-sm text-muted-foreground">
               {smsTemplates.length} template{smsTemplates.length !== 1 ? "s" : ""} saved
             </p>
-            <Button onClick={() => setIsCreatingSMSTemplate(true)}>
+            <Button onClick={() => setIsCreatingSMSTemplate(true)} className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               New SMS Template
             </Button>
           </div>
 
-          <Card>
-            <Table>
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[200px]">Name</TableHead>
@@ -769,6 +785,7 @@ export default function Communication() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </Card>
 
           {smsTemplates.length === 0 && (
@@ -812,14 +829,15 @@ export default function Communication() {
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <ScrollArea className="h-[600px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[120px]">Date/Time</TableHead>
-                      <TableHead className="w-[100px]">Direction</TableHead>
-                      <TableHead className="w-[150px]">Phone Number</TableHead>
+            <Card className="overflow-hidden">
+              <ScrollArea className="h-[400px] md:h-[600px]">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[120px]">Date/Time</TableHead>
+                        <TableHead className="w-[100px]">Direction</TableHead>
+                        <TableHead className="w-[150px]">Phone Number</TableHead>
                       <TableHead className="w-[200px]">Property</TableHead>
                       <TableHead>Message</TableHead>
                       <TableHead className="w-[100px]">Status</TableHead>
@@ -849,7 +867,12 @@ export default function Communication() {
                           </TableCell>
                           <TableCell className="text-sm">
                             {message.properties ? (
-                              <span className="text-blue-600">{message.properties.address}</span>
+                              <button
+                                onClick={() => navigate(`/properties?propertyId=${message.property_id}`)}
+                                className="text-blue-600 hover:underline cursor-pointer"
+                              >
+                                {message.properties.address}
+                              </button>
                             ) : (
                               <span className="text-muted-foreground italic">No property</span>
                             )}
@@ -867,6 +890,7 @@ export default function Communication() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </ScrollArea>
             </Card>
           )}
@@ -900,14 +924,15 @@ export default function Communication() {
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <ScrollArea className="h-[600px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[120px]">Date/Time</TableHead>
-                      <TableHead className="w-[100px]">Direction</TableHead>
-                      <TableHead className="w-[200px]">Email Address</TableHead>
+            <Card className="overflow-hidden">
+              <ScrollArea className="h-[400px] md:h-[600px]">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[120px]">Date/Time</TableHead>
+                        <TableHead className="w-[100px]">Direction</TableHead>
+                        <TableHead className="w-[200px]">Email Address</TableHead>
                       <TableHead className="w-[200px]">Property</TableHead>
                       <TableHead className="w-[250px]">Subject</TableHead>
                       <TableHead>Body Preview</TableHead>
@@ -939,7 +964,12 @@ export default function Communication() {
                           </TableCell>
                           <TableCell className="text-sm">
                             {email.properties ? (
-                              <span className="text-purple-600">{email.properties.address}</span>
+                              <button
+                                onClick={() => navigate(`/properties?propertyId=${email.property_id}`)}
+                                className="text-purple-600 hover:underline cursor-pointer"
+                              >
+                                {email.properties.address}
+                              </button>
                             ) : (
                               <span className="text-muted-foreground italic">No property</span>
                             )}
@@ -969,6 +999,7 @@ export default function Communication() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </ScrollArea>
             </Card>
           )}
@@ -983,7 +1014,7 @@ export default function Communication() {
           setEmailTemplateForm({ name: "", subject: "", body: "" });
         }
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>{editingEmailTemplateId ? "Edit Email Template" : "Create Email Template"}</DialogTitle>
             <DialogDescription>
@@ -1150,7 +1181,7 @@ export default function Communication() {
 
       {/* Create/Edit SMS Template Dialog */}
       <Dialog open={isCreatingSMSTemplate} onOpenChange={setIsCreatingSMSTemplate}>
-        <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>SMS Template</DialogTitle>
             <DialogDescription>
@@ -1304,7 +1335,7 @@ export default function Communication() {
 
       {/* Send SMS Dialog */}
       <Dialog open={isSendingSMS} onOpenChange={setIsSendingSMS}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[95vw] max-w-md">
           <DialogHeader>
             <DialogTitle>Send SMS</DialogTitle>
             <DialogDescription>
@@ -1401,7 +1432,7 @@ export default function Communication() {
 
       {/* Connection Settings Dialog */}
       <Dialog open={isEditingSettings} onOpenChange={setIsEditingSettings}>
-        <DialogContent className="max-w-2xl max-h-[80vh]">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle>Connection Settings</DialogTitle>
             <DialogDescription>

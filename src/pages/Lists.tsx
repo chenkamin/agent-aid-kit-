@@ -2,9 +2,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, List, Loader2, Trash2, Play, ArrowUpDown, ArrowUp, ArrowDown, Sparkles, Edit, BarChart, Filter } from "lucide-react";
+import { Plus, List, Loader2, Trash2, Play, ArrowUpDown, ArrowUp, ArrowDown, Sparkles, Edit, BarChart, Filter, Crown, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { canCreateBuyBox, canAddZipsToBuyBox, getLimitMessage, getUpgradeMessage, type SubscriptionTier } from "@/lib/subscriptionLimits";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +50,7 @@ export default function Lists() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [deleteListId, setDeleteListId] = useState<string | null>(null);
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [editingList, setEditingList] = useState<any>(null);
@@ -93,7 +96,7 @@ export default function Lists() {
       if (!user?.id) return null;
       const { data, error } = await supabase
         .from("team_members")
-        .select("company_id, role")
+        .select("company_id, role, companies(subscription_tier, subscription_status)")
         .eq("user_id", user.id)
         .single();
       
@@ -256,12 +259,29 @@ export default function Lists() {
       if (!user?.id) throw new Error("User not authenticated");
       if (!userCompany?.company_id) throw new Error("No company found");
       
+      const subscriptionTier = (userCompany.companies?.subscription_tier || 'basic') as SubscriptionTier;
+      const zipCodes = data.zipCodes.split(",").map((z: string) => z.trim()).filter(Boolean);
+      
+      // Validate subscription limits for new buy boxes
+      if (!data.id) {
+        // Check buy box count limit
+        const currentBuyBoxCount = lists?.length || 0;
+        if (!canCreateBuyBox(currentBuyBoxCount, subscriptionTier)) {
+          throw new Error(`You've reached the limit of ${getLimitMessage('buyBoxes', subscriptionTier)}. ${getUpgradeMessage(subscriptionTier)}`);
+        }
+        
+        // Check zip codes limit
+        if (!canAddZipsToBuyBox(0, zipCodes.length, subscriptionTier)) {
+          throw new Error(`You can only add ${getLimitMessage('zips', subscriptionTier)}. ${getUpgradeMessage(subscriptionTier)}`);
+        }
+      }
+      
       const listData = {
         user_id: user.id,
         company_id: userCompany.company_id,
         name: data.name,
         description: data.description || null,
-        zip_codes: data.zipCodes.split(",").map((z: string) => z.trim()).filter(Boolean),
+        zip_codes: zipCodes,
         cities: data.cities ? data.cities.split(",").map((c: string) => c.trim()).filter(Boolean) : [],
         neighborhoods: data.neighborhoods ? data.neighborhoods.split(",").map((n: string) => n.trim()).filter(Boolean) : [],
         price_min: data.priceMin ? parseFloat(data.priceMin) : null,
@@ -393,10 +413,23 @@ export default function Lists() {
       }
     },
     onError: (error: any) => {
+      const isLimitError = error.message.includes('limit') || error.message.includes('Upgrade');
+      
       toast({
-        title: "Error",
-        description: `Failed to ${editingList ? 'update' : 'create'} buy box: ${error.message}`,
+        title: isLimitError ? "Subscription Limit Reached" : "Error",
+        description: error.message,
         variant: "destructive",
+        action: isLimitError ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/pricing')}
+            className="bg-white"
+          >
+            <Crown className="mr-2 h-4 w-4" />
+            Upgrade
+          </Button>
+        ) : undefined,
       });
     },
   });
@@ -587,6 +620,84 @@ export default function Lists() {
     setShowBulkUpdateDialog(true);
   };
 
+  const handleExport = () => {
+    if (!lists || lists.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no buy boxes to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create CSV content
+    const headers = [
+      "Buy Box Name",
+      "Properties Count",
+      "Zip Codes",
+      "Price Min",
+      "Price Max",
+      "Filter by Price/sqft",
+      "Days on Zillow",
+      "For Sale by Agent",
+      "For Sale by Owner",
+      "For Rent",
+      "Home Types",
+      "Cities",
+      "Neighborhoods",
+      "Created At",
+      "Last Scraped At"
+    ];
+
+    const rows = lists.map((list: any) => [
+      list.name || "",
+      list.properties?.[0]?.count || 0,
+      list.zip_codes ? list.zip_codes.join(", ") : "",
+      list.price_min || "",
+      list.price_max || "",
+      list.filter_by_ppsf ? "Yes" : "No",
+      list.days_on_zillow || "",
+      list.for_sale_by_agent ? "Yes" : "No",
+      list.for_sale_by_owner ? "Yes" : "No",
+      list.for_rent ? "Yes" : "No",
+      list.home_types ? list.home_types.join(", ") : "",
+      list.cities ? list.cities.join(", ") : "",
+      list.neighborhoods ? list.neighborhoods.join(", ") : "",
+      list.created_at ? new Date(list.created_at).toLocaleString() : "",
+      list.last_scraped_at ? new Date(list.last_scraped_at).toLocaleString() : "Never"
+    ]);
+
+    // Escape CSV values
+    const escapeCsvValue = (value: any) => {
+      const strValue = String(value);
+      if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+        return `"${strValue.replace(/"/g, '""')}"`;
+      }
+      return strValue;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsvValue).join(','),
+      ...rows.map(row => row.map(escapeCsvValue).join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `buy-boxes-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${lists.length} buy boxes to CSV`,
+    });
+  };
+
   const handleDelete = (listId: string) => {
     setDeleteListId(listId);
   };
@@ -621,12 +732,45 @@ export default function Lists() {
               Bulk Update ({selectedBuyBoxIds.length})
             </Button>
           )}
+          <Button onClick={handleExport} variant="outline" size={isMobile ? "default" : "lg"} className="w-full sm:w-auto">
+            <Download className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
+            Export
+          </Button>
           <Button onClick={() => setIsCreatingList(true)} size={isMobile ? "default" : "lg"} className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
             Create Buy Box
           </Button>
         </div>
       </div>
+
+      {/* Subscription Status Banner */}
+      {userCompany?.companies && (
+        <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-primary/10">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Crown className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-semibold text-sm">
+                    Current Plan: <span className="capitalize">{userCompany.companies.subscription_tier || 'basic'}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {lists?.length || 0} / {getLimitMessage('buyBoxes', userCompany.companies.subscription_tier as SubscriptionTier || 'basic')}
+                  </p>
+                </div>
+              </div>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => navigate('/pricing')}
+                className="bg-white hover:bg-primary hover:text-white transition-colors"
+              >
+                View Plans
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {sortedLists && sortedLists.length === 0 ? (
         <Card className="py-16">
@@ -699,6 +843,15 @@ export default function Lists() {
                         Created: {new Date(list.created_at).toLocaleDateString()}
                       </div>
                     )}
+                    <div className="text-xs text-muted-foreground">
+                      Last Updated: {list.last_scraped_at ? (
+                        <>
+                          {new Date(list.last_scraped_at).toLocaleDateString()} at {new Date(list.last_scraped_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </>
+                      ) : (
+                        <span>Never</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Actions */}
@@ -788,6 +941,12 @@ export default function Lists() {
                       {getSortIcon('created_at')}
                     </Button>
                   </TableHead>
+                  <TableHead>
+                    <Button variant="ghost" onClick={() => handleSort('last_scraped_at')} className="font-semibold p-0 h-auto hover:bg-transparent">
+                      Last Updated
+                      {getSortIcon('last_scraped_at')}
+                    </Button>
+                  </TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -840,6 +999,18 @@ export default function Lists() {
                     </TableCell>
                     <TableCell>
                       {list.created_at ? new Date(list.created_at).toLocaleDateString() : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {list.last_scraped_at ? (
+                        <div className="text-sm">
+                          <div>{new Date(list.last_scraped_at).toLocaleDateString()}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(list.last_scraped_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Never</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">

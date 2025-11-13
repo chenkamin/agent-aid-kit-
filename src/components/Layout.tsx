@@ -357,9 +357,9 @@ export default function Layout({ children }: LayoutProps) {
                             markAsReadMutation.mutate(notification.id);
                           }
                           if (notification.property_id) {
-                            navigate(`/properties`);
+                            navigate(`/properties?propertyId=${notification.property_id}`);
                           } else if (notification.activity_id) {
-                            navigate(`/activities`);
+                            navigate(`/activities?activityId=${notification.activity_id}`);
                           }
                         }}
                       >

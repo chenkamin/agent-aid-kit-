@@ -189,7 +189,12 @@ Deno.serve(async (req) => {
     // Authenticate user
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) throw new Error('Unauthorized');
+    if (userError || !user) {
+      console.error('❌ Authentication failed:', userError?.message || 'User not found');
+      console.error('   Token present:', !!token);
+      console.error('   Token length:', token?.length || 0);
+      throw new Error('Unauthorized: Please refresh the page and try again. Your session may have expired.');
+    }
 
     // Get user's company
     const { data: userCompany, error: companyError } = await supabase

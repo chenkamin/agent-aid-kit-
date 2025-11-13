@@ -155,12 +155,6 @@ export default function Properties() {
   const [contactSelectorOpen, setContactSelectorOpen] = useState(false);
   const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
   const [isSendingBulkEmailInProgress, setIsSendingBulkEmailInProgress] = useState(false);
-  const [documentationForm, setDocumentationForm] = useState({
-    id: "",
-    content: "",
-    documentation_date: "",
-  });
-  const [isEditingDocumentation, setIsEditingDocumentation] = useState(false);
   const [bulkEmailForm, setBulkEmailForm] = useState({
     templateId: "",
     offerPrice: "",
@@ -207,18 +201,25 @@ export default function Properties() {
   }, [searchParams, setSearchParams]);
 
   // Get property ID from URL
-  const propertyIdFromUrl = searchParams.get('property');
+  const propertyIdFromUrl = searchParams.get('propertyId');
   
   // Fetch specific property from URL parameter
-  const { data: urlProperty } = useQuery({
+  const { data: urlProperty, isLoading: urlPropertyLoading } = useQuery({
     queryKey: ["property-from-url", propertyIdFromUrl],
     queryFn: async () => {
       if (!propertyIdFromUrl) return null;
-      const { data } = await supabase
+      console.log('🔍 Fetching property from URL:', propertyIdFromUrl);
+      const { data, error } = await supabase
         .from("properties")
         .select("*")
         .eq("id", propertyIdFromUrl)
         .single();
+      
+      if (error) {
+        console.error('❌ Error fetching property from URL:', error);
+        return null;
+      }
+      console.log('✅ Property fetched from URL:', data);
       return data;
     },
     enabled: !!propertyIdFromUrl,
@@ -328,27 +329,6 @@ export default function Properties() {
     enabled: !!userCompany?.company_id,
   });
 
-  // Fetch documentation for selected property
-  const { data: propertyDocumentation = [] } = useQuery({
-    queryKey: ["property-documentation", selectedProperty?.id],
-    queryFn: async () => {
-      if (!selectedProperty?.id) return [];
-      
-      const { data, error } = await supabase
-        .from("property_documentation")
-        .select("*")
-        .eq("property_id", selectedProperty.id)
-        .order("documentation_date", { ascending: false });
-      
-      if (error) {
-        console.error("Error fetching property documentation:", error);
-        return [];
-      }
-      
-      return data || [];
-    },
-    enabled: !!selectedProperty?.id,
-  });
 
   // Helper function to apply all filters to a query
   const applyFiltersToQuery = (query: any) => {
@@ -497,25 +477,29 @@ export default function Properties() {
 
   // Open property modal from URL parameter
   useEffect(() => {
-    if (urlProperty && propertyIdFromUrl) {
+    console.log('🔄 URL Effect triggered:', { propertyIdFromUrl, urlProperty: !!urlProperty, urlPropertyLoading, selectedProperty: !!selectedProperty });
+    
+    if (propertyIdFromUrl && urlProperty && !urlPropertyLoading) {
+      console.log('📖 Opening modal for property:', urlProperty.address);
       // Only update if it's a different property or no property is selected
       if (!selectedProperty || selectedProperty.id !== propertyIdFromUrl) {
         setSelectedProperty(urlProperty);
         setEditedProperty({ ...urlProperty });
       }
     } else if (!propertyIdFromUrl && selectedProperty) {
+      console.log('❌ Closing modal - no URL parameter');
       // Close modal if URL parameter is removed
       setSelectedProperty(null);
       setEditedProperty(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyIdFromUrl, urlProperty]);
+  }, [propertyIdFromUrl, urlProperty, urlPropertyLoading]);
 
   // Helper functions to manage property modal with URL
   const openPropertyModal = (property: any) => {
     setSelectedProperty(property);
     setEditedProperty({ ...property });
-    setSearchParams({ property: property.id });
+    setSearchParams({ propertyId: property.id });
   };
 
   const closePropertyModal = () => {
@@ -2029,83 +2013,6 @@ export default function Properties() {
     bulkUpdateWorkflowMutation.mutate({ propertyIds: selectedPropertyIds, workflowState });
   };
 
-  // Save documentation mutation (create/update)
-  const saveDocumentationMutation = useMutation({
-    mutationFn: async (data: { id?: string; content: string; documentation_date: string }) => {
-      if (!user?.id || !userCompany?.company_id || !selectedProperty?.id) {
-        throw new Error("Missing required data");
-      }
-
-      if (data.id) {
-        // Update existing
-        const { error } = await supabase
-          .from("property_documentation")
-          .update({
-            content: data.content,
-            documentation_date: data.documentation_date,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", data.id);
-        
-        if (error) throw error;
-      } else {
-        // Create new
-        const { error } = await supabase
-          .from("property_documentation")
-          .insert([{
-            property_id: selectedProperty.id,
-            company_id: userCompany.company_id,
-            user_id: user.id,
-            content: data.content,
-            documentation_date: data.documentation_date,
-          }]);
-        
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["property-documentation", selectedProperty?.id] });
-      setDocumentationForm({ id: "", content: "", documentation_date: "" });
-      setIsEditingDocumentation(false);
-      toast({
-        title: "Success",
-        description: "Documentation saved successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: `Failed to save documentation: ${error.message}`,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Delete documentation mutation
-  const deleteDocumentationMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("property_documentation")
-        .delete()
-        .eq("id", id);
-      
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["property-documentation", selectedProperty?.id] });
-      toast({
-        title: "Success",
-        description: "Documentation deleted successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: `Failed to delete documentation: ${error.message}`,
-        variant: "destructive",
-      });
-    },
-  });
 
   // Send SMS mutation
   const sendSMSMutation = useMutation({
@@ -4695,7 +4602,7 @@ export default function Properties() {
 
             <Tabs defaultValue="general" className="mt-4">
               <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="general" className="text-sm md:text-base">
                     <Home className="h-4 w-4 md:h-5 md:w-5 mr-2" />
                     General
@@ -4703,10 +4610,6 @@ export default function Properties() {
                   <TabsTrigger value="comps" className="text-sm md:text-base">
                     <Ruler className="h-4 w-4 md:h-5 md:w-5 mr-2" />
                     Comps
-                  </TabsTrigger>
-                  <TabsTrigger value="documentation" className="text-sm md:text-base">
-                    <FileText className="h-4 w-4 md:h-5 md:w-5 mr-2" />
-                    Documentation
                   </TabsTrigger>
                   <TabsTrigger value="communication" className="text-sm md:text-base">
                     <MessageSquare className="h-4 w-4 md:h-5 md:w-5 mr-2" />
@@ -5061,6 +4964,22 @@ export default function Properties() {
                             placeholder="Enter listing URL"
                           />
                         </div>
+
+                        {/* Zillow Link */}
+                        {editedProperty?.listing_url && (
+                          <div className="space-y-2">
+                            <Label>Zillow</Label>
+                            <a
+                              href={editedProperty.listing_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline text-sm"
+                            >
+                              View on Zillow
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </div>
+                        )}
 
                         <div className="space-y-2">
                           <Label htmlFor="edit-days-market">Days on Market</Label>
@@ -5909,166 +5828,6 @@ export default function Properties() {
                 </div>
               </TabsContent>
 
-              {/* Documentation Tab */}
-              <TabsContent value="documentation" className="space-y-4 mt-4">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-blue-600" />
-                      <h3 className="font-semibold text-lg">Property Documentation</h3>
-                    </div>
-                    <Button
-                      onClick={() => {
-                        setDocumentationForm({ id: "", content: "", documentation_date: format(new Date(), "yyyy-MM-dd") });
-                        setIsEditingDocumentation(true);
-                      }}
-                      size="sm"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Documentation
-                    </Button>
-                  </div>
-
-                  {/* Documentation Form (Create/Edit) */}
-                  {isEditingDocumentation && (
-                    <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
-                      <CardContent className="pt-4 space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="documentation-date">Date</Label>
-                          <Input
-                            id="documentation-date"
-                            type="date"
-                            value={documentationForm.documentation_date}
-                            onChange={(e) => setDocumentationForm(prev => ({ ...prev, documentation_date: e.target.value }))}
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="documentation-content">Documentation</Label>
-                          <Textarea
-                            id="documentation-content"
-                            value={documentationForm.content}
-                            onChange={(e) => setDocumentationForm(prev => ({ ...prev, content: e.target.value }))}
-                            placeholder="Enter documentation notes, observations, or important information about this property..."
-                            rows={6}
-                          />
-                        </div>
-
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={() => {
-                              if (!documentationForm.content || !documentationForm.documentation_date) {
-                                toast({
-                                  title: "Error",
-                                  description: "Please fill in all fields",
-                                  variant: "destructive",
-                                });
-                                return;
-                              }
-                              saveDocumentationMutation.mutate({
-                                id: documentationForm.id || undefined,
-                                content: documentationForm.content,
-                                documentation_date: documentationForm.documentation_date,
-                              });
-                            }}
-                            disabled={saveDocumentationMutation.isPending}
-                          >
-                            {saveDocumentationMutation.isPending ? "Saving..." : "Save"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setDocumentationForm({ id: "", content: "", documentation_date: "" });
-                              setIsEditingDocumentation(false);
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Documentation List */}
-                  {propertyDocumentation && propertyDocumentation.length > 0 ? (
-                    <div className="space-y-3">
-                      {propertyDocumentation.map((doc: any, index: number) => (
-                        <Card key={doc.id} className="hover:shadow-md transition-shadow">
-                          <CardContent className="pt-4">
-                            <div className="flex gap-4">
-                              {/* Timeline connector */}
-                              <div className="relative flex flex-col items-center">
-                                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
-                                  <FileText className="h-4 w-4 text-blue-600" />
-                                </div>
-                                {index < propertyDocumentation.length - 1 && (
-                                  <div className="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700 mt-2 min-h-[20px]" />
-                                )}
-                              </div>
-
-                              {/* Content */}
-                              <div className="flex-1 space-y-2">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="outline" className="text-xs">
-                                        {format(new Date(doc.documentation_date), "MMM d, yyyy")}
-                                      </Badge>
-                                      <span className="text-xs text-muted-foreground">
-                                        Added {format(new Date(doc.created_at), "MMM d, yyyy 'at' h:mm a")}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex gap-1 flex-shrink-0">
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        setDocumentationForm({
-                                          id: doc.id,
-                                          content: doc.content,
-                                          documentation_date: doc.documentation_date,
-                                        });
-                                        setIsEditingDocumentation(true);
-                                      }}
-                                    >
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        if (confirm("Are you sure you want to delete this documentation entry?")) {
-                                          deleteDocumentationMutation.mutate(doc.id);
-                                        }
-                                      }}
-                                    >
-                                      <Trash2 className="h-4 w-4 text-red-600" />
-                                    </Button>
-                                  </div>
-                                </div>
-
-                                <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                                  {doc.content}
-                                </p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                      <p className="text-muted-foreground">No documentation entries yet</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Add your first documentation entry to track important information
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
             </Tabs>
             </>
           )}

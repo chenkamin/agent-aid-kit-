@@ -2,6 +2,7 @@ import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { 
   Building2, 
   Users, 
@@ -16,7 +17,9 @@ import {
   Shield,
   Zap,
   Globe,
-  Loader2
+  Loader2,
+  Crown,
+  Check
 } from "lucide-react";
 import {
   Accordion,
@@ -78,7 +81,7 @@ export default function Landing() {
           </div>
           
           <p className="text-sm text-muted-foreground mt-4">
-            No credit card required • Free forever plan available
+            14-day free trial • No credit card required
           </p>
         </div>
 
@@ -261,6 +264,175 @@ export default function Landing() {
           </div>
         </div>
 
+        {/* Pricing Section */}
+        <div id="pricing" className="mb-16 scroll-mt-16">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              Simple, Transparent Pricing
+            </h2>
+            <p className="text-xl text-muted-foreground">
+              Choose the plan that fits your business needs
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+            {/* Basic Plan */}
+            <Card className="border-2 hover:border-blue-500 transition-all hover:shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <CardTitle className="text-2xl">Basic</CardTitle>
+                  <Zap className="h-6 w-6 text-blue-600" />
+                </div>
+                <div className="mb-4">
+                  <span className="text-4xl font-bold">$49</span>
+                  <span className="text-muted-foreground">/month</span>
+                </div>
+                <CardDescription>Perfect for getting started</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3 mb-6">
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>5 Buy Boxes</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>5 Zip Codes</strong> per buy box</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>1 Team Member</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Property tracking</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Email templates</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Activity management</span>
+                  </li>
+                </ul>
+                <Link to="/signup">
+                  <Button className="w-full" size="lg">
+                    Get Started
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            {/* Pro Plan - Featured */}
+            <Card className="border-2 border-purple-500 shadow-xl relative">
+              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                <Badge className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-1">
+                  Most Popular
+                </Badge>
+              </div>
+              <CardHeader className="pt-8">
+                <div className="flex items-center justify-between mb-2">
+                  <CardTitle className="text-2xl">Pro</CardTitle>
+                  <Building2 className="h-6 w-6 text-purple-600" />
+                </div>
+                <div className="mb-4">
+                  <span className="text-4xl font-bold">$149</span>
+                  <span className="text-muted-foreground">/month</span>
+                </div>
+                <CardDescription>For growing teams</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3 mb-6">
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>20 Buy Boxes</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>Unlimited Zip Codes</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>Unlimited Team Members</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Everything in Basic</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Priority support</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Advanced analytics</span>
+                  </li>
+                </ul>
+                <Link to="/signup">
+                  <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700" size="lg">
+                    Get Started
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            {/* Xtream Plan */}
+            <Card className="border-2 hover:border-orange-500 transition-all hover:shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between mb-2">
+                  <CardTitle className="text-2xl">Xtream</CardTitle>
+                  <Crown className="h-6 w-6 text-orange-600" />
+                </div>
+                <div className="mb-4">
+                  <span className="text-4xl font-bold">$299</span>
+                  <span className="text-muted-foreground">/month</span>
+                </div>
+                <CardDescription>For power users</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3 mb-6">
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>Unlimited Buy Boxes</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>Unlimited Zip Codes</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span><strong>Unlimited Team Members</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Everything in Pro</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Dedicated support</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Check className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>Custom integrations</span>
+                  </li>
+                </ul>
+                <Link to="/signup">
+                  <Button className="w-full" size="lg" variant="outline">
+                    Get Started
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="text-center mt-8">
+            <p className="text-muted-foreground">
+              All plans include a 14-day free trial. No credit card required.
+            </p>
+          </div>
+        </div>
+
         {/* FAQ Section */}
         <div className="max-w-3xl mx-auto mb-16">
           <h2 className="text-3xl md:text-4xl font-bold mb-12 text-center">
@@ -269,12 +441,12 @@ export default function Landing() {
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="item-1">
               <AccordionTrigger className="text-left">
-                How does the free plan work?
+                Is there a free trial?
               </AccordionTrigger>
               <AccordionContent className="text-muted-foreground">
-                Our free plan gives you full access to all core features including property tracking, 
-                team collaboration, email templates, and activity management. You can manage up to 50 
-                properties and invite up to 3 team members. Perfect for getting started!
+                Yes! All plans come with a 14-day free trial. No credit card required to start. 
+                You get full access to all features during the trial period, and you can cancel 
+                anytime if it's not the right fit.
               </AccordionContent>
             </AccordionItem>
 
@@ -387,6 +559,9 @@ export default function Landing() {
             <Link to="/signup" className="hover:text-foreground transition-colors">
               Sign Up
             </Link>
+            <a href="#pricing" className="hover:text-foreground transition-colors">
+              Pricing
+            </a>
             <a href="mailto:support@agentaidkit.com" className="hover:text-foreground transition-colors">
               Contact
             </a>

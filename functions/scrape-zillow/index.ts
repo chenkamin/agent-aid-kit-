@@ -135,6 +135,11 @@ function normalizeHomeType(homeType: string): string {
   if (type.includes('apartment')) {
     return 'Apartment';
   }
+  // Handle generic "house" or "house for sale" as Single Family
+  if (type.includes('house')) {
+    console.log(`📍 Treating "${homeType}" as "Single Family"`);
+    return 'Single Family';
+  }
 
   // Only log when we can't normalize a non-empty type
   console.log(`⚠️ Unknown home type: "${homeType}" - defaulting to "Other"`);
@@ -434,6 +439,7 @@ Deno.serve(async (req) => {
       
       const originalCount = properties.length;
       let missingDataCount = 0;
+      let filteredOutCount = 0;
       
       properties = properties.filter((prop: any) => {
         const price = parseNumber(prop.price || prop.unformattedPrice || prop.hdpData?.homeInfo?.price);
@@ -441,6 +447,8 @@ Deno.serve(async (req) => {
         
         // If we don't have both price and sqft, skip this property
         if (!price || !sqft || sqft === 0) {
+          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
+          console.log(`   ⚠️ SKIPPED (missing data): ${addressData.address}, ${addressData.city} - Price: ${price}, SqFt: ${sqft}`);
           missingDataCount++;
           return false;
         }
@@ -448,11 +456,20 @@ Deno.serve(async (req) => {
         const ppsf = price / sqft;
         const passes = ppsf >= minPpsf && ppsf <= maxPpsf;
         
+        if (!passes) {
+          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
+          console.log(`   ❌ FILTERED OUT by price/sqft: ${addressData.address}, ${addressData.city} - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft (range: $${minPpsf}-$${maxPpsf === Infinity ? '∞' : maxPpsf}/sqft)`);
+          filteredOutCount++;
+        }
+        
         return passes;
       });
       
       if (missingDataCount > 0) {
         console.log(`⚠️ Skipped ${missingDataCount} properties with missing price/sqft data`);
+      }
+      if (filteredOutCount > 0) {
+        console.log(`📊 Filtered out ${filteredOutCount} properties outside price/sqft range`);
       }
       console.log(`📊 After price per sqft filtering: ${properties.length} of ${originalCount} properties passed`);
     }
@@ -468,6 +485,7 @@ Deno.serve(async (req) => {
       
       // Track types for summary
       const typeCounts: Record<string, number> = {};
+      let filteredOutCount = 0;
       
       properties = properties.filter(prop => {
         // Try multiple possible locations for home type
@@ -482,10 +500,19 @@ Deno.serve(async (req) => {
         typeCounts[homeType] = (typeCounts[homeType] || 0) + 1;
         
         const matches = normalizedFilterTypes.includes(homeType);
+        
+        // Log when filtering out
+        if (!matches) {
+          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
+          console.log(`   ❌ FILTERED OUT by home type: ${addressData.address}, ${addressData.city} - Type: "${homeTypeValue}" → "${homeType}" (looking for: ${normalizedFilterTypes.join(', ')})`);
+          filteredOutCount++;
+        }
+        
         return matches;
       });
       
       console.log(`📊 Property types found:`, typeCounts);
+      console.log(`📊 Filtered out ${filteredOutCount} properties due to home type mismatch`);
       console.log(`📊 After home type filtering: ${properties.length} of ${beforeTypeFilter} properties passed`);
     }
 
@@ -500,6 +527,7 @@ Deno.serve(async (req) => {
       const allowedCities = buyBox.cities.map(c => c.toLowerCase().trim());
       
       const cityCounts: Record<string, number> = {};
+      let filteredOutCount = 0;
       
       properties = properties.filter(prop => {
         const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
@@ -513,10 +541,17 @@ Deno.serve(async (req) => {
         // Check if city matches
         const cityMatches = allowedCities.includes(propCity);
         
+        // Log when filtering out
+        if (!cityMatches) {
+          console.log(`   ❌ FILTERED OUT by city: ${addressData.address}, ${addressData.city} - City: "${propCity}" not in [${allowedCities.join(', ')}]`);
+          filteredOutCount++;
+        }
+        
         return cityMatches;
       });
       
       console.log(`📊 Cities found:`, cityCounts);
+      console.log(`📊 Filtered out ${filteredOutCount} properties due to city mismatch`);
       console.log(`📊 After city filtering: ${properties.length} of ${beforeCityFilter} properties passed`);
     }
 
@@ -791,6 +826,10 @@ Deno.serve(async (req) => {
     let agentInfoFoundCount = 0;
     let agentInfoMissingCount = 0;
 
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`🏘️  PROCESSING ${properties.length} PROPERTIES AFTER ALL FILTERS`);
+    console.log(`${'='.repeat(80)}\n`);
+
     for (const prop of properties) {
       const listingUrl = prop.detailUrl || prop.url || '';
       const addressData = extractAddressFromUrl(listingUrl);
@@ -799,8 +838,12 @@ Deno.serve(async (req) => {
 
       // Log property data from Apify
       console.log(`\n📋 Processing property:`, {
+        url: listingUrl,
         address: addressData.address,
         city: addressData.city,
+        state: addressData.state,
+        zip: addressData.zip,
+        price: scrapedPrice,
         homeType: prop.homeType,
         propertyType: prop.propertyType,
         homeStatus: prop.homeStatus,
@@ -822,6 +865,11 @@ Deno.serve(async (req) => {
           skippedCount++;
           continue;
         }
+        
+        console.log(`✅ NEW PROPERTY - Will be added to database`);
+        console.log(`   Address: ${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`);
+        console.log(`   Price: $${scrapedPrice?.toLocaleString() || 'N/A'}`);
+        console.log(`   Buy Box ID: ${buyBoxId}`);
 
         // Look up detailed property data for agent information
         const fullAddress = `${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`;
@@ -1086,10 +1134,15 @@ Deno.serve(async (req) => {
     }
 
     // Log agent info extraction summary
-    console.log(`\n📊 AGENT INFO EXTRACTION SUMMARY:`);
-    console.log(`   ✅ Properties with agent info: ${agentInfoFoundCount}`);
-    console.log(`   ❌ Properties without agent info: ${agentInfoMissingCount}`);
-    console.log(`   📈 Success rate: ${agentInfoFoundCount > 0 ? Math.round((agentInfoFoundCount / (agentInfoFoundCount + agentInfoMissingCount)) * 100) : 0}%`);
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`📊 FINAL SUMMARY FOR BUY BOX: ${buyBox.name}`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`   Total properties after all filters: ${properties.length}`);
+    console.log(`   New properties to insert: ${newListings.length}`);
+    console.log(`   Properties with agent info: ${agentInfoFoundCount}`);
+    console.log(`   Properties without agent info: ${agentInfoMissingCount}`);
+    console.log(`   Agent info success rate: ${agentInfoFoundCount > 0 ? Math.round((agentInfoFoundCount / (agentInfoFoundCount + agentInfoMissingCount)) * 100) : 0}%`);
+    console.log(`${'='.repeat(80)}\n`);
     
     // Trigger ARV estimation for NEW properties only
     if (newPropertyIds.length > 0) {
