@@ -200,9 +200,9 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 pb-8">
       {/* Header with ROI Highlight */}
-      <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white shadow-xl">
+      <div className="relative overflow-hidden rounded-lg bg-blue-600 p-6 text-white shadow-lg">
         <div className="relative z-10">
-          <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-2">
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">
             💰 Your Deal-Making Command Center
           </h1>
           <p className="text-lg text-blue-50 mb-4">

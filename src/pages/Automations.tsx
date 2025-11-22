@@ -19,17 +19,19 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Pause, Plus, Save, Trash2, Copy, Sparkles, BarChart3, Lightbulb } from 'lucide-react';
+import { Play, Pause, Plus, Save, Trash2, Copy, Sparkles, BarChart3, Lightbulb, Menu } from 'lucide-react';
 import TriggerNode from '@/components/automation/TriggerNode';
 import ConditionNode from '@/components/automation/ConditionNode';
 import ActionNode from '@/components/automation/ActionNode';
 import NodeConfigDialog from '@/components/automation/NodeConfigDialog';
 import AutomationTemplates from '@/components/automation/AutomationTemplates';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const nodeTypes = {
   trigger: TriggerNode,
@@ -53,6 +55,7 @@ export default function Automations() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -294,167 +297,308 @@ export default function Automations() {
   return (
     <div className="h-screen flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b bg-background flex items-center justify-between">
+      <div className="p-3 md:p-4 border-b bg-background flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-blue-600" />
+          <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+            <Sparkles className="h-5 w-5 md:h-6 md:w-6 text-blue-600" />
             Automations
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs md:text-sm text-muted-foreground">
             Build visual workflows to automate your deal flow
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <Button 
             variant="outline"
             onClick={() => setTemplatesDialogOpen(true)}
+            size="sm"
+            className="flex-1 sm:flex-none"
           >
-            <Lightbulb className="h-4 w-4 mr-2" />
-            Templates
+            <Lightbulb className="h-4 w-4 mr-1 md:mr-2" />
+            <span className="text-xs md:text-sm">Templates</span>
           </Button>
-          <Button onClick={createNew}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Automation
+          <Button 
+            onClick={createNew}
+            size="sm"
+            className="flex-1 sm:flex-none"
+          >
+            <Plus className="h-4 w-4 mr-1 md:mr-2" />
+            <span className="text-xs md:text-sm">New</span>
           </Button>
           <Button 
             variant="outline" 
             onClick={() => saveAutomationMutation.mutate()}
             disabled={nodes.length === 0}
+            size="sm"
+            className="flex-1 sm:flex-none"
           >
-            <Save className="h-4 w-4 mr-2" />
-            Save
+            <Save className="h-4 w-4 mr-1 md:mr-2" />
+            <span className="text-xs md:text-sm">Save</span>
           </Button>
           {selectedAutomation && (
             <Button 
               variant="destructive" 
               onClick={() => deleteAutomationMutation.mutate(selectedAutomation.id)}
+              size="sm"
+              className="flex-1 sm:flex-none"
             >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
+              <Trash2 className="h-4 w-4 mr-1 md:mr-2" />
+              <span className="text-xs md:text-sm">Delete</span>
             </Button>
           )}
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar - Node Palette */}
-        <Card className="w-64 m-4 p-4 overflow-y-auto">
-          <div className="mb-6">
-            <Label htmlFor="automation-name">Automation Name</Label>
-            <Input
-              id="automation-name"
-              value={automationName}
-              onChange={(e) => setAutomationName(e.target.value)}
-              placeholder="My Automation"
-              className="mt-1"
-            />
-          </div>
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile: Sheet for Node Palette */}
+        {isMobile ? (
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button 
+                className="absolute top-4 left-4 z-20" 
+                size="sm"
+                variant="secondary"
+              >
+                <Menu className="h-4 w-4 mr-2" />
+                Add Nodes
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[280px] sm:w-[350px] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Automation Builder</SheetTitle>
+                <SheetDescription>
+                  Drag and drop nodes to create your workflow
+                </SheetDescription>
+              </SheetHeader>
+              <div className="mt-6">
+                <div className="mb-6">
+                  <Label htmlFor="automation-name-mobile">Automation Name</Label>
+                  <Input
+                    id="automation-name-mobile"
+                    value={automationName}
+                    onChange={(e) => setAutomationName(e.target.value)}
+                    placeholder="My Automation"
+                    className="mt-1"
+                  />
+                </div>
 
-          <div className="mb-6">
-            <Label htmlFor="automation-desc">Description</Label>
-            <Input
-              id="automation-desc"
-              value={automationDescription}
-              onChange={(e) => setAutomationDescription(e.target.value)}
-              placeholder="Optional"
-              className="mt-1"
-            />
-          </div>
+                <div className="mb-6">
+                  <Label htmlFor="automation-desc-mobile">Description</Label>
+                  <Input
+                    id="automation-desc-mobile"
+                    value={automationDescription}
+                    onChange={(e) => setAutomationDescription(e.target.value)}
+                    placeholder="Optional"
+                    className="mt-1"
+                  />
+                </div>
 
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <span>📍</span> Triggers
-          </h3>
-          <div className="space-y-2 mb-6">
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('trigger', 'sms_sent')}
-            >
-              📤 SMS Sent
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('trigger', 'sms_received')}
-            >
-              📥 SMS Received
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('trigger', 'workflow_changed')}
-            >
-              🔄 Workflow Changed
-            </Button>
-          </div>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <span>📍</span> Triggers
+                </h3>
+                <div className="space-y-2 mb-6">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('trigger', 'sms_sent')}
+                  >
+                    📤 SMS Sent
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('trigger', 'sms_received')}
+                  >
+                    📥 SMS Received
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('trigger', 'workflow_changed')}
+                  >
+                    🔄 Workflow Changed
+                  </Button>
+                </div>
 
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <span>❓</span> Conditions
-          </h3>
-          <div className="space-y-2 mb-6">
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('condition', 'ai_score')}
-            >
-              🤖 AI Score
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('condition', 'workflow_state')}
-            >
-              🎯 Workflow State
-            </Button>
-          </div>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <span>❓</span> Conditions
+                </h3>
+                <div className="space-y-2 mb-6">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('condition', 'ai_score')}
+                  >
+                    🤖 AI Score
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('condition', 'workflow_state')}
+                  >
+                    🎯 Workflow State
+                  </Button>
+                </div>
 
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <span>⚡</span> Actions
-          </h3>
-          <div className="space-y-2">
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('action', 'update_workflow')}
-            >
-              🔄 Update Workflow
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('action', 'create_notification')}
-            >
-              🔔 Create Notification
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => addNode('action', 'create_activity')}
-            >
-              📅 Create Activity
-            </Button>
-          </div>
-        </Card>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <span>⚡</span> Actions
+                </h3>
+                <div className="space-y-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('action', 'update_workflow')}
+                  >
+                    🔄 Update Workflow
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('action', 'create_notification')}
+                  >
+                    🔔 Create Notification
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('action', 'create_activity')}
+                  >
+                    📅 Create Activity
+                  </Button>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+        ) : (
+          /* Desktop: Sidebar - Node Palette */
+          <Card className="w-64 m-4 p-4 overflow-y-auto">
+            <div className="mb-6">
+              <Label htmlFor="automation-name">Automation Name</Label>
+              <Input
+                id="automation-name"
+                value={automationName}
+                onChange={(e) => setAutomationName(e.target.value)}
+                placeholder="My Automation"
+                className="mt-1"
+              />
+            </div>
+
+            <div className="mb-6">
+              <Label htmlFor="automation-desc">Description</Label>
+              <Input
+                id="automation-desc"
+                value={automationDescription}
+                onChange={(e) => setAutomationDescription(e.target.value)}
+                placeholder="Optional"
+                className="mt-1"
+              />
+            </div>
+
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <span>📍</span> Triggers
+            </h3>
+            <div className="space-y-2 mb-6">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('trigger', 'sms_sent')}
+              >
+                📤 SMS Sent
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('trigger', 'sms_received')}
+              >
+                📥 SMS Received
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('trigger', 'workflow_changed')}
+              >
+                🔄 Workflow Changed
+              </Button>
+            </div>
+
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <span>❓</span> Conditions
+            </h3>
+            <div className="space-y-2 mb-6">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('condition', 'ai_score')}
+              >
+                🤖 AI Score
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('condition', 'workflow_state')}
+              >
+                🎯 Workflow State
+              </Button>
+            </div>
+
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <span>⚡</span> Actions
+            </h3>
+            <div className="space-y-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('action', 'update_workflow')}
+              >
+                🔄 Update Workflow
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('action', 'create_notification')}
+              >
+                🔔 Create Notification
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('action', 'create_activity')}
+              >
+                📅 Create Activity
+              </Button>
+            </div>
+          </Card>
+        )}
 
         {/* Canvas */}
-        <div className="flex-1 bg-slate-50 dark:bg-slate-900">
+        <div className="flex-1 bg-slate-50 dark:bg-slate-900 relative">
           {nodes.length === 0 ? (
-            <div className="h-full flex items-center justify-center">
+            <div className="h-full flex items-center justify-center p-4">
               <div className="text-center">
-                <Sparkles className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Start Building Your Automation</h3>
-                <p className="text-muted-foreground mb-4">
-                  Add trigger nodes from the left sidebar to get started
+                <Sparkles className="h-12 w-12 md:h-16 md:w-16 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-base md:text-lg font-semibold mb-2">Start Building Your Automation</h3>
+                <p className="text-sm md:text-base text-muted-foreground mb-4">
+                  {isMobile ? "Tap 'Add Nodes' to get started" : "Add trigger nodes from the left sidebar to get started"}
                 </p>
-                <Badge variant="outline">Drag nodes to connect them</Badge>
+                <Badge variant="outline" className="text-xs md:text-sm">
+                  {isMobile ? "Tap nodes to configure them" : "Drag nodes to connect them"}
+                </Badge>
               </div>
             </div>
           ) : (
@@ -470,7 +614,14 @@ export default function Automations() {
               defaultEdgeOptions={defaultEdgeOptions}
               deleteKeyCode={null}
               fitView
-              className="bg-slate-50 dark:bg-slate-900"
+              minZoom={0.1}
+              maxZoom={2}
+              panOnScroll={!isMobile}
+              panOnDrag={true}
+              zoomOnScroll={!isMobile}
+              zoomOnPinch={isMobile}
+              zoomOnDoubleClick={false}
+              className="bg-slate-50 dark:bg-slate-900 touch-none"
             >
               <Background 
                 variant={BackgroundVariant.Dots} 
@@ -482,7 +633,7 @@ export default function Automations() {
               
               {/* Delete Node Button - Shows when a node is selected */}
               {selectedNode && (
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+                <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-10 flex flex-col sm:flex-row gap-2 w-auto">
                   <Button
                     variant="destructive"
                     size="sm"
@@ -494,7 +645,7 @@ export default function Automations() {
                       setSelectedNode(null);
                       setConfigDialogOpen(false);
                     }}
-                    className="shadow-lg"
+                    className="shadow-lg whitespace-nowrap"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete Node
@@ -515,61 +666,133 @@ export default function Automations() {
           )}
         </div>
 
-        {/* Saved Automations List */}
-        <Card className="w-80 m-4 p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Saved Automations
-            </h3>
-            <Badge variant="secondary">{automations?.length || 0}</Badge>
-          </div>
-          
-          {automations && automations.length > 0 ? (
-            <div className="space-y-2">
-              {automations.map((auto: any) => (
-                <div 
-                  key={auto.id}
-                  className={`p-3 border rounded cursor-pointer transition-colors ${
-                    selectedAutomation?.id === auto.id 
-                      ? 'bg-blue-50 border-blue-500 dark:bg-blue-950/20' 
-                      : 'hover:bg-accent'
-                  }`}
-                  onClick={() => loadAutomation(auto)}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-sm truncate flex-1">{auto.name}</span>
-                    <Switch 
-                      checked={auto.is_active}
-                      onClick={(e) => e.stopPropagation()}
-                      onCheckedChange={(checked) => 
-                        toggleActiveMutation.mutate({ id: auto.id, isActive: checked })
-                      }
-                    />
-                  </div>
-                  {auto.description && (
-                    <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                      {auto.description}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <Play className="h-3 w-3" />
-                      {auto.trigger_count || 0}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      ✓ {auto.success_count || 0}
-                    </div>
-                  </div>
-                </div>
-              ))}
+        {/* Saved Automations List - Desktop only */}
+        {!isMobile && (
+          <Card className="w-80 m-4 p-4 overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Saved Automations
+              </h3>
+              <Badge variant="secondary">{automations?.length || 0}</Badge>
             </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              No automations yet. Create your first one!
-            </div>
-          )}
-        </Card>
+            
+            {automations && automations.length > 0 ? (
+              <div className="space-y-2">
+                {automations.map((auto: any) => (
+                  <div 
+                    key={auto.id}
+                    className={`p-3 border rounded cursor-pointer transition-colors ${
+                      selectedAutomation?.id === auto.id 
+                        ? 'bg-blue-50 border-blue-500 dark:bg-blue-950/20' 
+                        : 'hover:bg-accent'
+                    }`}
+                    onClick={() => loadAutomation(auto)}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-sm truncate flex-1">{auto.name}</span>
+                      <Switch 
+                        checked={auto.is_active}
+                        onClick={(e) => e.stopPropagation()}
+                        onCheckedChange={(checked) => 
+                          toggleActiveMutation.mutate({ id: auto.id, isActive: checked })
+                        }
+                      />
+                    </div>
+                    {auto.description && (
+                      <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                        {auto.description}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Play className="h-3 w-3" />
+                        {auto.trigger_count || 0}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        ✓ {auto.success_count || 0}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No automations yet. Create your first one!
+              </div>
+            )}
+          </Card>
+        )}
+        
+        {/* Saved Automations List - Mobile Sheet */}
+        {isMobile && (
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button 
+                className="absolute top-4 right-4 z-20" 
+                size="sm"
+                variant="secondary"
+              >
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Saved ({automations?.length || 0})
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[280px] sm:w-[350px] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Saved Automations</SheetTitle>
+                <SheetDescription>
+                  Load or manage your saved workflows
+                </SheetDescription>
+              </SheetHeader>
+              <div className="mt-6">
+                {automations && automations.length > 0 ? (
+                  <div className="space-y-2">
+                    {automations.map((auto: any) => (
+                      <div 
+                        key={auto.id}
+                        className={`p-3 border rounded cursor-pointer transition-colors ${
+                          selectedAutomation?.id === auto.id 
+                            ? 'bg-blue-50 border-blue-500 dark:bg-blue-950/20' 
+                            : 'hover:bg-accent'
+                        }`}
+                        onClick={() => loadAutomation(auto)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm truncate flex-1">{auto.name}</span>
+                          <Switch 
+                            checked={auto.is_active}
+                            onClick={(e) => e.stopPropagation()}
+                            onCheckedChange={(checked) => 
+                              toggleActiveMutation.mutate({ id: auto.id, isActive: checked })
+                            }
+                          />
+                        </div>
+                        {auto.description && (
+                          <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                            {auto.description}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Play className="h-3 w-3" />
+                            {auto.trigger_count || 0}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            ✓ {auto.success_count || 0}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    No automations yet. Create your first one!
+                  </div>
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+        )}
       </div>
 
       {/* Node Configuration Dialog */}
