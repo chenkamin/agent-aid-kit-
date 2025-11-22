@@ -319,8 +319,31 @@ Deno.serve(async (req) => {
       throw new Error('No company_id found for buy box or user');
     }
 
-    const apifyToken = Deno.env.get('APIFY_API_TOKEN');
-    if (!apifyToken) throw new Error('APIFY_API_TOKEN not configured');
+    // Get SimplyRETS credentials
+    const simplyRetsUser = Deno.env.get('SIMPLYRETS_USERNAME');
+    const simplyRetsPass = Deno.env.get('SIMPLYRETS_PASSWORD');
+    if (!simplyRetsUser || !simplyRetsPass) {
+      throw new Error('SIMPLYRETS credentials not configured. Set SIMPLYRETS_USERNAME and SIMPLYRETS_PASSWORD');
+    }
+
+    // Log buy box configuration
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`📦 BUY BOX CONFIGURATION: ${buyBox.name}`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`   ID: ${buyBox.id}`);
+    console.log(`   Zip Codes: ${buyBox.zip_codes?.join(', ') || 'None'}`);
+    console.log(`   Price Range: $${buyBox.price_min || 0} - $${buyBox.price_max || '∞'}`);
+    console.log(`   Filter by Price/SqFt: ${buyBox.filter_by_ppsf ? 'YES' : 'NO'}`);
+    console.log(`   Home Types: ${buyBox.home_types?.length > 0 ? buyBox.home_types.join(', ') : 'All'}`);
+    console.log(`   Cities: ${buyBox.cities?.length > 0 ? buyBox.cities.join(', ') : 'All'}`);
+    console.log(`   City Filter Enabled: ${buyBox.filter_by_city_match ? 'YES' : 'NO'}`);
+    console.log(`   Neighborhoods: ${buyBox.neighborhoods?.length > 0 ? buyBox.neighborhoods.join(', ') : 'All'}`);
+    console.log(`   Neighborhood Filter Enabled: ${buyBox.filter_by_neighborhoods ? 'YES' : 'NO'}`);
+    console.log(`   Days on Zillow: ${buyBox.days_on_zillow || 'Any'}`);
+    console.log(`   For Sale by Agent: ${buyBox.for_sale_by_agent ?? true}`);
+    console.log(`   For Sale by Owner: ${buyBox.for_sale_by_owner ?? true}`);
+    console.log(`   For Rent: ${buyBox.for_rent ?? false}`);
+    console.log(`${'='.repeat(80)}\n`);
 
     // Get existing properties for this BUY BOX (not entire company) - CHECK BY ADDRESS + CITY
     console.log('📊 Fetching existing properties for this buy box...');
@@ -339,18 +362,40 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Found ${existingByAddress.size} existing unique properties for this buy box`);
 
-    // If filtering by price per sqft, don't pass price filter to Apify
-    // We'll filter manually after getting all results
-    const searchConfig = {
-      zipCodes: buyBox.zip_codes || [],
-      priceMin: buyBox.filter_by_ppsf ? undefined : (buyBox.price_min || undefined),
-      priceMax: buyBox.filter_by_ppsf ? undefined : (buyBox.price_max || undefined),
-      daysOnZillow: buyBox.days_on_zillow || '',
-      forSaleByAgent: buyBox.for_sale_by_agent ?? true,
-      forSaleByOwner: buyBox.for_sale_by_owner ?? true,
-      forRent: buyBox.for_rent ?? false,
-      sold: false
-    };
+    // Build SimplyRETS query parameters
+    const params = new URLSearchParams();
+    
+    // Add zip codes
+    if (buyBox.zip_codes && buyBox.zip_codes.length > 0) {
+      params.append('postalCodes', buyBox.zip_codes.join(','));
+    }
+    
+    // Add cities if specified
+    if (buyBox.cities && buyBox.cities.length > 0) {
+      params.append('cities', buyBox.cities.join(','));
+    }
+    
+    // Add price filters (SimplyRETS doesn't have price per sqft, we'll filter manually)
+    if (!buyBox.filter_by_ppsf) {
+      if (buyBox.price_min) {
+        params.append('minprice', buyBox.price_min.toString());
+      }
+      if (buyBox.price_max) {
+        params.append('maxprice', buyBox.price_max.toString());
+      }
+    }
+    
+    // Add days on market filter
+    if (buyBox.days_on_zillow) {
+      params.append('daysOnMarket', buyBox.days_on_zillow.toString());
+    }
+    
+    // Status - only active listings
+    params.append('status', 'Active');
+    
+    // Set limit (SimplyRETS max is 500 per request)
+    params.append('limit', '500');
+    params.append('offset', '0');
 
     console.log(`💰 Price filter mode: ${buyBox.filter_by_ppsf ? 'Price per SqFt' : 'Total Price'}`);
     if (buyBox.filter_by_ppsf) {
@@ -359,77 +404,105 @@ Deno.serve(async (req) => {
       }
     } else {
       if (buyBox.price_min || buyBox.price_max) {
-        console.log(`📏 Zillow scraper price range: $${buyBox.price_min || 0} - $${buyBox.price_max || '∞'}`);
+        console.log(`📏 SimplyRETS price range: $${buyBox.price_min || 0} - $${buyBox.price_max || '∞'}`);
       }
     }
 
-    const apifyResponse = await fetch(
-      `https://api.apify.com/v2/acts/l7auNT3I30CssRrvO/runs`,
+    // Call SimplyRETS API
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`🚀 CALLING SIMPLYRETS API`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`   Base URL: https://api.simplyrets.com/properties`);
+    console.log(`   Query Parameters:`);
+    console.log(`      ${params.toString().replace(/&/g, '\n      ')}`);
+    console.log(`   Username: ${simplyRetsUser}`);
+    console.log(`   Password: ${'*'.repeat(simplyRetsPass.length)}`);
+    console.log(`${'='.repeat(80)}\n`);
+    
+    const auth = btoa(`${simplyRetsUser}:${simplyRetsPass}`);
+    const startTime = Date.now();
+    
+    const simplyRetsResponse = await fetch(
+      `https://api.simplyrets.com/properties?${params.toString()}`,
       {
-        method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apifyToken}`
-        },
-        body: JSON.stringify(searchConfig)
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json'
+        }
       }
     );
 
-    if (!apifyResponse.ok) {
-      throw new Error(`Apify API error: ${apifyResponse.status}`);
+    const elapsed = Date.now() - startTime;
+    console.log(`📊 API Response received in ${elapsed}ms`);
+    console.log(`   Status: ${simplyRetsResponse.status} ${simplyRetsResponse.statusText}`);
+    console.log(`   Headers: ${JSON.stringify(Object.fromEntries(simplyRetsResponse.headers.entries()))}`);
+
+    if (!simplyRetsResponse.ok) {
+      const errorText = await simplyRetsResponse.text();
+      console.error(`\n❌ SIMPLYRETS API ERROR`);
+      console.error(`   Status: ${simplyRetsResponse.status}`);
+      console.error(`   Response: ${errorText.substring(0, 500)}`);
+      throw new Error(`SimplyRETS API error: ${simplyRetsResponse.status} - ${errorText}`);
     }
 
-    const runData = await apifyResponse.json();
-    const runId = runData.data.id;
-    const defaultDatasetId = runData.data.defaultDatasetId;
-
-    console.log(`✅ Apify run started: ${runId}`);
-
-    // Wait for completion
-    let runStatus = 'RUNNING';
-    let attempts = 0;
-    const maxAttempts = 60;
-
-    while (runStatus === 'RUNNING' && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      const statusResponse = await fetch(
-        `https://api.apify.com/v2/acts/l7auNT3I30CssRrvO/runs/${runId}`,
-        { headers: { 'Authorization': `Bearer ${apifyToken}` } }
-      );
-
-      const statusData = await statusResponse.json();
-      runStatus = statusData.data.status;
-      attempts++;
-
-      console.log(`📊 Scraping status: ${runStatus} (attempt ${attempts}/${maxAttempts})`);
+    let properties = await simplyRetsResponse.json();
+    console.log(`\n✅ SIMPLYRETS RESPONSE SUCCESS`);
+    console.log(`   Total properties returned: ${properties.length}`);
+    console.log(`   Response type: ${Array.isArray(properties) ? 'Array' : typeof properties}`);
+    
+    if (properties.length > 0) {
+      console.log(`\n📋 First property sample:`);
+      console.log(`   MLS ID: ${properties[0].mlsId}`);
+      console.log(`   Address: ${properties[0].address?.full}`);
+      console.log(`   Price: $${properties[0].listPrice?.toLocaleString()}`);
+      console.log(`   Agent: ${properties[0].agent?.firstName} ${properties[0].agent?.lastName}`);
+      console.log(`   Has agent contact: ${!!properties[0].agent?.contact}`);
     }
-
-    if (runStatus !== 'SUCCEEDED') {
-      throw new Error(`Apify run failed: ${runStatus}`);
-    }
-
-    const resultsResponse = await fetch(
-      `https://api.apify.com/v2/datasets/${defaultDatasetId}/items`,
-      { headers: { 'Authorization': `Bearer ${apifyToken}` } }
-    );
-
-    if (!resultsResponse.ok) {
-      throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
-    }
-
-    let properties = await resultsResponse.json();
-    console.log(`🎯 Found ${properties.length} properties from Zillow (before filtering)`);
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`🎯 INITIAL SCRAPE RESULTS`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`   Total properties from SimplyRETS: ${properties.length}`);
     
     // Debug: Log first property to see structure
     if (properties.length > 0) {
       console.log('📦 Sample property structure:', JSON.stringify({
-        homeType: properties[0].homeType,
-        propertyType: properties[0].propertyType,
-        hdpData_homeType: properties[0].hdpData?.homeInfo?.homeType,
-        availableFields: Object.keys(properties[0]).filter(k => k.toLowerCase().includes('type') || k.toLowerCase().includes('home'))
+        mlsId: properties[0].mlsId,
+        listPrice: properties[0].listPrice,
+        address: properties[0].address?.city,
+        propertyType: properties[0].property?.type,
+        agent: properties[0].agent ? 'has agent info' : 'no agent info',
+        availableFields: Object.keys(properties[0]).slice(0, 20).join(', ')
       }, null, 2));
     }
+    
+    // Log all active filters
+    console.log(`\n🔧 ACTIVE FILTERS:`);
+    console.log(`   Price per sqft filter: ${buyBox.filter_by_ppsf ? 'ENABLED' : 'DISABLED'}`);
+    if (buyBox.filter_by_ppsf) {
+      console.log(`      Range: $${buyBox.price_min || 0}/sqft - $${buyBox.price_max || '∞'}/sqft`);
+    }
+    console.log(`   Home type filter: ${buyBox.home_types && buyBox.home_types.length > 0 ? 'ENABLED' : 'DISABLED'}`);
+    if (buyBox.home_types && buyBox.home_types.length > 0) {
+      console.log(`      Types: ${buyBox.home_types.join(', ')}`);
+    }
+    console.log(`   City filter: ${buyBox.filter_by_city_match && buyBox.cities?.length > 0 ? 'ENABLED' : 'DISABLED'}`);
+    if (buyBox.filter_by_city_match && buyBox.cities?.length > 0) {
+      console.log(`      Cities: ${buyBox.cities.join(', ')}`);
+    }
+    console.log(`   Neighborhood filter: ${buyBox.filter_by_neighborhoods && buyBox.neighborhoods?.length > 0 ? 'ENABLED' : 'DISABLED'}`);
+    if (buyBox.filter_by_neighborhoods && buyBox.neighborhoods?.length > 0) {
+      console.log(`      Neighborhoods: ${buyBox.neighborhoods.join(', ')}`);
+    }
+    console.log(`${'='.repeat(80)}\n`);
+    
+    // Track properties through filters
+    const filterStages = {
+      initial: properties.length,
+      afterPriceSqft: properties.length,
+      afterHomeType: properties.length,
+      afterCity: properties.length,
+      afterNeighborhood: properties.length
+    };
 
     // If filtering by price per sqft, filter properties based on calculated ppsf
     if (buyBox.filter_by_ppsf && (buyBox.price_min || buyBox.price_max)) {
@@ -442,13 +515,12 @@ Deno.serve(async (req) => {
       let filteredOutCount = 0;
       
       properties = properties.filter((prop: any) => {
-        const price = parseNumber(prop.price || prop.unformattedPrice || prop.hdpData?.homeInfo?.price);
-        const sqft = parseInteger(prop.livingArea || prop.area || prop.hdpData?.homeInfo?.livingArea);
+        const price = parseNumber(prop.listPrice);
+        const sqft = parseInteger(prop.property?.area);
         
         // If we don't have both price and sqft, skip this property
         if (!price || !sqft || sqft === 0) {
-          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
-          console.log(`   ⚠️ SKIPPED (missing data): ${addressData.address}, ${addressData.city} - Price: ${price}, SqFt: ${sqft}`);
+          console.log(`   ⚠️ SKIPPED (missing data): ${prop.address?.full} - Price: ${price}, SqFt: ${sqft}`);
           missingDataCount++;
           return false;
         }
@@ -457,8 +529,7 @@ Deno.serve(async (req) => {
         const passes = ppsf >= minPpsf && ppsf <= maxPpsf;
         
         if (!passes) {
-          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
-          console.log(`   ❌ FILTERED OUT by price/sqft: ${addressData.address}, ${addressData.city} - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft (range: $${minPpsf}-$${maxPpsf === Infinity ? '∞' : maxPpsf}/sqft)`);
+          console.log(`   ❌ FILTERED OUT by price/sqft: ${prop.address?.full} - $${price.toLocaleString()} / ${sqft} sqft = $${ppsf.toFixed(2)}/sqft (range: $${minPpsf}-$${maxPpsf === Infinity ? '∞' : maxPpsf}/sqft)`);
           filteredOutCount++;
         }
         
@@ -472,6 +543,9 @@ Deno.serve(async (req) => {
         console.log(`📊 Filtered out ${filteredOutCount} properties outside price/sqft range`);
       }
       console.log(`📊 After price per sqft filtering: ${properties.length} of ${originalCount} properties passed`);
+      filterStages.afterPriceSqft = properties.length;
+    } else {
+      console.log(`⏭️ Price per sqft filter: SKIPPED (not enabled or no range set)`);
     }
 
     // Filter by home types if specified
@@ -488,11 +562,8 @@ Deno.serve(async (req) => {
       let filteredOutCount = 0;
       
       properties = properties.filter(prop => {
-        // Try multiple possible locations for home type
-        const homeTypeValue = prop.homeType || 
-                             prop.propertyType || 
-                             prop.hdpData?.homeInfo?.homeType ||
-                             'undefined';
+        // Get home type from SimplyRETS property structure
+        const homeTypeValue = prop.property?.type || prop.property?.subType || 'undefined';
         
         const homeType = normalizeHomeType(homeTypeValue);
         
@@ -503,8 +574,7 @@ Deno.serve(async (req) => {
         
         // Log when filtering out
         if (!matches) {
-          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
-          console.log(`   ❌ FILTERED OUT by home type: ${addressData.address}, ${addressData.city} - Type: "${homeTypeValue}" → "${homeType}" (looking for: ${normalizedFilterTypes.join(', ')})`);
+          console.log(`   ❌ FILTERED OUT by home type: ${prop.address?.full} - Type: "${homeTypeValue}" → "${homeType}" (looking for: ${normalizedFilterTypes.join(', ')})`);
           filteredOutCount++;
         }
         
@@ -514,6 +584,9 @@ Deno.serve(async (req) => {
       console.log(`📊 Property types found:`, typeCounts);
       console.log(`📊 Filtered out ${filteredOutCount} properties due to home type mismatch`);
       console.log(`📊 After home type filtering: ${properties.length} of ${beforeTypeFilter} properties passed`);
+      filterStages.afterHomeType = properties.length;
+    } else {
+      console.log(`⏭️ Home type filter: SKIPPED (not enabled or empty)`);
     }
 
     // Filter by city match if specified
@@ -530,8 +603,7 @@ Deno.serve(async (req) => {
       let filteredOutCount = 0;
       
       properties = properties.filter(prop => {
-        const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
-        const propCity = (addressData.city || '').toLowerCase().trim();
+        const propCity = (prop.address?.city || '').toLowerCase().trim();
         
         // Track cities
         if (propCity) {
@@ -543,7 +615,7 @@ Deno.serve(async (req) => {
         
         // Log when filtering out
         if (!cityMatches) {
-          console.log(`   ❌ FILTERED OUT by city: ${addressData.address}, ${addressData.city} - City: "${propCity}" not in [${allowedCities.join(', ')}]`);
+          console.log(`   ❌ FILTERED OUT by city: ${prop.address?.full} - City: "${propCity}" not in [${allowedCities.join(', ')}]`);
           filteredOutCount++;
         }
         
@@ -553,6 +625,9 @@ Deno.serve(async (req) => {
       console.log(`📊 Cities found:`, cityCounts);
       console.log(`📊 Filtered out ${filteredOutCount} properties due to city mismatch`);
       console.log(`📊 After city filtering: ${properties.length} of ${beforeCityFilter} properties passed`);
+      filterStages.afterCity = properties.length;
+    } else {
+      console.log(`⏭️ City filter: SKIPPED (not enabled or empty)`);
     }
 
     // Initialize map to store verified neighborhoods
@@ -588,13 +663,12 @@ Deno.serve(async (req) => {
         console.log(`\n📦 Processing Batch ${batchNum}/${totalBatches} (Properties ${i + 1}-${Math.min(i + batchSize, properties.length)})`);
         
         const verificationPromises = batch.map(async (prop, index) => {
-          const addressData = extractAddressFromUrl(prop.detailUrl || prop.url || '');
-          const fullAddress = [addressData.address, addressData.city, addressData.state].filter(Boolean).join(', ');
+          const fullAddress = prop.address?.full || '';
           const propNum = i + index + 1;
           
           console.log(`   [${propNum}/${properties.length}] Checking: ${fullAddress || 'Unknown address'}`);
           
-          if (!addressData.address || !addressData.city) {
+          if (!prop.address?.streetAddress || !prop.address?.city) {
             console.log(`      ⚠️  SKIPPED - Incomplete address data`);
             errorCount++;
             return { prop, isInNeighborhood: false, matchedNeighborhood: null, skipped: true };
@@ -609,9 +683,9 @@ Deno.serve(async (req) => {
                 'Authorization': `Bearer ${supabaseKey}`,
               },
               body: JSON.stringify({
-                address: addressData.address,
-                city: addressData.city,
-                state: addressData.state,
+                address: prop.address?.streetAddress,
+                city: prop.address?.city,
+                state: prop.address?.state,
                 neighborhoods: buyBox.neighborhoods,
               }),
             });
@@ -669,9 +743,9 @@ Deno.serve(async (req) => {
       
       // Populate the map with matched neighborhoods
       verifiedProperties.forEach(vp => {
-        const url = vp.prop.detailUrl || vp.prop.url;
-        if (url) {
-          propertyNeighborhoodMap.set(url, vp.matchedNeighborhood);
+        const mlsId = vp.prop.mlsId;
+        if (mlsId) {
+          propertyNeighborhoodMap.set(mlsId, vp.matchedNeighborhood);
         }
       });
       
@@ -702,9 +776,26 @@ Deno.serve(async (req) => {
         });
       }
       console.log(`${'='.repeat(80)}\n`);
+      filterStages.afterNeighborhood = properties.length;
+    } else {
+      console.log(`⏭️ Neighborhood filter: SKIPPED (not enabled or empty)`);
     }
 
+    // FINAL FILTER SUMMARY
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`📊 FILTER PIPELINE SUMMARY`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`   1️⃣ Initial properties:           ${filterStages.initial}`);
+    console.log(`   2️⃣ After price/sqft filter:     ${filterStages.afterPriceSqft} (${filterStages.initial - filterStages.afterPriceSqft} removed)`);
+    console.log(`   3️⃣ After home type filter:      ${filterStages.afterHomeType} (${filterStages.afterPriceSqft - filterStages.afterHomeType} removed)`);
+    console.log(`   4️⃣ After city filter:           ${filterStages.afterCity} (${filterStages.afterHomeType - filterStages.afterCity} removed)`);
+    console.log(`   5️⃣ After neighborhood filter:   ${filterStages.afterNeighborhood} (${filterStages.afterCity - filterStages.afterNeighborhood} removed)`);
+    console.log(`   ✅ FINAL COUNT: ${properties.length} properties will be processed for insertion`);
+    console.log(`${'='.repeat(80)}\n`);
+
     if (properties.length === 0) {
+      console.log(`\n⚠️⚠️⚠️ WARNING: ALL PROPERTIES FILTERED OUT ⚠️⚠️⚠️`);
+      console.log(`Check the filter stages above to see where properties were eliminated.\n`);
       return new Response(
         JSON.stringify({
           message: 'No properties found matching criteria',
@@ -718,105 +809,9 @@ Deno.serve(async (req) => {
     }
 
     // ============================================
-    // STEP 2: Scrape detailed property information
+    // STEP 2: SimplyRETS already includes agent info!
     // ============================================
-    console.log('\n🔍 STEP 2: Fetching detailed property information...');
-    
-    // Collect all full addresses for detailed scraping
-    const addressesForDetailScraping: string[] = [];
-    const addressToPropertyMap = new Map();
-    
-    console.log(`\n🔍 Collecting addresses for detailed scraping...`);
-    for (const prop of properties) {
-      const listingUrl = prop.detailUrl || prop.url || '';
-      const addressData = extractAddressFromUrl(listingUrl);
-      
-      if (addressData.address && addressData.city && addressData.state && addressData.zip) {
-        const fullAddress = `${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`;
-        addressesForDetailScraping.push(fullAddress);
-        addressToPropertyMap.set(fullAddress.toLowerCase(), prop);
-        
-        // Log first 3 addresses as samples
-        if (addressesForDetailScraping.length <= 3) {
-          console.log(`   ✓ Address ${addressesForDetailScraping.length}: ${fullAddress}`);
-        }
-      } else {
-        console.log(`   ⚠️ Skipping URL (incomplete address): ${listingUrl}`);
-      }
-    }
-    
-    console.log(`📋 Prepared ${addressesForDetailScraping.length} addresses for detailed scraping`);
-    if (addressesForDetailScraping.length === 0) {
-      console.log(`⚠️ WARNING: No valid addresses collected! Agent info will be null for all properties.`);
-    }
-    
-    // Scrape property details in batches to get agent info
-    const detailedPropertiesData: any[] = [];
-    if (addressesForDetailScraping.length > 0) {
-      console.log(`\n🚀 Starting detailed property scraping...`);
-      console.log(`   Total addresses to scrape: ${addressesForDetailScraping.length}`);
-      
-      // Batch size of 50 to avoid overwhelming the API
-      const batchSize = 50;
-      for (let i = 0; i < addressesForDetailScraping.length; i += batchSize) {
-        const batch = addressesForDetailScraping.slice(i, i + batchSize);
-        console.log(`\n📦 Processing batch ${Math.floor(i / batchSize) + 1} (${batch.length} addresses)...`);
-        console.log(`   Sample addresses in batch: ${batch.slice(0, 2).join(', ')}`);
-        
-        const batchResults = await scrapePropertyDetails(batch, apifyToken);
-        
-        console.log(`   ✅ Batch returned ${batchResults.length} results`);
-        if (batchResults.length > 0) {
-          console.log(`   Sample result keys: ${Object.keys(batchResults[0]).join(', ')}`);
-          console.log(`   Sample result has listedBy: ${!!batchResults[0].listedBy}`);
-        } else {
-          console.log(`   ⚠️ WARNING: Batch returned ZERO results!`);
-        }
-        
-        detailedPropertiesData.push(...batchResults);
-        
-        // Small delay between batches to be respectful to the API
-        if (i + batchSize < addressesForDetailScraping.length) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      }
-      
-      console.log(`\n✅ Detailed scraping complete! Total results: ${detailedPropertiesData.length}`);
-    } else {
-      console.log(`\n⚠️ Skipping detailed scraping - no addresses collected`);
-    }
-    
-    // Create a map of address -> detailed property data
-    const detailsMap = new Map();
-    console.log(`\n📋 Creating address map from ${detailedPropertiesData.length} detailed property records...`);
-    
-    for (const detailedProp of detailedPropertiesData) {
-      // Try multiple address formats to match
-      // Ensure all values are strings before calling toLowerCase
-      const addresses = [
-        detailedProp.address,
-        detailedProp.streetAddress && detailedProp.city && detailedProp.state && detailedProp.zipcode 
-          ? `${detailedProp.streetAddress}, ${detailedProp.city}, ${detailedProp.state} ${detailedProp.zipcode}`
-          : null,
-        detailedProp.streetAddress || detailedProp.address
-      ]
-        .filter(a => a && typeof a === 'string') // Only keep actual strings
-        .map(a => a.toLowerCase());
-      
-      if (addresses.length > 0) {
-        console.log(`   Mapping property: ${addresses[0]}`);
-        console.log(`     All address variants: ${addresses.join(' | ')}`);
-        
-        for (const addr of addresses) {
-          detailsMap.set(addr, detailedProp);
-        }
-      } else {
-        console.log(`   ⚠️ Skipping property - no valid address strings`);
-      }
-    }
-    
-    console.log(`✅ Mapped ${detailsMap.size} unique address keys to detailed property data`);
-    console.log(`   Sample keys: ${Array.from(detailsMap.keys()).slice(0, 3).join(', ')}...`);
+    console.log('\n✅ STEP 2: Agent info already included in SimplyRETS response - no second scrape needed!');
 
     const newListings = [];
     const updatedListings = [];
@@ -828,30 +823,36 @@ Deno.serve(async (req) => {
 
     console.log(`\n${'='.repeat(80)}`);
     console.log(`🏘️  PROCESSING ${properties.length} PROPERTIES AFTER ALL FILTERS`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`   Existing properties in this buy box: ${existingByAddress.size}`);
+    console.log(`   Will check each property for new/update status...`);
     console.log(`${'='.repeat(80)}\n`);
 
     for (const prop of properties) {
-      const listingUrl = prop.detailUrl || prop.url || '';
-      const addressData = extractAddressFromUrl(listingUrl);
-      const scrapedPrice = parseNumber(prop.price || prop.unformattedPrice);
+      // SimplyRETS property structure
+      const listingUrl = `https://www.realtor.com/realestateandhomes-detail/${prop.mlsId}`;
+      const address = prop.address?.streetAddress || prop.address?.full || '';
+      const city = prop.address?.city || '';
+      const state = prop.address?.state || '';
+      const zip = prop.address?.postalCode || '';
+      const scrapedPrice = parseNumber(prop.listPrice);
       const scrapedStatus = 'For Sale';
 
-      // Log property data from Apify
+      // Log property data from SimplyRETS
       console.log(`\n📋 Processing property:`, {
+        mlsId: prop.mlsId,
         url: listingUrl,
-        address: addressData.address,
-        city: addressData.city,
-        state: addressData.state,
-        zip: addressData.zip,
+        address: address,
+        city: city,
+        state: state,
+        zip: zip,
         price: scrapedPrice,
-        homeType: prop.homeType,
-        propertyType: prop.propertyType,
-        homeStatus: prop.homeStatus,
-        statusText: prop.statusText
+        homeType: prop.property?.type,
+        agentName: prop.agent?.firstName ? `${prop.agent.firstName} ${prop.agent.lastName}` : 'N/A'
       });
 
       // Create address key for duplicate checking
-      const addressKey = `${addressData.address}|${addressData.city}`.toLowerCase();
+      const addressKey = `${address}|${city}`.toLowerCase();
 
       // Check if property already exists by address+city (primary check)
       const existingPropByAddress = existingByAddress.get(addressKey);
@@ -860,181 +861,91 @@ Deno.serve(async (req) => {
 
       if (!existingProp) {
         // NEW LISTING - Check if address is valid before inserting
-        if (!addressData.address || !addressData.city) {
+        if (!address || !city) {
           console.log(`⚠️ Skipping property with incomplete address: ${listingUrl}`);
           skippedCount++;
           continue;
         }
         
         console.log(`✅ NEW PROPERTY - Will be added to database`);
-        console.log(`   Address: ${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`);
+        console.log(`   Address: ${address}, ${city}, ${state} ${zip}`);
         console.log(`   Price: $${scrapedPrice?.toLocaleString() || 'N/A'}`);
         console.log(`   Buy Box ID: ${buyBoxId}`);
 
-        // Look up detailed property data for agent information
-        const fullAddress = `${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`;
-        const detailedData = detailsMap.get(fullAddress.toLowerCase());
-        
-        // Extract agent information from detailed data
+        // Extract agent information directly from SimplyRETS response!
         let agentName = null;
         let agentPhone = null;
         let agentEmail = null;
         
-        console.log(`\n🔎 AGENT INFO EXTRACTION for: ${fullAddress}`);
-        console.log(`   Address lookup key: "${fullAddress.toLowerCase()}"`);
-        console.log(`   Total detailed records in map: ${detailsMap.size}`);
+        console.log(`\n${'─'.repeat(60)}`);
+        console.log(`🔎 AGENT INFO EXTRACTION for MLS #${prop.mlsId}`);
+        console.log(`${'─'.repeat(60)}`);
+        console.log(`   Property: ${address}, ${city}`);
+        console.log(`   Has prop.agent: ${!!prop.agent}`);
         
-        if (detailedData) {
-          console.log(`✅ Found detailed data for ${addressData.address}`);
-          console.log(`   Detailed data keys: ${Object.keys(detailedData).join(', ')}`);
+        if (prop.agent) {
+          console.log(`   Agent object keys: ${Object.keys(prop.agent).join(', ')}`);
+          console.log(`   Agent data: ${JSON.stringify(prop.agent, null, 2).substring(0, 300)}`);
           
-          // Parse listedBy array structure for agent info
-          console.log(`\n   🔍 LISTEDBY FIELD INSPECTION:`);
-          console.log(`      - detailedData has 'listedBy': ${!!detailedData.listedBy}`);
-          console.log(`      - listedBy is array: ${Array.isArray(detailedData.listedBy)}`);
-          console.log(`      - listedBy type: ${typeof detailedData.listedBy}`);
+          agentName = prop.agent.firstName && prop.agent.lastName 
+            ? `${prop.agent.firstName} ${prop.agent.lastName}`.trim()
+            : (prop.agent.firstName || prop.agent.lastName || null);
           
-          if (detailedData.listedBy && Array.isArray(detailedData.listedBy)) {
-            console.log(`   ✓ listedBy array found with ${detailedData.listedBy.length} sections`);
-            console.log(`   ✓ Full listedBy structure: ${JSON.stringify(detailedData.listedBy, null, 2)}`);
-            
-            // Log all sections
-            detailedData.listedBy.forEach((section: any, idx: number) => {
-              console.log(`     Section ${idx}: id="${section.id}", elements=${section.elements?.length || 0}`);
-            });
-            
-            const listingAgentSection = detailedData.listedBy.find(
-              (section: any) => section.id === 'LISTING_AGENT'
-            );
-            
-            if (listingAgentSection && listingAgentSection.elements) {
-              console.log(`   ✓ LISTING_AGENT section found with ${listingAgentSection.elements.length} elements`);
-              console.log(`   ✓ LISTING_AGENT full data: ${JSON.stringify(listingAgentSection, null, 2)}`);
-              
-              // Log all elements
-              listingAgentSection.elements.forEach((el: any) => {
-                console.log(`     Element: id="${el.id}", text="${el.text}"`);
-              });
-              
-              // Extract name
-              const nameElement = listingAgentSection.elements.find(
-                (el: any) => el.id === 'NAME'
-              );
-              if (nameElement) {
-                agentName = nameElement.text;
-                console.log(`   ✓ Name extracted: "${agentName}"`);
-              } else {
-                console.log(`   ❌ NAME element not found in LISTING_AGENT`);
-              }
-              
-              // Extract phone
-              const phoneElement = listingAgentSection.elements.find(
-                (el: any) => el.id === 'PHONE'
-              );
-              if (phoneElement) {
-                agentPhone = phoneElement.text;
-                console.log(`   ✓ Phone extracted: "${agentPhone}"`);
-              } else {
-                console.log(`   ❌ PHONE element not found in LISTING_AGENT`);
-              }
-              
-              // Extract email if present
-              const emailElement = listingAgentSection.elements.find(
-                (el: any) => el.id === 'EMAIL'
-              );
-              if (emailElement) {
-                agentEmail = emailElement.text;
-                console.log(`   ✓ Email extracted: "${agentEmail}"`);
-              } else {
-                console.log(`   ⚠️ EMAIL element not found (optional)`);
-              }
-            } else {
-              console.log(`   ❌ LISTING_AGENT section not found in listedBy array`);
-              console.log(`   Available section IDs: ${detailedData.listedBy.map((s: any) => s.id).join(', ')}`);
-            }
-          } else if (detailedData.listedBy) {
-            console.log(`   ❌ listedBy exists but is NOT an array`);
-            console.log(`   listedBy value: ${JSON.stringify(detailedData.listedBy)}`);
-          } else {
-            console.log(`   ❌ NO listedBy field in detailed data`);
-            console.log(`   Available fields: ${Object.keys(detailedData).slice(0, 20).join(', ')}`);
-          }
+          agentPhone = prop.agent.contact?.cell || prop.agent.contact?.office || null;
+          agentEmail = prop.agent.contact?.email || null;
           
-          // Fallback to other possible field structures
-          if (!agentName) {
-            agentName = detailedData.agentName || 
-                       detailedData.listingAgentName || 
-                       detailedData.attributionInfo?.agentName ||
-                       detailedData.attributionInfo?.listingAgentName ||
-                       null;
-            if (agentName) console.log(`   ✓ Name from fallback: "${agentName}"`);
-          }
-          
-          if (!agentPhone) {
-            agentPhone = detailedData.agentPhone || 
-                        detailedData.listingAgentPhone || 
-                        detailedData.attributionInfo?.agentPhoneNumber ||
-                        detailedData.attributionInfo?.phoneNumber ||
-                        null;
-            if (agentPhone) console.log(`   ✓ Phone from fallback: "${agentPhone}"`);
-          }
-          
-          if (!agentEmail) {
-            agentEmail = detailedData.agentEmail || 
-                        detailedData.listingAgentEmail || 
-                        detailedData.attributionInfo?.agentEmail ||
-                        detailedData.attributionInfo?.email ||
-                        null;
-            if (agentEmail) console.log(`   ✓ Email from fallback: "${agentEmail}"`);
-          }
+          console.log(`\n   ✅ EXTRACTED VALUES:`);
+          console.log(`      Name: ${agentName || '❌ MISSING'}`);
+          console.log(`      Phone: ${agentPhone || '❌ MISSING'}`);
+          console.log(`      Email: ${agentEmail || '❌ MISSING'}`);
           
           if (agentName || agentPhone || agentEmail) {
-            console.log(`📞 ✅ AGENT INFO EXTRACTED - Name: ${agentName}, Phone: ${agentPhone}, Email: ${agentEmail}`);
             agentInfoFoundCount++;
+            console.log(`   ✓ SUCCESS - Has at least one contact detail`);
           } else {
-            console.log(`⚠️ Detailed data found but NO AGENT INFO extracted`);
-            console.log(`   Sample of detailed data: ${JSON.stringify(detailedData).substring(0, 500)}...`);
             agentInfoMissingCount++;
+            console.log(`   ⚠️ WARNING - Agent object exists but no contact details extracted`);
           }
         } else {
-          console.log(`❌ NO DETAILED DATA FOUND for this address`);
-          console.log(`   Available addresses in detailsMap: ${Array.from(detailsMap.keys()).slice(0, 5).join(', ')}...`);
+          console.log(`   ❌ MISSING - No agent object in SimplyRETS response`);
+          console.log(`   Property keys: ${Object.keys(prop).slice(0, 10).join(', ')}...`);
           agentInfoMissingCount++;
         }
+        console.log(`${'─'.repeat(60)}\n`);
 
-        // Extract home type from multiple possible locations
-        const homeTypeValue = prop.homeType || 
-                             prop.propertyType || 
-                             prop.hdpData?.homeInfo?.homeType ||
-                             prop.statusText ||
-                             'undefined';
+        // Extract home type from SimplyRETS structure
+        const homeTypeValue = prop.property?.type || prop.property?.subType || 'undefined';
 
         // Get verified neighborhood if available (only for buy boxes with neighborhood filter)
-        const verifiedNeighborhood = propertyNeighborhoodMap.get(listingUrl) || null;
+        const verifiedNeighborhood = propertyNeighborhoodMap.get(prop.mlsId) || null;
 
         newListings.push({
           user_id: user.id,
           company_id: companyId,
           buy_box_id: buyBoxId,
-          address: addressData.address,
-          city: addressData.city,
-          state: addressData.state,
-          zip: addressData.zip,
+          address: address,
+          city: city,
+          state: state,
+          zip: zip,
           neighborhood: verifiedNeighborhood,
           price: scrapedPrice,
-          bedrooms: parseInteger(prop.beds || prop.bedrooms || prop.hdpData?.homeInfo?.bedrooms),
-          bed: parseInteger(prop.beds || prop.bedrooms || prop.hdpData?.homeInfo?.bedrooms),
-          bathrooms: parseNumber(prop.baths || prop.bathrooms || prop.hdpData?.homeInfo?.bathrooms),
-          bath: parseNumber(prop.baths || prop.bathrooms || prop.hdpData?.homeInfo?.bathrooms),
-          square_footage: parseInteger(prop.livingArea || prop.area || prop.hdpData?.homeInfo?.livingArea),
-          living_sqf: parseInteger(prop.livingArea || prop.area || prop.hdpData?.homeInfo?.livingArea),
+          bedrooms: parseInteger(prop.property?.bedrooms),
+          bed: parseInteger(prop.property?.bedrooms),
+          bathrooms: parseNumber(prop.property?.bathsFull ? prop.property.bathsFull + (prop.property.bathsHalf || 0) * 0.5 : null),
+          bath: parseNumber(prop.property?.bathsFull ? prop.property.bathsFull + (prop.property.bathsHalf || 0) * 0.5 : null),
+          square_footage: parseInteger(prop.property?.area),
+          living_sqf: parseInteger(prop.property?.area),
           home_type: normalizeHomeType(homeTypeValue),
           status: scrapedStatus,
-          initial_status: prop.homeStatus || prop.statusText || prop.hdpData?.homeInfo?.homeStatus || '',
-          days_on_market: parseInteger(prop.daysOnZillow || prop.hdpData?.homeInfo?.daysOnZillow),
-          date_listed: prop.datePostedString ? new Date(prop.datePostedString).toISOString().split('T')[0] : null,
+          initial_status: prop.mls?.status || '',
+          days_on_market: parseInteger(prop.mls?.daysOnMarket),
+          date_listed: prop.listDate ? new Date(prop.listDate).toISOString().split('T')[0] : null,
           listing_url: listingUrl,
           url: listingUrl,
+          mls_number: prop.mlsId,
+          year_built: parseInteger(prop.property?.yearBuilt),
+          lot_size: prop.property?.lotSize?.toString() || null,
+          lot_sqf: parseInteger(prop.property?.lotSize),
           is_new_listing: true,
           listing_discovered_at: new Date().toISOString(),
           last_scraped_at: new Date().toISOString(),
@@ -1044,7 +955,7 @@ Deno.serve(async (req) => {
         });
       } else {
         // EXISTING LISTING - CHECK FOR CHANGES
-        console.log(`🔄 Updating existing property: ${addressData.address}, ${addressData.city}`);
+        console.log(`🔄 Updating existing property: ${address}, ${city}`);
         const changes = [];
         const updateData: any = {
           last_scraped_at: new Date().toISOString(),
@@ -1086,13 +997,27 @@ Deno.serve(async (req) => {
     }
 
     // Insert new listings ONE AT A TIME with error handling
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`💾 DATABASE INSERTION PHASE`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`   New properties to insert: ${newListings.length}`);
+    console.log(`   Existing properties to update: ${updatedListings.length}`);
+    console.log(`   Properties skipped: ${skippedCount}`);
+    console.log(`${'='.repeat(80)}\n`);
+    
     if (newListings.length > 0) {
-      console.log(`💾 Inserting ${newListings.length} new properties...`);
+      console.log(`💾 Starting insertion of ${newListings.length} new properties...`);
       let successCount = 0;
       let duplicateCount = 0;
       let errorCount = 0;
 
-      for (const listing of newListings) {
+      for (let i = 0; i < newListings.length; i++) {
+        const listing = newListings[i];
+        console.log(`\n[${i + 1}/${newListings.length}] 💾 Inserting: ${listing.address}, ${listing.city}`);
+        console.log(`   MLS: ${listing.mls_number}`);
+        console.log(`   Price: $${listing.price?.toLocaleString()}`);
+        console.log(`   Agent: ${listing.seller_agent_name || 'N/A'}`);
+        
         const { data: insertedProperty, error: insertError } = await supabase
           .from('properties')
           .insert(listing)
@@ -1102,13 +1027,16 @@ Deno.serve(async (req) => {
         if (insertError) {
           if (insertError.code === '23505') {
             // Unique constraint violation - duplicate property
-            console.log(`⚠️ Duplicate property skipped: ${listing.address}, ${listing.city}`);
+            console.log(`   ⚠️ DUPLICATE - Skipped (already exists)`);
             duplicateCount++;
           } else {
-            console.error(`❌ Error inserting property ${listing.address}:`, insertError.message);
+            console.error(`   ❌ ERROR - ${insertError.message}`);
+            console.error(`   Error code: ${insertError.code}`);
+            console.error(`   Error details: ${JSON.stringify(insertError.details)}`);
             errorCount++;
           }
         } else {
+          console.log(`   ✅ SUCCESS - Inserted with ID: ${insertedProperty?.id}`);
           successCount++;
           // Collect IDs for ARV estimation
           if (insertedProperty) {
@@ -1168,9 +1096,20 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     );
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error(`\n${'='.repeat(80)}`);
+    console.error(`❌ FATAL ERROR`);
+    console.error(`${'='.repeat(80)}`);
+    console.error(`Error Type: ${error.constructor.name}`);
+    console.error(`Error Message: ${error.message}`);
+    console.error(`Error Stack: ${error.stack}`);
+    console.error(`${'='.repeat(80)}\n`);
+    
     return new Response(
-      JSON.stringify({ error: error.message || 'An error occurred' }),
+      JSON.stringify({ 
+        error: error.message || 'An error occurred',
+        errorType: error.constructor.name,
+        timestamp: new Date().toISOString()
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
     );
   }

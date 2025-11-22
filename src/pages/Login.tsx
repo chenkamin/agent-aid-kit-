@@ -4,7 +4,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,72 +45,135 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-secondary px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-4">
-            <Building2 className="h-12 w-12 text-primary" />
+    <div className="min-h-screen flex">
+      {/* Left Side - Login Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background">
+        <div className="w-full max-w-md space-y-8">
+          {/* Logo and Header */}
+          <div className="flex flex-col items-center text-center space-y-2">
+            <div className="bg-primary/10 p-3 rounded-2xl">
+              <Building2 className="h-10 w-10 text-primary" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight">Welcome Back, Deal Maker! 🚀</h1>
+            <p className="text-muted-foreground">
+              Sign in and let's close some deals today
+            </p>
           </div>
-          <CardTitle className="text-2xl text-center">Welcome back</CardTitle>
-          <CardDescription className="text-center">
-            Sign in to your Dealio account
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link
-                  to="/forgot-password"
-                  className="text-xs text-primary hover:underline"
-                >
-                  Forgot password?
-                </Link>
+
+          {/* Login Form */}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium">
+                  Email address
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                  required
+                  className="h-11"
+                />
               </div>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                required
-              />
+              
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-sm font-medium">
+                    Password
+                  </Label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-sm text-primary hover:underline font-medium"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  required
+                  className="h-11"
+                />
+              </div>
             </div>
-          </CardContent>
-          <CardFooter className="flex flex-col space-y-4">
-            <Button type="submit" className="w-full" disabled={loading}>
+
+            <Button 
+              type="submit" 
+              className="w-full h-11 text-base font-semibold" 
+              disabled={loading}
+            >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Signing in...
                 </>
               ) : (
                 "Sign in"
               )}
             </Button>
-            <p className="text-sm text-center text-muted-foreground">
-              Don't have an account?{" "}
-              <Link to="/signup" className="text-primary hover:underline">
-                Sign up
+
+            <div className="text-center text-sm">
+              <span className="text-muted-foreground">Don't have an account? </span>
+              <Link 
+                to="/signup" 
+                className="text-primary hover:underline font-semibold"
+              >
+                Sign up for free
               </Link>
+            </div>
+          </form>
+
+          {/* Footer */}
+          <div className="text-center text-xs text-muted-foreground pt-4">
+            <p>© 2024 Dealio. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side - Image */}
+      <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="absolute inset-0">
+          <img
+            src="/login.png"
+            alt="Beautiful lakeside homes with mountain backdrop"
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+        </div>
+        
+        {/* Overlay Content */}
+        <div className="relative h-full flex flex-col justify-end p-12 text-white">
+          <div className="space-y-4 max-w-xl">
+            <h2 className="text-4xl font-bold leading-tight">
+              Your Next Big Deal is Waiting
+            </h2>
+            <p className="text-lg text-white/90 leading-relaxed">
+              Automate your outreach, track motivated sellers, and close below-market deals faster than ever. Let's make money! 💰
             </p>
-          </CardFooter>
-        </form>
-      </Card>
+            <div className="flex items-center gap-8 pt-4">
+              <div className="space-y-1">
+                <div className="text-3xl font-bold">800+</div>
+                <div className="text-sm text-white/80">Active Investors</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-3xl font-bold">$12M+</div>
+                <div className="text-sm text-white/80">In Closed Deals</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-3xl font-bold">3X</div>
+                <div className="text-sm text-white/80">More Deals Closed</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

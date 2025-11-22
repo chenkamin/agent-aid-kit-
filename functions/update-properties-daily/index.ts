@@ -188,6 +188,16 @@ async function scrapePropertyDetails(addresses: string[], apifyToken: string) {
     return [];
   }
 
+  // Check if response is JSON
+  const detailsContentType = apifyResponse.headers.get('content-type');
+  if (!detailsContentType || !detailsContentType.includes('application/json')) {
+    const responseText = await apifyResponse.text();
+    console.error(`      ❌ Apify detailed scraping returned non-JSON when starting run`);
+    console.error(`      Content-Type: ${detailsContentType}`);
+    console.error(`      Response preview: ${responseText.substring(0, 500)}`);
+    return [];
+  }
+
   const runData = await apifyResponse.json();
   const runId = runData.data.id;
   const defaultDatasetId = runData.data.defaultDatasetId;
@@ -234,6 +244,16 @@ async function scrapePropertyDetails(addresses: string[], apifyToken: string) {
     return [];
   }
 
+  // Check if response is actually JSON before parsing
+  const detailsResultsContentType = resultsResponse.headers.get('content-type');
+  if (!detailsResultsContentType || !detailsResultsContentType.includes('application/json')) {
+    const responseText = await resultsResponse.text();
+    console.error(`      ❌ Apify detailed scraping returned non-JSON response`);
+    console.error(`      Content-Type: ${detailsResultsContentType}`);
+    console.error(`      Response preview: ${responseText.substring(0, 500)}`);
+    return [];
+  }
+
   const detailedProperties = await resultsResponse.json();
   console.log(`      ✅ Retrieved ${detailedProperties.length} detailed property records`);
   
@@ -275,7 +295,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('🔄 Starting daily property update job...');
+    console.log('🔄 Starting queue-based property update job...');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -285,43 +305,68 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl!, supabaseKey!);
 
-    // Get ONE buy box - the oldest that needs updating (round-robin)
-    const { data: buyBoxes, error: buyBoxError } = await supabase
-      .from('buy_boxes')
-      .select('id, user_id, company_id, name, zip_codes, price_min, price_max, filter_by_ppsf, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent, home_types, filter_by_city_match, cities, filter_by_neighborhoods, neighborhoods, last_scraped_at')
-      .order('last_scraped_at', { ascending: true, nullsFirst: true })
-      .limit(1);
+    // SELECT NEXT ZIP CODE FROM QUEUE
+    // Priority: never processed (NULL) -> oldest processed
+    console.log('🔍 Looking for next zip code to process...');
+    
+    const { data: nextZipCode, error: selectError } = await supabase
+      .from('zip_code_queue')
+      .select('id, buy_box_id, zip_code, last_updated_at')
+      .order('last_updated_at', { ascending: true, nullsFirst: true })
+      .limit(1)
+      .single();
 
-    if (buyBoxError) throw buyBoxError;
-
-    if (!buyBoxes || buyBoxes.length === 0) {
-      console.log('No buy boxes found');
+    if (selectError || !nextZipCode) {
+      console.log('✅ No zip codes pending - queue is empty or all processed recently');
       return new Response(
-        JSON.stringify({ message: 'No buy boxes to process' }),
+        JSON.stringify({ 
+          message: 'No zip codes pending',
+          queueEmpty: true
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       );
     }
 
-    const buyBox = buyBoxes[0];
-    
-    // Get total count for reporting
-    const { count: totalBuyBoxes } = await supabase
-      .from('buy_boxes')
-      .select('*', { count: 'exact', head: true });
+    const zipCode = nextZipCode.zip_code;
+    const buyBoxId = nextZipCode.buy_box_id;
+    const queueId = nextZipCode.id;
 
-    console.log(`\n🏠 Processing buy box: ${buyBox.name} (User: ${buyBox.user_id})`);
-    console.log(`📊 Progress: Processing 1 of ${totalBuyBoxes} total buy boxes`);
-    console.log(`⏰ Last scraped: ${buyBox.last_scraped_at || 'Never'}`);
+    console.log(`\n📮 Selected from queue:`);
+    console.log(`   Queue ID: ${queueId}`);
+    console.log(`   ZIP CODE: ${zipCode}`);
+    console.log(`   Buy Box ID: ${buyBoxId}`);
+    console.log(`   Last updated: ${nextZipCode.last_updated_at || 'Never'}`);
 
-    // Update timestamp IMMEDIATELY to prevent race conditions
-    const { error: updateError } = await supabase
-      .from('buy_boxes')
-      .update({ last_scraped_at: new Date().toISOString() })
-      .eq('id', buyBox.id);
+    // Mark as in-progress IMMEDIATELY to prevent race conditions
+    const { error: markError } = await supabase
+      .from('zip_code_queue')
+      .update({ 
+        last_status: 'pending',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', queueId);
 
-    if (updateError) {
-      console.error('⚠️ Failed to update last_scraped_at:', updateError);
+    if (markError) {
+      console.error('⚠️ Failed to mark queue item as pending:', markError);
     }
+
+    // Get the buy box details
+    const { data: buyBox, error: buyBoxError } = await supabase
+      .from('buy_boxes')
+      .select('id, user_id, company_id, name, zip_codes, price_min, price_max, filter_by_ppsf, days_on_zillow, for_sale_by_agent, for_sale_by_owner, for_rent, home_types, filter_by_city_match, cities, filter_by_neighborhoods, neighborhoods, last_scraped_at')
+      .eq('id', buyBoxId)
+      .single();
+
+    if (buyBoxError) throw buyBoxError;
+
+    if (!buyBox) {
+      throw new Error(`Buy box ${buyBoxId} not found`);
+    }
+
+    console.log(`🏠 Buy Box: ${buyBox.name} (User: ${buyBox.user_id})`);
+    console.log(`📮 Processing zip code: ${zipCode}`);
+    console.log(`📊 Total zip codes in buy box: ${buyBox.zip_codes?.length || 0}`);
+    console.log(`⏰ Buy box last scraped: ${buyBox.last_scraped_at || 'Never'}`)
 
     try {
         // Ensure buy box has company_id, if not try to get it from user's team membership
@@ -344,21 +389,34 @@ Deno.serve(async (req) => {
               .eq('id', buyBox.id);
             console.log(`✅ Updated buy box ${buyBox.name} with company_id: ${companyId}`);
           } else {
-            console.log(`❌ Skipping buy box ${buyBox.name} - no company found for user ${buyBox.user_id}`);
+            const errorMsg = 'No company_id found for user';
+            console.log(`❌ Skipping zip code ${zipCode} for buy box ${buyBox.name} - ${errorMsg}`);
+            
+            // UPDATE QUEUE WITH FAILURE
+            await supabase
+              .from('zip_code_queue')
+              .update({
+                last_updated_at: new Date().toISOString(),
+                last_status: 'failed',
+                last_error: errorMsg,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', queueId);
             
             const result = {
+              queueId: queueId,
               buyBoxId: buyBox.id,
               buyBoxName: buyBox.name,
+              zipCode: zipCode,
               userId: buyBox.user_id,
-              error: 'No company_id found for user',
+              error: errorMsg,
               success: false
             };
 
             return new Response(
               JSON.stringify({
-                message: 'Buy box update failed',
-                totalBuyBoxes: totalBuyBoxes || 1,
-                processedBuyBox: result
+                message: 'Zip code update failed',
+                result
               }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
             );
@@ -388,8 +446,9 @@ Deno.serve(async (req) => {
 
         // If filtering by price per sqft, don't pass price filter to Apify
         // We'll filter manually after getting all results
+        // ONLY PROCESS THIS SINGLE ZIP CODE
         const searchConfig = {
-          zipCodes: buyBox.zip_codes || [],
+          zipCodes: [zipCode], // Process only the specified zip code
           priceMin: buyBox.filter_by_ppsf ? undefined : (buyBox.price_min || undefined),
           priceMax: buyBox.filter_by_ppsf ? undefined : (buyBox.price_max || undefined),
           daysOnZillow: buyBox.days_on_zillow || '',
@@ -423,7 +482,20 @@ Deno.serve(async (req) => {
         );
 
         if (!apifyResponse.ok) {
-          throw new Error(`Apify API error: ${apifyResponse.status}`);
+          const errorText = await apifyResponse.text();
+          console.error(`❌ Apify API error: ${apifyResponse.status}`);
+          console.error(`   Response: ${errorText.substring(0, 500)}`);
+          throw new Error(`Apify API error: ${apifyResponse.status} - ${errorText.substring(0, 200)}`);
+        }
+
+        // Check if response is JSON
+        const runContentType = apifyResponse.headers.get('content-type');
+        if (!runContentType || !runContentType.includes('application/json')) {
+          const responseText = await apifyResponse.text();
+          console.error(`❌ Apify returned non-JSON response when starting run`);
+          console.error(`   Content-Type: ${runContentType}`);
+          console.error(`   Response preview: ${responseText.substring(0, 500)}`);
+          throw new Error(`Apify API returned non-JSON response. This usually indicates rate limiting or service issues.`);
         }
 
         const runData = await apifyResponse.json();
@@ -459,7 +531,18 @@ Deno.serve(async (req) => {
         );
 
         if (!resultsResponse.ok) {
-          throw new Error(`Failed to fetch results: ${resultsResponse.status}`);
+          const errorText = await resultsResponse.text();
+          throw new Error(`Failed to fetch results: ${resultsResponse.status} - ${errorText.substring(0, 200)}`);
+        }
+
+        // Check if response is actually JSON before parsing
+        const resultsContentType = resultsResponse.headers.get('content-type');
+        if (!resultsContentType || !resultsContentType.includes('application/json')) {
+          const responseText = await resultsResponse.text();
+          console.error(`❌ Apify returned non-JSON response for zip ${zipCode}`);
+          console.error(`   Content-Type: ${resultsContentType}`);
+          console.error(`   Response preview: ${responseText.substring(0, 500)}`);
+          throw new Error(`Apify returned non-JSON response (Content-Type: ${resultsContentType}). This usually means rate limiting or API issues.`);
         }
 
         let scrapedProperties = await resultsResponse.json();
@@ -797,7 +880,20 @@ Deno.serve(async (req) => {
           console.log(`      Price: $${scrapedPrice?.toLocaleString() || 'N/A'}`);
           console.log(`      Home Type: "${homeTypeValue}" → "${normalizeHomeType(homeTypeValue)}"`);
 
-          const existingProp = existingPropsMap.get(listingUrl);
+          // Check by BOTH URL and Address+City to prevent duplicates
+          // (Zillow can change URLs, so we need to check address too)
+          const existingPropByUrl = existingPropsMap.get(listingUrl);
+          const addressKey = `${addressData.address}|${addressData.city}`.toLowerCase();
+          const existingPropByAddress = existingByAddress.get(addressKey);
+          const existingProp = existingPropByUrl || existingPropByAddress;
+          
+          if (existingPropByUrl) {
+            console.log(`      🔗 Found existing property by URL`);
+          } else if (existingPropByAddress) {
+            console.log(`      📍 Found existing property by Address+City (URL changed!)`);
+            console.log(`         Old URL: ${existingPropByAddress.listing_url}`);
+            console.log(`         New URL: ${listingUrl}`);
+          }
 
           if (!existingProp) {
             console.log(`      ✅ NEW PROPERTY - Will be added to database`);
@@ -950,6 +1046,16 @@ Deno.serve(async (req) => {
               });
             }
 
+            // Check if URL changed (found by address but different URL)
+            if (existingProp.listing_url !== listingUrl) {
+              console.log(`      🔗 URL updated for property`);
+              changes.push({
+                field: 'listing_url',
+                oldValue: existingProp.listing_url || 'null',
+                newValue: listingUrl
+              });
+            }
+
             if (changes.length > 0) {
               propertyUpdates.push({
                 propertyId: existingProp.id,
@@ -966,6 +1072,11 @@ Deno.serve(async (req) => {
               }
               if (changes.some(c => c.field === 'status')) {
                 updateData.status = scrapedStatus;
+              }
+              if (changes.some(c => c.field === 'listing_url')) {
+                updateData.listing_url = listingUrl;
+                updateData.url = listingUrl; // Update both columns
+                console.log(`      ✅ Updating URL to: ${listingUrl}`);
               }
 
               await supabase
@@ -1044,8 +1155,10 @@ Deno.serve(async (req) => {
         }
 
         const result = {
+          queueId: queueId,
           buyBoxId: buyBox.id,
           buyBoxName: buyBox.name,
+          zipCode: zipCode,
           userId: buyBox.user_id,
           totalScraped: scrapedProperties.length,
           newListings: newListings.length,
@@ -1055,7 +1168,8 @@ Deno.serve(async (req) => {
         };
 
         console.log(`\n   ${'='.repeat(70)}`);
-        console.log(`   📊 FINAL SUMMARY FOR BUY BOX: ${buyBox.name}`);
+        console.log(`   📊 FINAL SUMMARY FOR ZIP CODE: ${zipCode}`);
+        console.log(`   Buy Box: ${buyBox.name}`);
         console.log(`   ${'='.repeat(70)}`);
         console.log(`   Properties after all filters: ${scrapedProperties.length}`);
         console.log(`   New listings identified: ${newListings.length}`);
@@ -1066,23 +1180,63 @@ Deno.serve(async (req) => {
         console.log(`   Agent info success rate: ${agentInfoFoundCount > 0 ? Math.round((agentInfoFoundCount / (agentInfoFoundCount + agentInfoMissingCount)) * 100) : 0}%`);
         console.log(`   Existing properties in DB for this buy box: ${(existingProperties || []).length}`);
         console.log(`   ${'='.repeat(70)}\n`);
-        console.log('✅ Buy box update completed');
+        console.log(`✅ Zip code ${zipCode} update completed`);
+
+        // UPDATE QUEUE WITH SUCCESS
+        console.log(`💾 Updating queue with success status...`);
+        const { error: queueUpdateError } = await supabase
+          .from('zip_code_queue')
+          .update({
+            last_updated_at: new Date().toISOString(),
+            last_status: 'success',
+            last_error: null,
+            properties_found: scrapedProperties.length,
+            properties_added: newListings.length,
+            properties_updated: updatedListings.length,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', queueId);
+
+        if (queueUpdateError) {
+          console.error(`⚠️ Failed to update queue status:`, queueUpdateError);
+        } else {
+          console.log(`✅ Queue updated successfully`);
+        }
 
         return new Response(
           JSON.stringify({
-            message: 'Buy box update completed',
-            totalBuyBoxes: totalBuyBoxes || 1,
-            processedBuyBox: result
+            message: 'Zip code update completed',
+            result
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         );
 
       } catch (error) {
-        console.error(`   ❌ Error processing buy box ${buyBox.name}:`, error.message);
+        console.error(`   ❌ Error processing zip code ${zipCode} for buy box ${buyBox.name}:`, error.message);
+        
+        // UPDATE QUEUE WITH FAILURE
+        console.log(`💾 Updating queue with failure status...`);
+        const { error: queueUpdateError } = await supabase
+          .from('zip_code_queue')
+          .update({
+            last_updated_at: new Date().toISOString(),
+            last_status: 'failed',
+            last_error: error.message || 'Unknown error',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', queueId);
+
+        if (queueUpdateError) {
+          console.error(`⚠️ Failed to update queue with error status:`, queueUpdateError);
+        } else {
+          console.log(`✅ Queue updated with failure status`);
+        }
         
         const result = {
+          queueId: queueId,
           buyBoxId: buyBox.id,
           buyBoxName: buyBox.name,
+          zipCode: zipCode,
           userId: buyBox.user_id,
           error: error.message,
           success: false
@@ -1090,9 +1244,8 @@ Deno.serve(async (req) => {
 
         return new Response(
           JSON.stringify({
-            message: 'Buy box update failed',
-            totalBuyBoxes: totalBuyBoxes || 1,
-            processedBuyBox: result
+            message: 'Zip code update failed',
+            result
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         );

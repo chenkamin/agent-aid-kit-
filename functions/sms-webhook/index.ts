@@ -316,6 +316,54 @@ Deno.serve(async (req) => {
     console.log(`   AI Score: ${aiScore || 'N/A'}`);
     console.log(`   AI Analysis: ${aiAnalysis || 'N/A'}`);
 
+    // Create notifications for all team members in the company
+    console.log('🔔 Creating notifications for team members...');
+    const { data: teamMembers, error: teamError } = await supabase
+      .from('team_members')
+      .select('user_id')
+      .eq('company_id', company.id);
+
+    if (teamError) {
+      console.error('❌ Error fetching team members:', teamError);
+    } else if (teamMembers && teamMembers.length > 0) {
+      const propertyInfo = property 
+        ? `for property: ${property.address}${property.city ? ', ' + property.city : ''}`
+        : '';
+      
+      const notificationTitle = property 
+        ? `New SMS: ${property.address}`
+        : `New SMS from ${fromNumber}`;
+      
+      const notificationMessage = aiScore 
+        ? `${messageBody.substring(0, 100)}${messageBody.length > 100 ? '...' : ''} (Interest: ${aiScore === 3 ? 'Hot 🔥' : aiScore === 2 ? 'Warm' : 'Cold'})`
+        : messageBody.substring(0, 150) + (messageBody.length > 150 ? '...' : '');
+
+      const notifications = teamMembers.map(member => ({
+        user_id: member.user_id,
+        company_id: company.id,
+        title: notificationTitle,
+        message: notificationMessage,
+        type: 'sms_received',
+        property_id: property?.id || null,
+        sms_message_id: smsMessage.id,
+        metadata: {
+          from_number: fromNumber,
+          ai_score: aiScore,
+          preview: messageBody.substring(0, 100)
+        }
+      }));
+
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert(notifications);
+
+      if (notificationError) {
+        console.error('❌ Error creating notifications:', notificationError);
+      } else {
+        console.log(`✅ Created ${notifications.length} notification(s) for team members`);
+      }
+    }
+
     // Return success response
     return new Response(
       JSON.stringify({

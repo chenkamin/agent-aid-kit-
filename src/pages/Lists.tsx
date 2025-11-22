@@ -57,7 +57,7 @@ export default function Lists() {
   const [locationInput, setLocationInput] = useState("");
   const [isLookingUpZips, setIsLookingUpZips] = useState(false);
   const [scrapingListId, setScrapingListId] = useState<string | null>(null);
-  const [selectedHomeTypes, setSelectedHomeTypes] = useState<string[]>([]);
+  const [selectedHomeTypes, setSelectedHomeTypes] = useState<string[]>(["Single Family"]);
   const [filterByCityMatch, setFilterByCityMatch] = useState(false);
   const [filterByNeighborhoods, setFilterByNeighborhoods] = useState(false);
   const [cities, setCities] = useState("");
@@ -330,7 +330,7 @@ export default function Lists() {
         
         setIsCreatingList(false);
         setEditingList(null);
-        setSelectedHomeTypes([]);
+        setSelectedHomeTypes(["Single Family"]);
         setFilterByCityMatch(false);
         setFilterByNeighborhoods(false);
         setCities("");
@@ -392,7 +392,7 @@ export default function Lists() {
         });
         setIsCreatingList(false);
         setEditingList(null);
-        setSelectedHomeTypes([]);
+        setSelectedHomeTypes(["Single Family"]);
         setFilterByCityMatch(false);
         setFilterByNeighborhoods(false);
         setCities("");
@@ -555,7 +555,7 @@ export default function Lists() {
 
   const handleEdit = (list: any) => {
     setEditingList(list);
-    setSelectedHomeTypes(list.home_types || []);
+    setSelectedHomeTypes(list.home_types || ["Single Family"]);
     setFilterByCityMatch(list.filter_by_city_match ?? false);
     setFilterByNeighborhoods(list.filter_by_neighborhoods ?? false);
     setCities(list.cities ? list.cities.join(", ") : "");
@@ -744,33 +744,7 @@ export default function Lists() {
       </div>
 
       {/* Subscription Status Banner */}
-      {userCompany?.companies && (
-        <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-primary/10">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Crown className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="font-semibold text-sm">
-                    Current Plan: <span className="capitalize">{userCompany.companies.subscription_tier || 'basic'}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {lists?.length || 0} / {getLimitMessage('buyBoxes', userCompany.companies.subscription_tier as SubscriptionTier || 'basic')}
-                  </p>
-                </div>
-              </div>
-              <Button 
-                size="sm" 
-                variant="outline" 
-                onClick={() => navigate('/pricing')}
-                className="bg-white hover:bg-primary hover:text-white transition-colors"
-              >
-                View Plans
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+     
 
       {sortedLists && sortedLists.length === 0 ? (
         <Card className="py-16">
@@ -1082,7 +1056,7 @@ export default function Lists() {
         setIsCreatingList(open);
         if (!open) {
           setEditingList(null);
-          setSelectedHomeTypes([]);
+          setSelectedHomeTypes(["Single Family"]);
           setFilterByCityMatch(false);
           setCities("");
           setListForm({
@@ -1471,7 +1445,7 @@ export default function Lists() {
             <Button variant="outline" onClick={() => {
               setIsCreatingList(false);
               setEditingList(null);
-              setSelectedHomeTypes([]);
+              setSelectedHomeTypes(["Single Family"]);
               setFilterByCityMatch(false);
               setCities("");
               setListForm({

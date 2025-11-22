@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings, Bell, Check, Trash2, Send } from "lucide-react";
+import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings, Bell, Check, Trash2, Send, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -35,12 +35,13 @@ export default function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const navigation = [
-    { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Properties", href: "/properties", icon: Building2 },
-    { name: "Buy Boxes", href: "/lists", icon: List },
-    { name: "Contacts", href: "/contacts", icon: Users },
-    { name: "Activities", href: "/activities", icon: Activity },
-    { name: "Communication", href: "/communication", icon: MessageSquare },
+    { name: "Dashboard", href: "/", icon: LayoutDashboard, dataTour: "dashboard-nav" },
+    { name: "Properties", href: "/properties", icon: Building2, dataTour: "properties-nav" },
+    { name: "Buy Boxes", href: "/lists", icon: List, dataTour: "lists-nav" },
+    { name: "Contacts", href: "/contacts", icon: Users, dataTour: "contacts-nav" },
+    { name: "Activities", href: "/activities", icon: Activity, dataTour: "activities-nav" },
+    { name: "Email", href: "/email", icon: Mail, dataTour: "email-nav" },
+    { name: "SMS", href: "/sms", icon: MessageSquare, dataTour: "sms-nav" },
   ];
 
   // Fetch notifications
@@ -222,6 +223,7 @@ export default function Layout({ children }: LayoutProps) {
               <Link
                 key={item.name}
                 to={item.href}
+                data-tour={item.dataTour}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
                   isActive
@@ -356,7 +358,9 @@ export default function Layout({ children }: LayoutProps) {
                           if (!notification.read) {
                             markAsReadMutation.mutate(notification.id);
                           }
-                          if (notification.property_id) {
+                          if (notification.type === 'sms_received') {
+                            navigate('/sms');
+                          } else if (notification.property_id) {
                             navigate(`/properties?propertyId=${notification.property_id}`);
                           } else if (notification.activity_id) {
                             navigate(`/activities?activityId=${notification.activity_id}`);

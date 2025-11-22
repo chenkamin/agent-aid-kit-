@@ -64,6 +64,20 @@ export default function Properties() {
   const isMobile = useIsMobile();
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
   const [editedProperty, setEditedProperty] = useState<any>(null);
+
+  // Mark that user has viewed properties page (for onboarding)
+  useEffect(() => {
+    const markPropertiesViewed = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_viewed_properties: true })
+          .eq('id', user.id);
+      }
+    };
+    markPropertiesViewed();
+  }, []);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [isAddingActivity, setIsAddingActivity] = useState(false);
   const [isBulkAddingActivity, setIsBulkAddingActivity] = useState(false);
@@ -130,6 +144,7 @@ export default function Properties() {
     workflowState: "all",
     urgency: "all",
     assignedTo: "all",
+    hasSellerDetails: "all",
   });
   const [searchInput, setSearchInput] = useState(""); // Immediate input value
   const [searchQuery, setSearchQuery] = useState(""); // Debounced value for querying
@@ -385,6 +400,15 @@ export default function Properties() {
     }
     if (filters.maxBedrooms) {
       query = query.lte("bedrooms", parseInt(filters.maxBedrooms));
+    }
+    
+    // Filter by seller details availability
+    if (filters.hasSellerDetails === "yes") {
+      query = query.or("seller_agent_name.neq.null,seller_agent_email.neq.null,seller_agent_phone.neq.null");
+    } else if (filters.hasSellerDetails === "no") {
+      query = query.is("seller_agent_name", null)
+                  .is("seller_agent_email", null)
+                  .is("seller_agent_phone", null);
     }
     
     return query;
@@ -2974,6 +2998,20 @@ export default function Properties() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mobile-filter-seller-details" className="text-sm font-medium">Seller Details</Label>
+                  <Select value={filters.hasSellerDetails} onValueChange={(value) => setFilters((prev) => ({ ...prev, hasSellerDetails: value }))}>
+                    <SelectTrigger id="mobile-filter-seller-details">
+                      <SelectValue placeholder="All Properties" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Properties</SelectItem>
+                      <SelectItem value="yes">✓ Has Seller Details</SelectItem>
+                      <SelectItem value="no">✗ No Seller Details</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </SheetContent>
           </Sheet>
@@ -3273,6 +3311,24 @@ export default function Properties() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Seller Details Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="filter-seller-details" className="text-sm font-medium">Seller Details</Label>
+              <Select
+                value={filters.hasSellerDetails}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, hasSellerDetails: value }))}
+              >
+                <SelectTrigger id="filter-seller-details">
+                  <SelectValue placeholder="All Properties" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Properties</SelectItem>
+                  <SelectItem value="yes">✓ Has Seller Details</SelectItem>
+                  <SelectItem value="no">✗ No Seller Details</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex items-center justify-between mt-4">
@@ -3300,6 +3356,7 @@ export default function Properties() {
                   workflowState: "all",
                   urgency: "all",
                   assignedTo: "all",
+                  hasSellerDetails: "all",
                 });
               }}
             >
@@ -3343,6 +3400,7 @@ export default function Properties() {
                     workflowState: "all",
                     urgency: "all",
                     assignedTo: "all",
+                    hasSellerDetails: "all",
                   });
                 }}
               >
@@ -3506,19 +3564,10 @@ export default function Properties() {
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('arv_estimate')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
-                      ARV
-                      {getSortIcon('arv_estimate')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('workflow_state')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       State
                       {getSortIcon('workflow_state')}
                     </Button>
-                  </TableHead>
-                  <TableHead>
-                    <span className="font-semibold">Next Activity</span>
                   </TableHead>
                   <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('city')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
@@ -3530,13 +3579,6 @@ export default function Properties() {
                     <Button variant="ghost" onClick={() => handleSort('living_sqf')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Sq/Ft
                       {getSortIcon('living_sqf')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('date_listed')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
-                      Listing Date
-                      {getSortIcon('date_listed')}
                     </Button>
                   </TableHead>
                   <TableHead>
@@ -3628,30 +3670,6 @@ export default function Properties() {
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <div className="cursor-help">
-                                {property.arv_estimate ? (
-                                  <Badge variant="secondary" className="font-semibold bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">
-                                    ${Number(property.arv_estimate).toLocaleString()}
-                                  </Badge>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">Estimating...</span>
-                                )}
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="text-xs max-w-xs">
-                                {property.arv_estimate 
-                                  ? `After Repair Value: AI-estimated value after repairs and improvements`
-                                  : `ARV estimation in progress. Check back in a few moments.`}
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableCell>
-                      <TableCell>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
                               <div className="cursor-help flex items-center gap-1">
                                 <span className="text-base">{getWorkflowStateIcon(property.workflow_state || 'Initial')}</span>
                                 <Badge variant="outline" className="font-medium">
@@ -3667,66 +3685,9 @@ export default function Properties() {
                           </Tooltip>
                         </TooltipProvider>
                       </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        {(() => {
-                          const nextActivity = getNextUpcomingActivity(property.id);
-                          if (!nextActivity) return <span className="text-xs text-muted-foreground">-</span>;
-                          
-                          const dueDate = new Date(nextActivity.due_at);
-                          const today = new Date();
-                          today.setHours(0, 0, 0, 0);
-                          const tomorrow = new Date(today);
-                          tomorrow.setDate(tomorrow.getDate() + 1);
-                          
-                          let dateLabel = format(dueDate, 'MMM d');
-                          if (dueDate.toDateString() === today.toDateString()) {
-                            dateLabel = 'Today';
-                          } else if (dueDate.toDateString() === tomorrow.toDateString()) {
-                            dateLabel = 'Tomorrow';
-                          }
-                          
-                          return (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Link to={`/activities?activity=${nextActivity.id}`}>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 text-xs px-2 gap-1 hover:bg-primary/10"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                      }}
-                                    >
-                                      <Calendar className="h-3 w-3" />
-                                      {dateLabel}
-                                    </Button>
-                                  </Link>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <div className="text-xs max-w-xs">
-                                    <p className="font-semibold">{nextActivity.title || 'Activity'}</p>
-                                    <p className="text-muted-foreground">Type: {nextActivity.type}</p>
-                                    <p className="text-muted-foreground">Due: {format(dueDate, 'PPp')}</p>
-                                    <p className="text-blue-500 text-[10px] mt-1">Click to view activity</p>
-                                  </div>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          );
-                        })()}
-                      </TableCell>
                       <TableCell>{property.city || '-'}</TableCell>
                       <TableCell>
                         {property.living_sqf ? Number(property.living_sqf).toLocaleString() : '-'}
-                      </TableCell>
-                      <TableCell>
-                        {property.source === 'Zillow' ? (
-                          <span className="text-blue-600 font-medium">Zillow</span>
-                        ) : property.source || ''}
-                      </TableCell>
-                      <TableCell>
-                        {property.date_listed ? format(new Date(property.date_listed), 'MM/dd/yyyy') : '-'}
                       </TableCell>
                       <TableCell>{property.bedrooms || '-'}</TableCell>
                       <TableCell>{property.bathrooms || '-'}</TableCell>

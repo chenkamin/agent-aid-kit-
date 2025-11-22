@@ -100,8 +100,8 @@ export default function Activities() {
   const [showFilters, setShowFilters] = useState(false);
   
   // Sort states
-  const [sortBy, setSortBy] = useState<"due_date" | "created_date">("due_date");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortBy, setSortBy] = useState<"due_date" | "created_date">("created_date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -992,7 +992,7 @@ export default function Activities() {
       ) : viewMode === "list" ? (
         // List View
         <Card>
-          <ScrollArea className="h-[600px]">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1127,7 +1127,7 @@ export default function Activities() {
                 )}
               </TableBody>
             </Table>
-          </ScrollArea>
+          </div>
         </Card>
       ) : (
         // Calendar View

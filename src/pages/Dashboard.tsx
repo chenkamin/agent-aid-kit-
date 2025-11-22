@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { format, startOfWeek, endOfWeek, isWithinInterval } from "date-fns";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
 import {
   BarChart,
   Bar,
@@ -210,6 +211,9 @@ export default function Dashboard() {
             : "Welcome back! Here's your overview."}
         </p>
       </div>
+
+      {/* Onboarding Checklist */}
+      {/* <OnboardingChecklist /> */}
 
       {/* Top Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

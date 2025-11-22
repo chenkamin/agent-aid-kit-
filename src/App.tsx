@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import OnboardingTour from "./components/OnboardingTour";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -18,7 +19,8 @@ import PropertyDetail from "./pages/PropertyDetail";
 import Contacts from "./pages/Contacts";
 import Activities from "./pages/Activities";
 import Lists from "./pages/Lists";
-import Communication from "./pages/Communication";
+import Email from "./pages/Email";
+import SMS from "./pages/SMS";
 import UserSettings from "./pages/UserSettings";
 import Pricing from "./pages/Pricing";
 import AcceptInvite from "./pages/AcceptInvite";
@@ -34,6 +36,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <OnboardingTour />
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<Landing />} />
@@ -125,15 +128,27 @@ const App = () => (
               }
             />
             <Route
-              path="/communication"
+              path="/email"
               element={
                 <ProtectedRoute>
                   <Layout>
-                    <Communication />
+                    <Email />
                   </Layout>
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/sms"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <SMS />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            {/* Redirect old communication route to email */}
+            <Route path="/communication" element={<Navigate to="/email" replace />} />
             <Route
               path="/settings"
               element={
