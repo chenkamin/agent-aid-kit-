@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -62,6 +62,7 @@ export default function SMS() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [searchParams] = useSearchParams();
 
   const [isCreatingSMSTemplate, setIsCreatingSMSTemplate] = useState(false);
   const [isEditingSettings, setIsEditingSettings] = useState(false);
@@ -71,6 +72,19 @@ export default function SMS() {
   const [smsSearchTerm, setSmsSearchTerm] = useState("");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [aiScoreFilter, setAiScoreFilter] = useState<string>("all");
+
+  // Apply filters from URL params on mount
+  useEffect(() => {
+    const aiScoreParam = searchParams.get("aiScore");
+    const directionParam = searchParams.get("direction");
+    
+    if (aiScoreParam) {
+      setAiScoreFilter(aiScoreParam);
+    }
+    if (directionParam) {
+      setDirectionFilter(directionParam);
+    }
+  }, [searchParams]);
 
   const [smsTemplateForm, setSmsTemplateForm] = useState({
     name: "",

@@ -468,7 +468,7 @@ export default function Automations() {
               onNodesDelete={onNodesDelete}
               nodeTypes={nodeTypes}
               defaultEdgeOptions={defaultEdgeOptions}
-              deleteKeyCode={['Backspace', 'Delete']}
+              deleteKeyCode={null}
               fitView
               className="bg-slate-50 dark:bg-slate-900"
             >
