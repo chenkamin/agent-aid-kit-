@@ -364,6 +364,48 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Trigger automations for incoming SMS
+    if (property) {
+      console.log('🤖 Triggering automations for SMS received...');
+      
+      try {
+        const automationResponse = await fetch(
+          `${supabaseUrl}/functions/v1/execute-automation`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              trigger: 'sms_received',
+              context: {
+                company_id: company.id,
+                property: property,
+                sms_message: {
+                  from_number: fromNumber,
+                  to_number: toNumber,
+                  message: messageBody,
+                  id: smsMessage.id
+                },
+                ai_score: aiScore
+              }
+            })
+          }
+        );
+        
+        if (automationResponse.ok) {
+          const automationResult = await automationResponse.json();
+          console.log('✅ Automations triggered:', automationResult);
+        } else {
+          console.error('⚠️ Automation trigger failed:', await automationResponse.text());
+        }
+      } catch (autoError) {
+        console.error('⚠️ Error triggering automations:', autoError);
+        // Don't fail webhook if automation fails
+      }
+    }
+
     // Return success response
     return new Response(
       JSON.stringify({

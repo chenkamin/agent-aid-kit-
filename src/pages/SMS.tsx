@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { MessageSquare, Plus, Trash2, Edit, Sparkles, Loader2, Save, Shield, Search, Send } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Edit, Sparkles, Loader2, Save, Shield, Search, Send, Flame, Thermometer, Snowflake } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -69,6 +69,8 @@ export default function SMS() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
   const [smsSearchTerm, setSmsSearchTerm] = useState("");
+  const [directionFilter, setDirectionFilter] = useState<string>("all");
+  const [aiScoreFilter, setAiScoreFilter] = useState<string>("all");
 
   const [smsTemplateForm, setSmsTemplateForm] = useState({
     name: "",
@@ -166,14 +168,34 @@ export default function SMS() {
 
   // Filtered SMS messages based on search
   const filteredSmsMessages = smsMessages.filter((msg: any) => {
-    if (!smsSearchTerm) return true;
-    const searchLower = smsSearchTerm.toLowerCase();
-    return (
-      msg.message?.toLowerCase().includes(searchLower) ||
-      msg.to_number?.toLowerCase().includes(searchLower) ||
-      msg.from_number?.toLowerCase().includes(searchLower) ||
-      msg.properties?.address?.toLowerCase().includes(searchLower)
-    );
+    // Search filter
+    if (smsSearchTerm) {
+      const searchLower = smsSearchTerm.toLowerCase();
+      const matchesSearch = (
+        msg.message?.toLowerCase().includes(searchLower) ||
+        msg.to_number?.toLowerCase().includes(searchLower) ||
+        msg.from_number?.toLowerCase().includes(searchLower) ||
+        msg.properties?.address?.toLowerCase().includes(searchLower)
+      );
+      if (!matchesSearch) return false;
+    }
+
+    // Direction filter
+    if (directionFilter !== "all" && msg.direction !== directionFilter) {
+      return false;
+    }
+
+    // AI Score filter
+    if (aiScoreFilter !== "all") {
+      if (aiScoreFilter === "none" && msg.ai_score !== null) {
+        return false;
+      }
+      if (aiScoreFilter !== "none" && msg.ai_score !== parseInt(aiScoreFilter)) {
+        return false;
+      }
+    }
+
+    return true;
   });
 
   // Create SMS template mutation
@@ -351,6 +373,36 @@ export default function SMS() {
           </Button>
         </div>
       </div>
+
+      {/* AI Score Info Banner */}
+      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 border-blue-200 dark:border-blue-800">
+        <CardContent className="py-4">
+          <div className="flex items-start gap-3">
+            <Sparkles className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-sm mb-1">AI-Powered Lead Scoring</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Every incoming SMS is automatically analyzed by AI to score seller interest. 
+                <span className="inline-flex items-center gap-1 mx-1">
+                  <Flame className="h-3 w-3 text-red-500" />
+                  <span className="font-medium text-red-700 dark:text-red-400">Hot (3)</span>
+                </span>
+                means very interested,
+                <span className="inline-flex items-center gap-1 mx-1">
+                  <Thermometer className="h-3 w-3 text-orange-500" />
+                  <span className="font-medium text-orange-700 dark:text-orange-400">Warm (2)</span>
+                </span>
+                means somewhat interested, and
+                <span className="inline-flex items-center gap-1 mx-1">
+                  <Snowflake className="h-3 w-3 text-blue-500" />
+                  <span className="font-medium text-blue-700 dark:text-blue-400">Cold (1)</span>
+                </span>
+                means not interested. Focus on hot leads first to close more deals! 🎯
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Main Tabs */}
       <Tabs defaultValue="sms-templates" className="w-full">
@@ -566,6 +618,33 @@ export default function SMS() {
                 className="pl-9"
               />
             </div>
+            
+            {/* Direction Filter */}
+            <Select value={directionFilter} onValueChange={setDirectionFilter}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue placeholder="Direction" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Messages</SelectItem>
+                <SelectItem value="incoming">📥 Incoming</SelectItem>
+                <SelectItem value="outgoing">📤 Outgoing</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* AI Score Filter */}
+            <Select value={aiScoreFilter} onValueChange={setAiScoreFilter}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue placeholder="AI Score" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Scores</SelectItem>
+                <SelectItem value="3">🔥 Hot (3)</SelectItem>
+                <SelectItem value="2">🌡️ Warm (2)</SelectItem>
+                <SelectItem value="1">❄️ Cold (1)</SelectItem>
+                <SelectItem value="none">No Score</SelectItem>
+              </SelectContent>
+            </Select>
+
             <p className="text-sm text-muted-foreground whitespace-nowrap">
               {filteredSmsMessages.length} of {smsMessages.length} messages
             </p>
@@ -583,9 +662,8 @@ export default function SMS() {
             </Card>
           ) : isMobile ? (
             // Mobile card view
-            <ScrollArea className="h-[500px]">
-              <div className="space-y-3 pr-4">
-                {filteredSmsMessages.length === 0 ? (
+            <div className="space-y-3">
+              {filteredSmsMessages.length === 0 ? (
                   <Card>
                     <CardContent className="flex flex-col items-center justify-center py-8">
                       <p className="text-sm text-muted-foreground">No messages found</p>
@@ -597,14 +675,21 @@ export default function SMS() {
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <Badge variant={message.direction === 'outgoing' ? 'default' : 'secondary'} className="gap-1 text-xs">
                                 <Send className="h-3 w-3" />
                                 {message.direction === 'outgoing' ? 'Out' : 'In'}
                               </Badge>
-                              <Badge variant="outline" className="text-xs capitalize">
-                                {message.status}
-                              </Badge>
+                              {/* AI Score Badge for incoming messages */}
+                              {message.direction === 'incoming' && message.ai_score && (
+                                <Badge 
+                                  variant={message.ai_score === 3 ? 'destructive' : message.ai_score === 2 ? 'default' : 'secondary'}
+                                  className="gap-1 text-xs"
+                                >
+                                  {message.ai_score === 3 ? <Flame className="h-3 w-3" /> : message.ai_score === 2 ? <Thermometer className="h-3 w-3" /> : <Snowflake className="h-3 w-3" />}
+                                  {message.ai_score === 3 ? 'Hot' : message.ai_score === 2 ? 'Warm' : 'Cold'}
+                                </Badge>
+                              )}
                             </div>
                             <CardDescription className="text-xs">
                               {format(new Date(message.created_at), "MMM d, yyyy 'at' h:mm a")}
@@ -634,18 +719,23 @@ export default function SMS() {
                           <p className="text-xs font-medium text-muted-foreground mb-1">Message:</p>
                           <p className="text-sm">{message.message}</p>
                         </div>
+                        {/* AI Analysis for incoming messages */}
+                        {message.direction === 'incoming' && message.ai_analysis && (
+                          <div className="mt-2 pt-2 border-t">
+                            <p className="text-xs font-medium text-muted-foreground mb-1">AI Analysis:</p>
+                            <p className="text-xs text-muted-foreground italic">{message.ai_analysis}</p>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))
                 )}
               </div>
-            </ScrollArea>
           ) : (
             // Desktop table view
             <Card className="overflow-hidden">
-              <ScrollArea className="h-[400px] md:h-[600px]">
-                <div className="overflow-x-auto">
-                  <Table>
+              <div className="overflow-x-auto">
+                <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[120px]">Date/Time</TableHead>
@@ -653,7 +743,7 @@ export default function SMS() {
                         <TableHead className="w-[150px]">Phone Number</TableHead>
                       <TableHead className="w-[200px]">Property</TableHead>
                       <TableHead>Message</TableHead>
-                      <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead className="w-[150px]">AI Score</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -694,17 +784,31 @@ export default function SMS() {
                             <p className="text-sm line-clamp-2">{message.message}</p>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="text-xs capitalize">
-                              {message.status}
-                            </Badge>
+                            {message.direction === 'incoming' && message.ai_score ? (
+                              <div className="flex flex-col gap-1">
+                                <Badge 
+                                  variant={message.ai_score === 3 ? 'destructive' : message.ai_score === 2 ? 'default' : 'secondary'}
+                                  className="gap-1 text-xs w-fit"
+                                >
+                                  {message.ai_score === 3 ? <Flame className="h-3 w-3" /> : message.ai_score === 2 ? <Thermometer className="h-3 w-3" /> : <Snowflake className="h-3 w-3" />}
+                                  {message.ai_score === 3 ? 'Hot' : message.ai_score === 2 ? 'Warm' : 'Cold'}
+                                </Badge>
+                                {message.ai_analysis && (
+                                  <p className="text-xs text-muted-foreground italic line-clamp-2" title={message.ai_analysis}>
+                                    {message.ai_analysis}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))
                     )}
                   </TableBody>
                 </Table>
-                </div>
-              </ScrollArea>
+              </div>
             </Card>
           )}
         </TabsContent>

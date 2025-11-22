@@ -346,6 +346,54 @@ Deno.serve(async (req) => {
         console.error('⚠️ Failed to log SMS to database:', dbError);
       } else {
         console.log('✅ SMS logged to database');
+        
+        // Trigger automations for SMS sent
+        if (result.success && msg.propertyId) {
+          console.log('🤖 Triggering automations for SMS sent...');
+          
+          try {
+            // Fetch property details for context
+            const { data: property } = await supabase
+              .from('properties')
+              .select('*')
+              .eq('id', msg.propertyId)
+              .single();
+            
+            if (property) {
+              const automationResponse = await fetch(
+                `${supabaseUrl}/functions/v1/execute-automation`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${supabaseKey}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    trigger: 'sms_sent',
+                    context: {
+                      company_id: userCompany.company_id,
+                      property: property,
+                      sms_message: {
+                        to_number: msg.to,
+                        message: msg.message
+                      }
+                    }
+                  })
+                }
+              );
+              
+              if (automationResponse.ok) {
+                const automationResult = await automationResponse.json();
+                console.log('✅ Automations triggered:', automationResult);
+              } else {
+                console.error('⚠️ Automation trigger failed:', await automationResponse.text());
+              }
+            }
+          } catch (autoError) {
+            console.error('⚠️ Error triggering automations:', autoError);
+            // Don't fail SMS send if automation fails
+          }
+        }
       }
 
       results.push({

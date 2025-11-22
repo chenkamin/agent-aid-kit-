@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings, Bell, Check, Trash2, Send, Mail } from "lucide-react";
+import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings, Bell, Check, Trash2, Send, Mail, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -42,6 +42,7 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Activities", href: "/activities", icon: Activity, dataTour: "activities-nav" },
     { name: "Email", href: "/email", icon: Mail, dataTour: "email-nav" },
     { name: "SMS", href: "/sms", icon: MessageSquare, dataTour: "sms-nav" },
+    { name: "Automations", href: "/automations", icon: Sparkles, dataTour: "automations-nav" },
   ];
 
   // Fetch notifications

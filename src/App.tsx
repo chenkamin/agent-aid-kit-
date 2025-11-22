@@ -21,6 +21,7 @@ import Activities from "./pages/Activities";
 import Lists from "./pages/Lists";
 import Email from "./pages/Email";
 import SMS from "./pages/SMS";
+import Automations from "./pages/Automations";
 import UserSettings from "./pages/UserSettings";
 import Pricing from "./pages/Pricing";
 import AcceptInvite from "./pages/AcceptInvite";
@@ -165,6 +166,16 @@ const App = () => (
                 <ProtectedRoute>
                   <Layout>
                     <Pricing />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/automations"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Automations />
                   </Layout>
                 </ProtectedRoute>
               }

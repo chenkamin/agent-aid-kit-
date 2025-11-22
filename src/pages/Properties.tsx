@@ -450,7 +450,7 @@ export default function Properties() {
       
       let query = supabase
         .from("properties")
-        .select("*")
+        .select("*, buy_boxes(name)")  // Join with buy_boxes table to get name
         .eq("company_id", userCompany.company_id);
       
       // Apply all filters
@@ -3552,6 +3552,9 @@ export default function Properties() {
                     </Button>
                   </TableHead>
                   <TableHead>
+                    <span className="font-semibold">Buy Box</span>
+                  </TableHead>
+                  <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('status')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       Status
                       {getSortIcon('status')}
@@ -3619,6 +3622,12 @@ export default function Properties() {
                             )}
                         </div>
                     </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          <Target className="h-3 w-3 mr-1" />
+                          {property.buy_boxes?.name || 'No Buy Box'}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <TooltipProvider>
@@ -5711,7 +5720,7 @@ export default function Properties() {
                           }`}
                         >
                           <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               {sms.direction === 'incoming' ? (
                                 <Badge variant="default" className="bg-blue-600 text-xs">
                                   Incoming
@@ -5725,6 +5734,16 @@ export default function Properties() {
                               <Badge variant="outline" className="text-xs capitalize">
                                 {sms.status}
                               </Badge>
+                              {/* AI Score Badge for incoming messages */}
+                              {sms.direction === 'incoming' && sms.ai_score && (
+                                <Badge 
+                                  variant={sms.ai_score === 3 ? 'destructive' : sms.ai_score === 2 ? 'default' : 'secondary'}
+                                  className="gap-1 text-xs"
+                                >
+                                  {sms.ai_score === 3 ? <Flame className="h-3 w-3" /> : sms.ai_score === 2 ? <ThermometerSun className="h-3 w-3" /> : <Snowflake className="h-3 w-3" />}
+                                  {sms.ai_score === 3 ? 'Hot' : sms.ai_score === 2 ? 'Warm' : 'Cold'}
+                                </Badge>
+                              )}
                             </div>
                             <span className="text-xs text-muted-foreground">
                               {format(new Date(sms.created_at), "MMM d, yyyy h:mm a")}
