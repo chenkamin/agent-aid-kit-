@@ -473,6 +473,14 @@ export default function Automations() {
                   >
                     📅 Create Activity
                   </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('action', 'send_sms')}
+                  >
+                    📤 Send SMS
+                  </Button>
                 </div>
               </div>
             </SheetContent>
@@ -581,6 +589,14 @@ export default function Automations() {
                 onClick={() => addNode('action', 'create_activity')}
               >
                 📅 Create Activity
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('action', 'send_sms')}
+              >
+                📤 Send SMS
               </Button>
             </div>
           </Card>

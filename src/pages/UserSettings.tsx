@@ -9,7 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { User, Lock, CreditCard, Save, Users, UserPlus, Mail, Trash2, Shield, Crown, User as UserIcon, Copy } from "lucide-react";
+import { User, Lock, CreditCard, Save, Users, UserPlus, Mail, Trash2, Shield, Crown, User as UserIcon, Copy, Palette, Moon, Sun } from "lucide-react";
+import { useDarkMode } from "@/contexts/DarkModeContext";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { canAddUser, getLimitMessage, getUpgradeMessage, type SubscriptionTier } from "@/lib/subscriptionLimits";
 import { useNavigate } from "react-router-dom";
@@ -36,6 +38,7 @@ export default function UserSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { isDarkMode, toggleDarkMode } = useDarkMode();
 
   // Fetch user profile
   const { data: profile, isLoading } = useQuery({
@@ -645,10 +648,14 @@ export default function UserSettings() {
       </div>
 
       <Tabs defaultValue="info" className="space-y-6">
-        <TabsList className={`grid w-full ${userRole === "owner" ? "grid-cols-5" : userCompany ? "grid-cols-4" : "grid-cols-3"}`}>
+        <TabsList className={`grid w-full ${userRole === "owner" ? "grid-cols-6" : userCompany ? "grid-cols-5" : "grid-cols-4"}`}>
           <TabsTrigger value="info" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Info</span>
+          </TabsTrigger>
+          <TabsTrigger value="appearance" className="flex items-center gap-2">
+            <Palette className="h-4 w-4" />
+            <span className="hidden sm:inline">Appearance</span>
           </TabsTrigger>
           <TabsTrigger value="password" className="flex items-center gap-2">
             <Lock className="h-4 w-4" />
@@ -717,6 +724,134 @@ export default function UserSettings() {
                   <Save className="mr-2 h-4 w-4" />
                   {updateProfileMutation.isPending ? "Saving..." : "Save Changes"}
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Appearance Tab */}
+        <TabsContent value="appearance">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="h-5 w-5" />
+                Appearance Settings
+              </CardTitle>
+              <CardDescription>
+                Customize how Dealio looks and feels
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Dark Mode Toggle */}
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-card">
+                <div className="flex items-start gap-4">
+                  <div className="mt-1">
+                    {isDarkMode ? (
+                      <Moon className="h-5 w-5 text-primary" />
+                    ) : (
+                      <Sun className="h-5 w-5 text-primary" />
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <div className="font-semibold text-base">Dark Mode</div>
+                    <p className="text-sm text-muted-foreground">
+                      {isDarkMode 
+                        ? "Currently using dark theme for reduced eye strain"
+                        : "Currently using light theme for better visibility in bright environments"
+                      }
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={isDarkMode}
+                  onCheckedChange={toggleDarkMode}
+                  aria-label="Toggle dark mode"
+                />
+              </div>
+
+              {/* Theme Preview */}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">Theme Preview</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Light Preview */}
+                  <button
+                    onClick={() => toggleDarkMode()}
+                    className={`relative overflow-hidden rounded-lg border-2 transition-all ${
+                      !isDarkMode ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="bg-white p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Sun className="h-4 w-4 text-amber-500" />
+                        <span className="text-sm font-semibold text-slate-900">Light</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-2 bg-slate-200 rounded w-3/4"></div>
+                        <div className="h-2 bg-slate-200 rounded w-1/2"></div>
+                      </div>
+                      <div className="flex gap-1">
+                        <div className="h-6 w-6 rounded bg-blue-500"></div>
+                        <div className="h-6 w-6 rounded bg-green-500"></div>
+                        <div className="h-6 w-6 rounded bg-purple-500"></div>
+                      </div>
+                    </div>
+                    {!isDarkMode && (
+                      <div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+
+                  {/* Dark Preview */}
+                  <button
+                    onClick={() => toggleDarkMode()}
+                    className={`relative overflow-hidden rounded-lg border-2 transition-all ${
+                      isDarkMode ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="bg-slate-950 p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Moon className="h-4 w-4 text-blue-400" />
+                        <span className="text-sm font-semibold text-slate-100">Dark</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-2 bg-slate-700 rounded w-3/4"></div>
+                        <div className="h-2 bg-slate-700 rounded w-1/2"></div>
+                      </div>
+                      <div className="flex gap-1">
+                        <div className="h-6 w-6 rounded bg-blue-600"></div>
+                        <div className="h-6 w-6 rounded bg-green-600"></div>
+                        <div className="h-6 w-6 rounded bg-purple-600"></div>
+                      </div>
+                    </div>
+                    {isDarkMode && (
+                      <div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Click on a theme to switch instantly. Your preference is saved automatically.
+                </p>
+              </div>
+
+              {/* Additional Info */}
+              <div className="p-4 bg-muted/50 rounded-lg border">
+                <div className="flex gap-3">
+                  <div className="text-2xl">💡</div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Pro Tip</p>
+                    <p className="text-xs text-muted-foreground">
+                      Dark mode reduces eye strain in low-light environments and can help save battery on OLED screens.
+                      Your theme preference syncs automatically across all your devices.
+                    </p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

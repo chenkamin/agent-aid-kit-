@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useQuery } from '@tanstack/react-query';
 
 interface NodeConfigDialogProps {
   node: any;
@@ -40,7 +44,51 @@ const ACTIVITY_TYPES = [
 ];
 
 export default function NodeConfigDialog({ node, isOpen, onClose, onSave }: NodeConfigDialogProps) {
+  const { user } = useAuth();
   const [config, setConfig] = useState(node?.data?.config || {});
+
+  // Fetch SMS templates (same query as SMS page - by user_id, not company_id)
+  const { data: smsTemplates } = useQuery({
+    queryKey: ['sms_templates', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      
+      const { data, error } = await supabase
+        .from('sms_templates')
+        .select('*')
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching SMS templates:', error);
+        return [];
+      }
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
+  // Update config when node changes
+  useEffect(() => {
+    setConfig(node?.data?.config || {});
+  }, [node]);
+
+  // Load template when selected
+  const handleTemplateSelect = (templateId: string) => {
+    if (templateId === 'custom') {
+      setConfig({ ...config, template_id: null, message: '' });
+      return;
+    }
+    const template = smsTemplates?.find(t => t.id === templateId);
+    if (template) {
+      setConfig({ 
+        ...config, 
+        template_id: templateId,
+        template_name: template.name,
+        message: template.body 
+      });
+    }
+  };
 
   const handleSave = () => {
     onSave(config);
@@ -162,6 +210,121 @@ export default function NodeConfigDialog({ node, isOpen, onClose, onSave }: Node
             </div>
           );
 
+        case 'send_sms':
+          return (
+            <div className="space-y-4">
+              {/* AI Auto-Pilot Toggle */}
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                <div className="flex-1 mr-3">
+                  <Label htmlFor="ai_autopilot" className="text-sm font-semibold">
+                    🤖 AI Auto-Pilot
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Let AI generate personalized messages automatically based on property data
+                  </p>
+                </div>
+                <Switch
+                  id="ai_autopilot"
+                  checked={config.ai_autopilot || false}
+                  onCheckedChange={(checked) => {
+                    setConfig({ ...config, ai_autopilot: checked });
+                    if (checked) {
+                      // Clear message when AI is enabled
+                      setConfig({ ...config, ai_autopilot: checked, message: '', template_id: null });
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Template Selector - Only show if AI autopilot is OFF */}
+              {!config.ai_autopilot && (
+                <div>
+                  <Label htmlFor="sms_template_selector">Select SMS Template</Label>
+                  <Select 
+                    value={config.template_id || 'custom'} 
+                    onValueChange={handleTemplateSelect}
+                  >
+                    <SelectTrigger id="sms_template_selector">
+                      <SelectValue placeholder="Select a template or create custom..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="custom">
+                        <span className="font-medium">✍️ Custom Message</span>
+                      </SelectItem>
+                      {smsTemplates && smsTemplates.length > 0 ? (
+                        smsTemplates.map((template: any) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            📝 {template.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="no-templates" disabled>
+                          No templates yet - create one in SMS page
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {config.template_id && config.template_id !== 'custom' 
+                      ? `✅ Template loaded - you can edit the message below` 
+                      : smsTemplates && smsTemplates.length > 0
+                        ? `${smsTemplates.length} template(s) available`
+                        : 'Choose a saved template or write a custom message'}
+                  </p>
+                </div>
+              )}
+
+              {/* Message Field - Only show if AI autopilot is OFF */}
+              {!config.ai_autopilot && (
+                <div>
+                  <Label htmlFor="sms_message">Message</Label>
+                  <Textarea
+                    id="sms_message"
+                    value={config.message || ''}
+                    onChange={(e) => setConfig({ ...config, message: e.target.value })}
+                    placeholder="Hi {{AGENT_NAME}}, interested in {{ADDRESS}} at {{PRICE}}..."
+                    rows={4}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Use variables: {'{{AGENT_NAME}}'}, {'{{ADDRESS}}'}, {'{{PRICE}}'}, {'{{BEDS}}'}, {'{{BATHS}}'}, {'{{SQFT}}'}
+                  </p>
+                </div>
+              )}
+
+              {/* AI Instructions - Only show if AI autopilot is ON */}
+              {config.ai_autopilot && (
+                <div>
+                  <Label htmlFor="ai_instructions">AI Instructions (Optional)</Label>
+                  <Textarea
+                    id="ai_instructions"
+                    value={config.ai_instructions || ''}
+                    onChange={(e) => setConfig({ ...config, ai_instructions: e.target.value })}
+                    placeholder="e.g., Be professional and mention we're cash buyers, focus on quick closing..."
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Provide specific instructions for the AI to follow when generating messages
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <Label htmlFor="delay_hours">Delay (Hours)</Label>
+                <Input
+                  id="delay_hours"
+                  type="number"
+                  min="0"
+                  value={config.delay_hours || '0'}
+                  onChange={(e) => setConfig({ ...config, delay_hours: e.target.value })}
+                  placeholder="0"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Wait this many hours before sending (0 = send immediately)
+                </p>
+              </div>
+            </div>
+          );
+
         default:
           return <p className="text-sm text-muted-foreground">No configuration needed</p>;
       }
@@ -241,6 +404,7 @@ export default function NodeConfigDialog({ node, isOpen, onClose, onSave }: Node
       'update_workflow': 'Update Workflow State',
       'create_notification': 'Create Notification',
       'create_activity': 'Create Activity',
+      'send_sms': 'Send SMS Follow-up',
       'ai_score': 'Check AI Score',
       'workflow_state': 'Check Workflow State',
       'property_value': 'Check Property Value',

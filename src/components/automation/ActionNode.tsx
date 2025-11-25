@@ -60,6 +60,19 @@ export default function ActionNode({ data }: ActionNodeProps) {
             {data.config.type && (
               <div>Type: {data.config.type}</div>
             )}
+            {data.config.ai_autopilot && (
+              <div className="flex items-center gap-1 text-blue-600 font-medium">
+                <span>🤖</span> AI Auto-Pilot
+              </div>
+            )}
+            {data.config.message && !data.config.ai_autopilot && (
+              <div className="truncate max-w-[160px] text-xs">
+                Message: "{data.config.message.substring(0, 30)}..."
+              </div>
+            )}
+            {data.config.delay_hours && parseInt(data.config.delay_hours) > 0 && (
+              <div className="text-xs">⏱️ Delay: {data.config.delay_hours}h</div>
+            )}
           </div>
         )}
       </div>

@@ -28,7 +28,10 @@ import {
   Play,
   Award,
   HeadphonesIcon,
-  Lock
+  Lock,
+  Phone,
+  Send,
+  Bot
 } from "lucide-react";
 import {
   Accordion,
@@ -922,6 +925,103 @@ export default function Landing() {
                 </Card>
               </motion.div>
             ))}
+          </div>
+        </motion.div>
+        </div>
+      </div>
+
+      {/* Integrations Section */}
+      <div className="bg-background py-24">
+        <div className="container mx-auto px-4">
+        <motion.div 
+          className="max-w-6xl mx-auto"
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+        >
+          <div className="text-center mb-16">
+            <h2 className="text-5xl md:text-6xl font-black mb-6">
+              Seamless Integrations
+            </h2>
+            <p className="text-2xl font-semibold text-foreground mb-2">
+              Connect your favorite tools in minutes
+            </p>
+            <p className="text-xl text-muted-foreground">
+              Dealio works with the tools you already use
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 mb-12">
+            {[
+              {
+                icon: Phone,
+                title: "OpenPhone & Twilio",
+                description: "Connect your business phone system seamlessly. Make calls, send SMS, and track all conversations in one place. OpenPhone (QUO) integration for advanced call routing and Twilio for reliable SMS delivery.",
+                badge: "Voice & SMS"
+              },
+              {
+                icon: Mail,
+                title: "Gmail & SMTP",
+                description: "Send emails directly from Dealio using your Gmail account or any SMTP provider. Keep all communication centralized while using your own email domain. Full email tracking and templates included.",
+                badge: "Email Integration"
+              },
+              {
+                icon: Bot,
+                title: "OpenAI",
+                description: "Powered by cutting-edge AI from OpenAI. Automatically score leads, generate personalized follow-up messages, and get smart insights on every property. Let AI handle the heavy lifting.",
+                badge: "AI-Powered"
+              },
+              {
+                icon: Zap,
+                title: "More Coming Soon",
+                description: "We're constantly adding new integrations based on your feedback. Zapier, Slack, and CRM integrations are on the roadmap. Need a specific integration? Let us know!",
+                badge: "Expanding"
+              }
+            ].map((integration, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+              >
+                <Card className="border-none shadow-lg h-full hover:shadow-xl transition-all">
+                  <CardHeader>
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="w-14 h-14 bg-blue-50 dark:bg-blue-950/30 rounded-full flex items-center justify-center flex-shrink-0">
+                        <integration.icon className="h-7 w-7 text-blue-600" />
+                      </div>
+                      <Badge variant="secondary" className="text-xs">
+                        {integration.badge}
+                      </Badge>
+                    </div>
+                    <CardTitle className="text-2xl mb-3">
+                      {integration.title}
+                    </CardTitle>
+                    <CardDescription className="text-base leading-relaxed">
+                      {integration.description}
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          <div className="text-center">
+            <Card className="border-2 border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 shadow-lg inline-block">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3 text-left">
+                  <Shield className="h-6 w-6 text-blue-600 flex-shrink-0" />
+                  <div>
+                    <CardTitle className="text-lg mb-1">Enterprise-Grade Security</CardTitle>
+                    <CardDescription className="text-sm">
+                      All integrations use secure OAuth 2.0 authentication and encrypted data transfer. Your credentials are never stored or exposed.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+            </Card>
           </div>
         </motion.div>
         </div>

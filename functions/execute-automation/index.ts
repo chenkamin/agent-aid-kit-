@@ -1,432 +1,352 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
-};
-
-interface AutomationContext {
-  trigger: string;
-  property?: any;
-  sms_message?: any;
-  email_message?: any;
-  ai_score?: number;
-  old_workflow_state?: string;
-  new_workflow_state?: string;
-  company_id: string;
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Execute a single automation
-async function executeAutomation(
-  supabase: any,
-  automation: any,
-  context: AutomationContext
-) {
-  console.log(`🤖 Executing automation: ${automation.name}`);
-  console.log(`   Trigger: ${context.trigger}`);
-  
-  const { nodes, edges } = automation.flow_data;
-  
-  // Find trigger node
-  const triggerNode = nodes.find((n: any) => n.type === 'trigger');
-  if (!triggerNode) {
-    console.log('❌ No trigger node found in automation');
-    return { status: 'skipped', reason: 'No trigger node' };
-  }
-  
-  // Check if trigger matches
-  const triggerType = triggerNode.data.label;
-  if (triggerType !== context.trigger) {
-    console.log(`❌ Trigger mismatch: expected ${triggerType}, got ${context.trigger}`);
-    return { status: 'skipped', reason: 'Trigger mismatch' };
-  }
-  
-  console.log(`✅ Trigger matches: ${triggerType}`);
-  
-  // Execute flow starting from trigger
-  const executedActions: any[] = [];
-  let currentNodeId = triggerNode.id;
-  const visitedNodes = new Set<string>();
-  
-  while (currentNodeId && !visitedNodes.has(currentNodeId)) {
-    visitedNodes.add(currentNodeId);
-    const currentNode = nodes.find((n: any) => n.id === currentNodeId);
-    
-    if (!currentNode) {
-      console.log(`⚠️ Node ${currentNodeId} not found, ending execution`);
-      break;
-    }
-    
-    console.log(`📍 Processing node: ${currentNode.type} - ${currentNode.data.label}`);
-    
-    if (currentNode.type === 'action') {
-      // Execute action
-      try {
-        const result = await executeAction(supabase, currentNode, context);
-        executedActions.push(result);
-        console.log(`✅ Action executed:`, result);
-      } catch (error) {
-        console.error(`❌ Error executing action:`, error);
-        executedActions.push({ 
-          action: currentNode.data.label, 
-          error: error.message 
-        });
-      }
-      
-      // Find next node (single output)
-      const nextEdge = edges.find((e: any) => e.source === currentNodeId);
-      currentNodeId = nextEdge?.target;
-      
-    } else if (currentNode.type === 'condition') {
-      // Evaluate condition
-      const conditionResult = evaluateCondition(currentNode, context);
-      console.log(`🔍 Condition result: ${conditionResult ? 'TRUE' : 'FALSE'}`);
-      
-      // Find next edge based on condition result
-      const handleId = conditionResult ? 'true' : 'false';
-      const nextEdge = edges.find((e: any) => 
-        e.source === currentNodeId && e.sourceHandle === handleId
-      );
-      currentNodeId = nextEdge?.target;
-      
-    } else {
-      // Trigger node - move to next
-      const nextEdge = edges.find((e: any) => e.source === currentNodeId);
-      currentNodeId = nextEdge?.target;
-    }
-  }
-  
-  console.log(`✅ Automation completed. Executed ${executedActions.length} actions`);
-  return { status: 'success', actions: executedActions };
-}
-
-// Execute specific action
-async function executeAction(supabase: any, node: any, context: AutomationContext) {
-  const actionType = node.data.label;
-  const config = node.data.config || {};
-  
-  console.log(`⚡ Executing action: ${actionType}`, config);
-  
-  switch (actionType) {
-    case 'update_workflow':
-      if (!config.new_state) {
-        throw new Error('No workflow state configured');
-      }
-      
-      if (!context.property?.id) {
-        throw new Error('No property in context');
-      }
-      
-      const oldState = context.property.workflow_state || 'Initial';
-      
-      // Update property workflow state
-      const { error: updateError } = await supabase
-        .from('properties')
-        .update({ workflow_state: config.new_state })
-        .eq('id', context.property.id);
-      
-      if (updateError) throw updateError;
-      
-      // Record workflow history
-      const { error: historyError } = await supabase
-        .from('property_workflow_history')
-        .insert({
-          property_id: context.property.id,
-          from_state: oldState,
-          to_state: config.new_state,
-          user_id: context.property.user_id,
-          notes: 'Automated by workflow: ' + actionType
-        });
-      
-      if (historyError) {
-        console.error('⚠️ Failed to record history:', historyError);
-      }
-      
-      console.log(`✅ Updated workflow: ${oldState} → ${config.new_state}`);
-      
-      return { 
-        action: 'update_workflow', 
-        from_state: oldState,
-        to_state: config.new_state,
-        property_id: context.property.id
-      };
-    
-    case 'create_notification':
-      if (!config.title) {
-        throw new Error('No notification title configured');
-      }
-      
-      // Get team members to notify
-      const { data: teamMembers, error: teamError } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('company_id', context.company_id);
-      
-      if (teamError) throw teamError;
-      
-      const recipients = config.recipient === 'all' 
-        ? (teamMembers || []).map((tm: any) => tm.user_id)
-        : [context.property?.user_id].filter(Boolean);
-      
-      if (recipients.length === 0) {
-        console.log('⚠️ No recipients for notification');
-        return { action: 'create_notification', recipients: 0 };
-      }
-      
-      const notifications = recipients.map((userId: string) => ({
-        user_id: userId,
-        company_id: context.company_id,
-        title: config.title,
-        message: config.message || '',
-        type: 'automation',
-        property_id: context.property?.id || null
-      }));
-      
-      const { error: notifError } = await supabase
-        .from('notifications')
-        .insert(notifications);
-      
-      if (notifError) throw notifError;
-      
-      console.log(`✅ Created ${recipients.length} notification(s)`);
-      
-      return { 
-        action: 'create_notification', 
-        recipients: recipients.length,
-        title: config.title
-      };
-    
-    case 'create_activity':
-      if (!config.type || !config.title) {
-        throw new Error('Activity type and title required');
-      }
-      
-      if (!context.property?.id) {
-        throw new Error('No property in context');
-      }
-      
-      // Calculate due date
-      const daysOffset = parseInt(config.due_days || '1');
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + daysOffset);
-      
-      const { error: activityError } = await supabase
-        .from('activities')
-        .insert({
-          company_id: context.company_id,
-          property_id: context.property.id,
-          user_id: context.property.user_id,
-          type: config.type,
-          title: config.title,
-          status: 'open',
-          due_at: dueDate.toISOString()
-        });
-      
-      if (activityError) throw activityError;
-      
-      console.log(`✅ Created activity: ${config.title}`);
-      
-      return { 
-        action: 'create_activity', 
-        type: config.type,
-        title: config.title,
-        due_days: daysOffset
-      };
-    
-    default:
-      console.warn(`⚠️ Unknown action type: ${actionType}`);
-      return { action: actionType, status: 'unknown' };
-  }
-}
-
-// Evaluate condition
-function evaluateCondition(node: any, context: AutomationContext): boolean {
-  const conditionType = node.data.label;
-  const config = node.data.config || {};
-  
-  console.log(`🔍 Evaluating condition: ${conditionType}`, config);
-  
-  switch (conditionType) {
-    case 'ai_score':
-      const score = context.ai_score || 0;
-      const result = evaluateComparison(score, config.operator || '>', parseInt(config.value || '2'));
-      console.log(`   AI Score: ${score} ${config.operator} ${config.value} = ${result}`);
-      return result;
-    
-    case 'workflow_state':
-      const currentState = context.property?.workflow_state || 'Initial';
-      const matches = currentState === config.state;
-      console.log(`   Workflow State: ${currentState} == ${config.state} = ${matches}`);
-      return matches;
-    
-    case 'property_value':
-      const fieldValue = context.property?.[config.field];
-      return evaluateComparison(fieldValue, config.operator, config.value);
-    
-    default:
-      console.warn(`⚠️ Unknown condition type: ${conditionType}`);
-      return false;
-  }
-}
-
-function evaluateComparison(a: any, operator: string, b: any): boolean {
-  const numA = parseFloat(a);
-  const numB = parseFloat(b);
-  
-  switch (operator) {
-    case '>': return numA > numB;
-    case '<': return numA < numB;
-    case '>=': return numA >= numB;
-    case '<=': return numA <= numB;
-    case '==': return a == b;
-    case '!=': return a != b;
-    default: return false;
-  }
-}
-
-// Main handler
-Deno.serve(async (req) => {
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    console.log('\n🚀 Automation execution triggered');
+    const { automationId, propertyId, triggerType } = await req.json()
     
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const supabase = createClient(supabaseUrl!, supabaseKey!);
+    console.log(`🤖 Executing automation ${automationId} for property ${propertyId || 'N/A'}`)
     
-    const { trigger, context } = await req.json();
-    
-    console.log(`📥 Received trigger: ${trigger}`);
-    console.log(`   Company ID: ${context.company_id}`);
-    console.log(`   Property ID: ${context.property?.id}`);
-    
-    if (!context.company_id) {
-      throw new Error('company_id is required in context');
-    }
-    
-    // Fetch all active automations for this company
-    const { data: automations, error: automationsError } = await supabase
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    // Get automation
+    const { data: automation, error: autoError } = await supabase
       .from('automations')
       .select('*')
-      .eq('company_id', context.company_id)
-      .eq('is_active', true);
-    
-    if (automationsError) throw automationsError;
-    
-    console.log(`📋 Found ${automations?.length || 0} active automation(s)`);
-    
-    if (!automations || automations.length === 0) {
-      return new Response(
-        JSON.stringify({ 
-          message: 'No active automations found',
-          results: [] 
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      .eq('id', automationId)
+      .eq('is_active', true)
+      .single()
+
+    if (autoError || !automation) {
+      console.error('❌ Automation not found or inactive:', autoError)
+      throw new Error('Automation not found or inactive')
     }
-    
-    // Execute each matching automation
-    const results = [];
-    for (const automation of automations) {
-      console.log(`\n🔄 Processing automation: ${automation.name}`);
+
+    console.log(`✅ Found automation: ${automation.name}`)
+
+    // Get property data if propertyId provided
+    let property = null
+    if (propertyId) {
+      const { data, error: propError } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('id', propertyId)
+        .single()
       
-      try {
-        const result = await executeAutomation(supabase, automation, { 
-          trigger, 
-          ...context 
-        });
-        
-        results.push({ 
-          automation_id: automation.id, 
-          automation_name: automation.name,
-          ...result 
-        });
-        
-        // Log execution
-        await supabase.from('automation_logs').insert({
-          automation_id: automation.id,
-          company_id: context.company_id,
-          trigger_type: trigger,
-          property_id: context.property?.id || null,
-          status: result.status,
-          actions_executed: result.actions || []
-        });
-        
-        // Update automation stats
-        if (result.status === 'success') {
-          await supabase
-            .from('automations')
-            .update({
-              last_triggered_at: new Date().toISOString(),
-              trigger_count: automation.trigger_count + 1,
-              success_count: automation.success_count + 1
-            })
-            .eq('id', automation.id);
-        } else {
-          await supabase
-            .from('automations')
-            .update({
-              last_triggered_at: new Date().toISOString(),
-              trigger_count: automation.trigger_count + 1
-            })
-            .eq('id', automation.id);
-        }
-        
-      } catch (error) {
-        console.error(`❌ Error executing automation ${automation.id}:`, error);
-        
-        results.push({ 
-          automation_id: automation.id, 
-          automation_name: automation.name,
-          status: 'error', 
-          error: error.message 
-        });
-        
-        // Log error
-        await supabase.from('automation_logs').insert({
-          automation_id: automation.id,
-          company_id: context.company_id,
-          trigger_type: trigger,
-          property_id: context.property?.id || null,
-          status: 'error',
-          error_message: error.message
-        });
-        
-        // Update error count
-        await supabase
-          .from('automations')
-          .update({
-            last_triggered_at: new Date().toISOString(),
-            trigger_count: automation.trigger_count + 1,
-            error_count: automation.error_count + 1
-          })
-          .eq('id', automation.id);
+      if (propError) {
+        console.error('❌ Property not found:', propError)
+      } else {
+        property = data
+        console.log(`✅ Found property: ${property.address}`)
       }
     }
+
+    // Execute the automation flow
+    const actions = []
+    const flowNodes = automation.flow_data.nodes || []
     
-    console.log(`\n✅ Execution complete. Processed ${results.length} automation(s)`);
-    
+    console.log(`📋 Processing ${flowNodes.length} nodes in automation`)
+
+    for (const node of flowNodes) {
+      if (node.type === 'action') {
+        console.log(`⚡ Executing action: ${node.data.label}`)
+        const config = node.data.config || {}
+        
+        // Handle different action types
+        switch (node.data.label) {
+          case 'send_sms':
+            if (property && property.seller_agent_phone) {
+              let message = ''
+              
+              // Check if AI auto-pilot is enabled
+              if (config.ai_autopilot) {
+                console.log(`🤖 AI Auto-Pilot enabled - generating message...`)
+                
+                // Prepare property context for AI
+                const propertyContext = `
+Property Details:
+- Address: ${property.address}, ${property.city}, ${property.state} ${property.zip}
+- Price: $${property.price?.toLocaleString() || 'N/A'}
+- Bedrooms: ${property.bedrooms || 'N/A'}
+- Bathrooms: ${property.bathrooms || 'N/A'}
+- Square Feet: ${property.square_footage || property.living_sqf || 'N/A'}
+- Days on Market: ${property.days_on_market || 'N/A'}
+- Agent: ${property.seller_agent_name || 'Unknown'}
+
+${config.ai_instructions ? `Special Instructions: ${config.ai_instructions}` : ''}
+`.trim()
+
+                try {
+                  // Call OpenAI to generate message
+                  const openaiKey = Deno.env.get('OPENAI_API_KEY')
+                  if (!openaiKey) {
+                    throw new Error('OpenAI API key not configured')
+                  }
+
+                  const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${openaiKey}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      model: 'gpt-4',
+                      messages: [
+                        {
+                          role: 'system',
+                          content: `You are a professional real estate investor assistant. Generate a concise, professional SMS message (160 characters max) to a real estate agent expressing interest in the property. Be friendly, direct, and include specific property details. ${config.ai_instructions || ''}`
+                        },
+                        {
+                          role: 'user',
+                          content: propertyContext
+                        }
+                      ],
+                      temperature: 0.7,
+                      max_tokens: 100
+                    })
+                  })
+
+                  if (!aiResponse.ok) {
+                    const errorText = await aiResponse.text()
+                    throw new Error(`OpenAI API error: ${aiResponse.status} - ${errorText}`)
+                  }
+
+                  const aiData = await aiResponse.json()
+                  message = aiData.choices[0]?.message?.content?.trim() || ''
+                  
+                  if (!message) {
+                    throw new Error('AI generated empty message')
+                  }
+
+                  console.log(`✅ AI generated message: ${message.substring(0, 50)}...`)
+                } catch (aiError) {
+                  console.error(`❌ AI message generation failed:`, aiError)
+                  actions.push({ 
+                    type: 'send_sms', 
+                    status: 'error', 
+                    error: `AI generation failed: ${aiError.message}`,
+                    to: property.seller_agent_phone 
+                  })
+                  break // Skip to next action
+                }
+              } else {
+                // Use manual message with variable replacement
+                message = config.message || ''
+                message = message
+                  .replace(/\{\{AGENT_NAME\}\}/gi, property.seller_agent_name || '')
+                  .replace(/\{\{ADDRESS\}\}/gi, property.address || '')
+                  .replace(/\{\{PRICE\}\}/gi, property.price ? `$${property.price.toLocaleString()}` : '')
+                  .replace(/\{\{BEDS\}\}/gi, property.bedrooms?.toString() || '')
+                  .replace(/\{\{BATHS\}\}/gi, property.bathrooms?.toString() || '')
+                  .replace(/\{\{SQFT\}\}/gi, property.square_footage?.toString() || property.living_sqf?.toString() || '')
+              }
+
+              console.log(`📤 Sending SMS to ${property.seller_agent_phone}`)
+              console.log(`   Message: ${message.substring(0, 50)}...`)
+
+              try {
+                // Call send-sms function
+                const { data: smsResult, error: smsError } = await supabase.functions.invoke('send-sms', {
+                  body: {
+                    type: 'single',
+                    to: property.seller_agent_phone,
+                    message: message,
+                    propertyId: property.id
+                  }
+                })
+
+                if (smsError) {
+                  console.error(`❌ SMS send failed:`, smsError)
+                  actions.push({ 
+                    type: 'send_sms', 
+                    status: 'error', 
+                    error: smsError.message,
+                    to: property.seller_agent_phone 
+                  })
+                } else {
+                  console.log(`✅ SMS sent successfully`)
+                  actions.push({ 
+                    type: 'send_sms', 
+                    status: 'success', 
+                    to: property.seller_agent_phone,
+                    message: message.substring(0, 100),
+                    ai_generated: config.ai_autopilot || false
+                  })
+                }
+              } catch (error) {
+                console.error(`❌ Error calling send-sms function:`, error)
+                actions.push({ 
+                  type: 'send_sms', 
+                  status: 'error', 
+                  error: error.message,
+                  to: property.seller_agent_phone 
+                })
+              }
+            } else {
+              console.log(`⚠️ Skipping SMS - no property or phone number`)
+              actions.push({ 
+                type: 'send_sms', 
+                status: 'skipped', 
+                reason: 'No property or phone number' 
+              })
+            }
+            break
+
+          case 'update_workflow':
+            if (property && config.new_state) {
+              console.log(`🔄 Updating workflow state to: ${config.new_state}`)
+              const { error: updateError } = await supabase
+                .from('properties')
+                .update({ workflow_state: config.new_state })
+                .eq('id', property.id)
+
+              if (updateError) {
+                console.error(`❌ Workflow update failed:`, updateError)
+                actions.push({ 
+                  type: 'update_workflow', 
+                  status: 'error', 
+                  error: updateError.message 
+                })
+              } else {
+                console.log(`✅ Workflow updated successfully`)
+                actions.push({ 
+                  type: 'update_workflow', 
+                  status: 'success', 
+                  new_state: config.new_state 
+                })
+              }
+            } else {
+              console.log(`⚠️ Skipping workflow update - no property or state`)
+              actions.push({ 
+                type: 'update_workflow', 
+                status: 'skipped', 
+                reason: 'No property or new state configured' 
+              })
+            }
+            break
+
+          case 'create_activity':
+            if (property && config.type && config.title) {
+              console.log(`📅 Creating activity: ${config.title}`)
+              const dueDate = new Date()
+              dueDate.setDate(dueDate.getDate() + (parseInt(config.due_days) || 1))
+
+              const { error: activityError } = await supabase
+                .from('activities')
+                .insert({
+                  company_id: automation.company_id,
+                  property_id: property.id,
+                  type: config.type,
+                  title: config.title,
+                  notes: `Created by automation: ${automation.name}`,
+                  due_date: dueDate.toISOString(),
+                  status: 'pending'
+                })
+
+              if (activityError) {
+                console.error(`❌ Activity creation failed:`, activityError)
+                actions.push({ 
+                  type: 'create_activity', 
+                  status: 'error', 
+                  error: activityError.message 
+                })
+              } else {
+                console.log(`✅ Activity created successfully`)
+                actions.push({ 
+                  type: 'create_activity', 
+                  status: 'success', 
+                  activity_type: config.type 
+                })
+              }
+            } else {
+              console.log(`⚠️ Skipping activity creation - missing configuration`)
+              actions.push({ 
+                type: 'create_activity', 
+                status: 'skipped', 
+                reason: 'Missing required configuration' 
+              })
+            }
+            break
+
+          default:
+            console.log(`⚠️ Unknown action type: ${node.data.label}`)
+            actions.push({ 
+              type: node.data.label, 
+              status: 'skipped', 
+              reason: 'Action type not implemented' 
+            })
+        }
+      }
+    }
+
+    // Log execution
+    console.log(`📊 Logging automation execution`)
+    const { error: logError } = await supabase.from('automation_logs').insert({
+      automation_id: automationId,
+      company_id: automation.company_id,
+      trigger_type: triggerType,
+      property_id: propertyId,
+      status: 'success',
+      actions_executed: actions
+    })
+
+    if (logError) {
+      console.error(`⚠️ Failed to log automation execution:`, logError)
+    }
+
+    // Update automation stats
+    console.log(`📈 Updating automation stats`)
+    const { error: statsError } = await supabase
+      .from('automations')
+      .update({
+        last_triggered_at: new Date().toISOString(),
+        trigger_count: automation.trigger_count + 1,
+        success_count: automation.success_count + 1
+      })
+      .eq('id', automationId)
+
+    if (statsError) {
+      console.error(`⚠️ Failed to update automation stats:`, statsError)
+    }
+
+    console.log(`✅ Automation execution completed`)
+    console.log(`   Actions executed: ${actions.length}`)
+    console.log(`   Successful: ${actions.filter(a => a.status === 'success').length}`)
+    console.log(`   Failed: ${actions.filter(a => a.status === 'error').length}`)
+    console.log(`   Skipped: ${actions.filter(a => a.status === 'skipped').length}`)
+
     return new Response(
       JSON.stringify({ 
-        message: 'Automations executed',
-        results 
+        success: true, 
+        actions,
+        summary: {
+          total: actions.length,
+          successful: actions.filter(a => a.status === 'success').length,
+          failed: actions.filter(a => a.status === 'error').length,
+          skipped: actions.filter(a => a.status === 'skipped').length
+        }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-    
+    )
   } catch (error) {
-    console.error('❌ Fatal error:', error);
+    console.error('❌ Automation execution error:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { 
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+      JSON.stringify({ 
+        success: false,
+        error: error.message 
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+    )
   }
-});
-
+})
