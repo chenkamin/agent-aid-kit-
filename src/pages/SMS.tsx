@@ -72,6 +72,10 @@ export default function SMS() {
   const [smsSearchTerm, setSmsSearchTerm] = useState("");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [aiScoreFilter, setAiScoreFilter] = useState<string>("all");
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   // Apply filters from URL params on mount
   useEffect(() => {
@@ -85,6 +89,11 @@ export default function SMS() {
       setDirectionFilter(directionParam);
     }
   }, [searchParams]);
+
+  // Reset to page 1 when filters or items per page change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [directionFilter, aiScoreFilter, smsSearchTerm, itemsPerPage]);
 
   const [smsTemplateForm, setSmsTemplateForm] = useState({
     name: "",
@@ -180,8 +189,8 @@ export default function SMS() {
     }
   }, [companyData]);
 
-  // Filtered SMS messages based on search
-  const filteredSmsMessages = smsMessages.filter((msg: any) => {
+  // Filtered SMS messages based on search (all messages, before pagination)
+  const allFilteredSmsMessages = smsMessages.filter((msg: any) => {
     // Search filter
     if (smsSearchTerm) {
       const searchLower = smsSearchTerm.toLowerCase();
@@ -211,6 +220,12 @@ export default function SMS() {
 
     return true;
   });
+
+  // Calculate pagination from filtered messages
+  const totalCount = allFilteredSmsMessages.length;
+  const from = (currentPage - 1) * itemsPerPage;
+  const to = from + itemsPerPage;
+  const filteredSmsMessages = allFilteredSmsMessages.slice(from, to);
 
   // Create SMS template mutation
   const createSMSTemplateMutation = useMutation({
@@ -660,7 +675,7 @@ export default function SMS() {
             </Select>
 
             <p className="text-sm text-muted-foreground whitespace-nowrap">
-              {filteredSmsMessages.length} of {smsMessages.length} messages
+              Showing {filteredSmsMessages.length} of {totalCount} messages
             </p>
           </div>
 
@@ -823,6 +838,100 @@ export default function SMS() {
                   </TableBody>
                 </Table>
               </div>
+            </Card>
+          )}
+
+          {/* Pagination Controls */}
+          {totalCount > 0 && (
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Items per page:</span>
+                    <Select
+                      value={itemsPerPage.toString()}
+                      onValueChange={(value) => setItemsPerPage(parseInt(value))}
+                    >
+                      <SelectTrigger className="w-[80px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="25">25</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                        <SelectItem value="200">200</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-sm text-muted-foreground ml-2 sm:ml-4">
+                      Showing {filteredSmsMessages.length} of {totalCount} messages
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                    >
+                      First
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {(() => {
+                        const totalPages = Math.ceil(totalCount / itemsPerPage);
+                        const pages = [];
+                        const showPages = 5;
+                        let startPage = Math.max(1, currentPage - Math.floor(showPages / 2));
+                        const endPage = Math.min(totalPages, startPage + showPages - 1);
+                        
+                        if (endPage - startPage + 1 < showPages) {
+                          startPage = Math.max(1, endPage - showPages + 1);
+                        }
+                        
+                        for (let i = startPage; i <= endPage; i++) {
+                          pages.push(
+                            <Button
+                              key={i}
+                              variant={currentPage === i ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(i)}
+                              className="w-10"
+                            >
+                              {i}
+                            </Button>
+                          );
+                        }
+                        
+                        return pages;
+                      })()}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / itemsPerPage), prev + 1))}
+                      disabled={currentPage >= Math.ceil(totalCount / itemsPerPage)}
+                    >
+                      Next
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(Math.ceil(totalCount / itemsPerPage))}
+                      disabled={currentPage >= Math.ceil(totalCount / itemsPerPage)}
+                    >
+                      Last
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
             </Card>
           )}
         </TabsContent>

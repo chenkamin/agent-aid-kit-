@@ -128,8 +128,11 @@ export default function Dashboard() {
     ? ((smsThisWeek.length - smsLastWeek.length) / smsLastWeek.length * 100).toFixed(0)
     : 0;
 
-  // AI Score distribution
-  const hotLeads = allSmsMessages?.filter((msg) => msg.ai_score === 3).length || 0;
+  // AI Score distribution - count unique properties with hot leads
+  const hotLeadsMessages = allSmsMessages?.filter((msg) => msg.ai_score === 3) || [];
+  const uniqueHotLeadPropertyIds = Array.from(new Set(hotLeadsMessages.map(msg => msg.property_id).filter(Boolean)));
+  const hotLeads = uniqueHotLeadPropertyIds.length;
+  
   const warmLeads = allSmsMessages?.filter((msg) => msg.ai_score === 2).length || 0;
   const coldLeads = allSmsMessages?.filter((msg) => msg.ai_score === 1).length || 0;
   const totalScoredLeads = hotLeads + warmLeads + coldLeads;
@@ -289,7 +292,7 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-2">
               AI Score: 3/3 - Very Interested!
             </p>
-            <Button size="sm" className="w-full mt-3 bg-red-600 hover:bg-red-700" onClick={() => navigate("/sms?aiScore=3")}>
+            <Button size="sm" className="w-full mt-3 bg-red-600 hover:bg-red-700" onClick={() => navigate("/properties?leadScore=hot")}>
               Contact Now →
             </Button>
           </CardContent>

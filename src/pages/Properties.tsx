@@ -145,6 +145,7 @@ export default function Properties() {
     urgency: "all",
     assignedTo: "all",
     hasSellerDetails: "all",
+    leadScore: "all",
   });
   const [searchInput, setSearchInput] = useState(""); // Immediate input value
   const [searchQuery, setSearchQuery] = useState(""); // Debounced value for querying
@@ -209,6 +210,18 @@ export default function Properties() {
     const buyBoxIdFromUrl = searchParams.get('buyBoxId');
     if (buyBoxIdFromUrl) {
       setFilters((prev) => ({ ...prev, buyBoxId: buyBoxIdFromUrl }));
+      setShowFilters(true);
+      // Remove the query parameter after applying it
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Apply lead score filter from URL parameter
+  useEffect(() => {
+    const leadScoreFromUrl = searchParams.get('leadScore');
+    if (leadScoreFromUrl) {
+      console.log('🔥 Setting leadScore filter from URL:', leadScoreFromUrl);
+      setFilters((prev) => ({ ...prev, leadScore: leadScoreFromUrl }));
       setShowFilters(true);
       // Remove the query parameter after applying it
       setSearchParams({});
@@ -414,18 +427,71 @@ export default function Properties() {
     return query;
   };
 
+  // Fetch property IDs with SMS leads based on score filter
+  const { data: leadScorePropertyIds } = useQuery({
+    queryKey: ["lead-score-properties", userCompany?.company_id, filters.leadScore],
+    queryFn: async () => {
+      if (!userCompany?.company_id || filters.leadScore === "all") {
+        console.log('⏭️ Skipping lead score query - leadScore:', filters.leadScore);
+        return null;
+      }
+      
+      // Map filter value to AI score
+      const scoreMap: Record<string, number> = {
+        hot: 3,
+        warm: 2,
+        cold: 1
+      };
+      
+      const aiScore = scoreMap[filters.leadScore];
+      if (!aiScore) return null;
+      
+      const scoreEmoji = filters.leadScore === 'hot' ? '🔥' : filters.leadScore === 'warm' ? '🌡️' : '❄️';
+      console.log(`${scoreEmoji} Fetching ${filters.leadScore} lead property IDs (score ${aiScore})...`);
+      
+      const { data, error } = await supabase
+        .from("sms_messages")
+        .select("property_id")
+        .eq("company_id", userCompany.company_id)
+        .eq("direction", "incoming")
+        .eq("ai_score", aiScore)
+        .not("property_id", "is", null);
+      
+      if (error) {
+        console.error(`❌ Error fetching ${filters.leadScore} lead properties:`, error);
+        return null;
+      }
+      
+      // Get unique property IDs
+      const uniqueIds = Array.from(new Set(data.map(msg => msg.property_id).filter(Boolean)));
+      console.log(`${scoreEmoji} Found ${uniqueIds.length} properties with ${filters.leadScore} SMS leads:`, uniqueIds);
+      return uniqueIds;
+    },
+    enabled: !!userCompany?.company_id && filters.leadScore !== "all",
+  });
+
   // Get total count of properties for pagination
   const { data: totalCount } = useQuery({
-    queryKey: ["properties-count", userCompany?.company_id, filters, searchQuery],
+    queryKey: ["properties-count", userCompany?.company_id, filters, searchQuery, leadScorePropertyIds],
     queryFn: async () => {
       if (!userCompany?.company_id) return 0;
+      
+      // If filtering by lead score but no properties have that score, return 0
+      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
+        return 0;
+      }
       
       let query = supabase
         .from("properties")
         .select("*", { count: "exact", head: true })
         .eq("company_id", userCompany.company_id);
       
-      // Apply all filters
+      // Filter by lead score property IDs if applicable
+      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
+        query = query.in("id", leadScorePropertyIds);
+      }
+      
+      // Apply all other filters
       query = applyFiltersToQuery(query);
       
       const { count, error } = await query;
@@ -437,13 +503,24 @@ export default function Properties() {
       
       return count || 0;
     },
-    enabled: !!userCompany?.company_id,
+    enabled: !!userCompany?.company_id && (filters.leadScore === "all" || leadScorePropertyIds !== undefined),
   });
 
   const { data: properties, isLoading } = useQuery({
-    queryKey: ["properties", userCompany?.company_id, filters, searchQuery, currentPage, itemsPerPage],
+    queryKey: ["properties", userCompany?.company_id, filters, searchQuery, currentPage, itemsPerPage, leadScorePropertyIds],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
+      
+      console.log('📊 Fetching properties with filters:', {
+        leadScore: filters.leadScore,
+        leadScorePropertyIds: leadScorePropertyIds?.length || 0
+      });
+      
+      // If filtering by lead score but no properties have that score, return empty
+      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
+        console.log(`⚠️ No properties with ${filters.leadScore} leads found - returning empty`);
+        return [];
+      }
       
       const from = (currentPage - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
@@ -453,7 +530,14 @@ export default function Properties() {
         .select("*, buy_boxes(name)")  // Join with buy_boxes table to get name
         .eq("company_id", userCompany.company_id);
       
-      // Apply all filters
+      // Filter by lead score property IDs if applicable
+      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
+        const scoreEmoji = filters.leadScore === 'hot' ? '🔥' : filters.leadScore === 'warm' ? '🌡️' : '❄️';
+        console.log(`${scoreEmoji} Filtering to ${leadScorePropertyIds.length} ${filters.leadScore} lead properties:`, leadScorePropertyIds);
+        query = query.in("id", leadScorePropertyIds);
+      }
+      
+      // Apply all other filters
       query = applyFiltersToQuery(query);
       
       const { data, error } = await query
@@ -461,13 +545,14 @@ export default function Properties() {
         .range(from, to);
       
       if (error) {
-        console.error("Error fetching properties:", error);
+        console.error("❌ Error fetching properties:", error);
         throw error;
       }
       
+      console.log(`✅ Fetched ${data?.length || 0} properties (leadScore: ${filters.leadScore})`);
       return data || [];
     },
-    enabled: !!userCompany?.company_id,
+    enabled: !!userCompany?.company_id && (filters.leadScore === "all" || leadScorePropertyIds !== undefined),
   });
 
   // Debounce search input (500ms delay)
@@ -3326,6 +3411,25 @@ export default function Properties() {
                   <SelectItem value="all">All Properties</SelectItem>
                   <SelectItem value="yes">✓ Has Seller Details</SelectItem>
                   <SelectItem value="no">✗ No Seller Details</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Lead Score Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="filter-lead-score" className="text-sm font-medium">Lead Score</Label>
+              <Select
+                value={filters.leadScore}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, leadScore: value }))}
+              >
+                <SelectTrigger id="filter-lead-score">
+                  <SelectValue placeholder="All Leads" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Properties</SelectItem>
+                  <SelectItem value="hot">🔥 Hot Leads (Score 3)</SelectItem>
+                  <SelectItem value="warm">🌡️ Warm Leads (Score 2)</SelectItem>
+                  <SelectItem value="cold">❄️ Cold Leads (Score 1)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
