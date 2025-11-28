@@ -34,7 +34,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -134,18 +134,18 @@ export default function Properties() {
     maxBedrooms: "",
   }); // Immediate input values
   const [filters, setFilters] = useState({
-    status: "all",
-    buyBoxId: "all",
+    status: [] as string[],
+    buyBoxId: [] as string[],
     minPrice: "",
     maxPrice: "",
     minBedrooms: "",
     maxBedrooms: "",
-    homeType: "all",
-    workflowState: "all",
-    urgency: "all",
-    assignedTo: "all",
-    hasSellerDetails: "all",
-    leadScore: "all",
+    homeType: [] as string[],
+    workflowState: [] as string[],
+    urgency: [] as string[],
+    assignedTo: [] as string[],
+    hasSellerDetails: [] as string[],
+    leadScore: [] as string[],
   });
   const [searchInput, setSearchInput] = useState(""); // Immediate input value
   const [searchQuery, setSearchQuery] = useState(""); // Debounced value for querying
@@ -209,7 +209,7 @@ export default function Properties() {
   useEffect(() => {
     const buyBoxIdFromUrl = searchParams.get('buyBoxId');
     if (buyBoxIdFromUrl) {
-      setFilters((prev) => ({ ...prev, buyBoxId: buyBoxIdFromUrl }));
+      setFilters((prev) => ({ ...prev, buyBoxId: [buyBoxIdFromUrl] }));
       setShowFilters(true);
       // Remove the query parameter after applying it
       setSearchParams({});
@@ -221,7 +221,7 @@ export default function Properties() {
     const leadScoreFromUrl = searchParams.get('leadScore');
     if (leadScoreFromUrl) {
       console.log('🔥 Setting leadScore filter from URL:', leadScoreFromUrl);
-      setFilters((prev) => ({ ...prev, leadScore: leadScoreFromUrl }));
+      setFilters((prev) => ({ ...prev, leadScore: [leadScoreFromUrl] }));
       setShowFilters(true);
       // Remove the query parameter after applying it
       setSearchParams({});
@@ -365,37 +365,44 @@ export default function Properties() {
       query = query.ilike("address", `%${searchQuery}%`);
     }
     
-    // Filter by status
-    if (filters.status !== "all") {
-      query = query.eq("status", filters.status);
+    // Filter by status (multiple selection)
+    if (filters.status.length > 0) {
+      query = query.in("status", filters.status);
     }
     
-    // Filter by buy box
-    if (filters.buyBoxId !== "all") {
-      query = query.eq("buy_box_id", filters.buyBoxId);
+    // Filter by buy box (multiple selection)
+    if (filters.buyBoxId.length > 0) {
+      query = query.in("buy_box_id", filters.buyBoxId);
     }
     
-    // Filter by workflow state
-    if (filters.workflowState !== "all") {
-      query = query.eq("workflow_state", filters.workflowState);
+    // Filter by workflow state (multiple selection)
+    if (filters.workflowState.length > 0) {
+      query = query.in("workflow_state", filters.workflowState);
     }
     
-    // Filter by home type
-    if (filters.homeType !== "all") {
-      query = query.eq("home_type", filters.homeType);
+    // Filter by home type (multiple selection)
+    if (filters.homeType.length > 0) {
+      query = query.in("home_type", filters.homeType);
     }
     
-    // Filter by urgency
-    if (filters.urgency !== "all") {
-      query = query.eq("urgency", parseInt(filters.urgency));
+    // Filter by urgency (multiple selection)
+    if (filters.urgency.length > 0) {
+      const urgencyNumbers = filters.urgency.map(u => parseInt(u));
+      query = query.in("urgency", urgencyNumbers);
     }
     
-    // Filter by assigned user
-    if (filters.assignedTo !== "all") {
-      if (filters.assignedTo === "unassigned") {
+    // Filter by assigned user (multiple selection)
+    if (filters.assignedTo.length > 0) {
+      if (filters.assignedTo.includes("unassigned") && filters.assignedTo.length === 1) {
+        // Only unassigned selected
         query = query.is("assigned_to", null);
+      } else if (filters.assignedTo.includes("unassigned")) {
+        // Unassigned + other users selected
+        const userIds = filters.assignedTo.filter(id => id !== "unassigned");
+        query = query.or(`assigned_to.is.null,assigned_to.in.(${userIds.join(",")})`);
       } else {
-        query = query.eq("assigned_to", filters.assignedTo);
+        // Only specific users selected
+        query = query.in("assigned_to", filters.assignedTo);
       }
     }
     
@@ -415,13 +422,17 @@ export default function Properties() {
       query = query.lte("bedrooms", parseInt(filters.maxBedrooms));
     }
     
-    // Filter by seller details availability
-    if (filters.hasSellerDetails === "yes") {
+    // Filter by seller details availability (multiple selection)
+    if (filters.hasSellerDetails.length > 0) {
+      if (filters.hasSellerDetails.includes("yes") && filters.hasSellerDetails.includes("no")) {
+        // Both selected = show all
+      } else if (filters.hasSellerDetails.includes("yes")) {
       query = query.or("seller_agent_name.neq.null,seller_agent_email.neq.null,seller_agent_phone.neq.null");
-    } else if (filters.hasSellerDetails === "no") {
+      } else if (filters.hasSellerDetails.includes("no")) {
       query = query.is("seller_agent_name", null)
                   .is("seller_agent_email", null)
                   .is("seller_agent_phone", null);
+      }
     }
     
     return query;
@@ -431,43 +442,42 @@ export default function Properties() {
   const { data: leadScorePropertyIds } = useQuery({
     queryKey: ["lead-score-properties", userCompany?.company_id, filters.leadScore],
     queryFn: async () => {
-      if (!userCompany?.company_id || filters.leadScore === "all") {
+      if (!userCompany?.company_id || filters.leadScore.length === 0) {
         console.log('⏭️ Skipping lead score query - leadScore:', filters.leadScore);
         return null;
       }
       
-      // Map filter value to AI score
+      // Map filter values to AI scores
       const scoreMap: Record<string, number> = {
         hot: 3,
         warm: 2,
         cold: 1
       };
       
-      const aiScore = scoreMap[filters.leadScore];
-      if (!aiScore) return null;
+      const aiScores = filters.leadScore.map(score => scoreMap[score]).filter(Boolean);
+      if (aiScores.length === 0) return null;
       
-      const scoreEmoji = filters.leadScore === 'hot' ? '🔥' : filters.leadScore === 'warm' ? '🌡️' : '❄️';
-      console.log(`${scoreEmoji} Fetching ${filters.leadScore} lead property IDs (score ${aiScore})...`);
+      console.log(`🎯 Fetching lead property IDs for scores: ${filters.leadScore.join(', ')} (${aiScores.join(', ')})...`);
       
       const { data, error } = await supabase
         .from("sms_messages")
         .select("property_id")
         .eq("company_id", userCompany.company_id)
         .eq("direction", "incoming")
-        .eq("ai_score", aiScore)
+        .in("ai_score", aiScores)
         .not("property_id", "is", null);
       
       if (error) {
-        console.error(`❌ Error fetching ${filters.leadScore} lead properties:`, error);
+        console.error(`❌ Error fetching lead properties:`, error);
         return null;
       }
       
       // Get unique property IDs
       const uniqueIds = Array.from(new Set(data.map(msg => msg.property_id).filter(Boolean)));
-      console.log(`${scoreEmoji} Found ${uniqueIds.length} properties with ${filters.leadScore} SMS leads:`, uniqueIds);
+      console.log(`🎯 Found ${uniqueIds.length} properties with lead SMS:`, uniqueIds);
       return uniqueIds;
     },
-    enabled: !!userCompany?.company_id && filters.leadScore !== "all",
+    enabled: !!userCompany?.company_id && filters.leadScore.length > 0,
   });
 
   // Get total count of properties for pagination
@@ -477,7 +487,7 @@ export default function Properties() {
       if (!userCompany?.company_id) return 0;
       
       // If filtering by lead score but no properties have that score, return 0
-      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
+      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
         return 0;
       }
       
@@ -487,7 +497,7 @@ export default function Properties() {
         .eq("company_id", userCompany.company_id);
       
       // Filter by lead score property IDs if applicable
-      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
+      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
         query = query.in("id", leadScorePropertyIds);
       }
       
@@ -517,8 +527,8 @@ export default function Properties() {
       });
       
       // If filtering by lead score but no properties have that score, return empty
-      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
-        console.log(`⚠️ No properties with ${filters.leadScore} leads found - returning empty`);
+      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
+        console.log(`⚠️ No properties with selected lead scores found - returning empty`);
         return [];
       }
       
@@ -531,9 +541,8 @@ export default function Properties() {
         .eq("company_id", userCompany.company_id);
       
       // Filter by lead score property IDs if applicable
-      if (filters.leadScore !== "all" && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
-        const scoreEmoji = filters.leadScore === 'hot' ? '🔥' : filters.leadScore === 'warm' ? '🌡️' : '❄️';
-        console.log(`${scoreEmoji} Filtering to ${leadScorePropertyIds.length} ${filters.leadScore} lead properties:`, leadScorePropertyIds);
+      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
+        console.log(`🎯 Filtering to ${leadScorePropertyIds.length} properties with lead scores:`, leadScorePropertyIds);
         query = query.in("id", leadScorePropertyIds);
       }
       
@@ -2215,6 +2224,9 @@ export default function Properties() {
   });
 
   // Update property mutation
+  // Debounce timer ref for auto-save
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const updatePropertyMutation = useMutation({
     mutationFn: async (updatedData: any) => {
       if (!selectedProperty?.id) throw new Error("No property selected");
@@ -2234,34 +2246,45 @@ export default function Properties() {
       setEditedProperty((prev: any) => ({ ...prev, ...updatedData }));
       
       queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
-      toast({
-        title: "Success",
-        description: "Property updated successfully",
-      });
+      // Removed toast notification for auto-save to avoid spam
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
+        title: "Error saving property",
         description: error.message || "Failed to update property",
         variant: "destructive",
       });
     },
   });
 
-  const handleSaveProperty = () => {
-    if (editedProperty) {
-      // Remove computed/generated columns that cannot be updated
-      const { price_per_sqft, ppsf, created_at, updated_at, ...updateData } = editedProperty;
+  const handlePropertyFieldChange = (field: string, value: any) => {
+    // Update local state immediately for responsive UI
+    setEditedProperty((prev: any) => {
+      if (!prev) return prev;
       
+      const updatedData = {
+        ...prev,
+        [field]: value,
+      };
+      
+      // Clear existing timer
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      
+      // Set new timer for auto-save (debounce 1000ms)
+      autoSaveTimerRef.current = setTimeout(() => {
+      // Remove computed/generated columns that cannot be updated
+        const { price_per_sqft, ppsf, created_at, updated_at, ...updateData } = updatedData;
+      
+        // Only save if there's actual data to update
+        if (Object.keys(updateData).length > 0 && selectedProperty?.id) {
       updatePropertyMutation.mutate(updateData);
     }
-  };
-
-  const handlePropertyFieldChange = (field: string, value: any) => {
-    setEditedProperty((prev: any) => ({
-      ...prev,
-      [field]: value,
-    }));
+      }, 1000);
+      
+      return updatedData;
+    });
   };
 
   const addCompMutation = useMutation({
@@ -3023,51 +3046,198 @@ export default function Properties() {
                 {/* Filters for mobile */}
                 <div className="space-y-2">
                   <Label htmlFor="mobile-filter-status" className="text-sm font-medium">Status</Label>
-                  <Select value={filters.status} onValueChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}>
-                    <SelectTrigger id="mobile-filter-status">
-                      <SelectValue placeholder="All Statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="For Sale">For Sale</SelectItem>
-                      <SelectItem value="Under Contract">Under Contract</SelectItem>
-                      <SelectItem value="Sold">Sold</SelectItem>
-                      <SelectItem value="Off Market">Off Market</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="mobile-filter-status"
+                        variant="outline"
+                        className="w-full justify-between"
+                      >
+                        <span className="truncate">
+                          {filters.status.length === 0
+                            ? "All Statuses"
+                            : filters.status.length === 1
+                            ? filters.status[0]
+                            : `${filters.status.length} selected`}
+                        </span>
+                        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[250px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search status..." />
+                        <CommandList>
+                          <CommandEmpty>No status found.</CommandEmpty>
+                          <CommandGroup>
+                            {["For Sale", "Under Contract", "Sold", "Off Market"].map((status) => (
+                              <CommandItem
+                                key={status}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    status: prev.status.includes(status)
+                                      ? prev.status.filter((s) => s !== status)
+                                      : [...prev.status, status],
+                                  }));
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <div className="flex items-center w-full">
+                                  <Checkbox
+                                    checked={filters.status.includes(status)}
+                                    onCheckedChange={(checked) => {
+                                      setFilters((prev) => ({
+                                        ...prev,
+                                        status: checked
+                                          ? [...prev.status, status]
+                                          : prev.status.filter((s) => s !== status),
+                                      }));
+                                    }}
+                                    className="mr-2"
+                                  />
+                                  <span>{status}</span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="mobile-filter-buybox" className="text-sm font-medium">Buy Box</Label>
-                  <Select value={filters.buyBoxId} onValueChange={(value) => setFilters((prev) => ({ ...prev, buyBoxId: value }))}>
-                    <SelectTrigger id="mobile-filter-buybox">
-                      <SelectValue placeholder="All Buy Boxes" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Buy Boxes</SelectItem>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="mobile-filter-buybox"
+                        variant="outline"
+                        className="w-full justify-between"
+                      >
+                        <span className="truncate">
+                          {filters.buyBoxId.length === 0
+                            ? "All Buy Boxes"
+                            : filters.buyBoxId.length === 1
+                            ? buyBoxes?.find((box) => box.id === filters.buyBoxId[0])?.name
+                            : `${filters.buyBoxId.length} selected`}
+                        </span>
+                        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[250px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search buy box..." />
+                        <CommandList>
+                          <CommandEmpty>No buy box found.</CommandEmpty>
+                          <CommandGroup>
                       {buyBoxes?.map((box) => (
-                        <SelectItem key={box.id} value={box.id}>{box.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                              <CommandItem
+                                key={box.id}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    buyBoxId: prev.buyBoxId.includes(box.id)
+                                      ? prev.buyBoxId.filter((id) => id !== box.id)
+                                      : [...prev.buyBoxId, box.id],
+                                  }));
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <div className="flex items-center w-full">
+                                  <Checkbox
+                                    checked={filters.buyBoxId.includes(box.id)}
+                                    onCheckedChange={(checked) => {
+                                      setFilters((prev) => ({
+                                        ...prev,
+                                        buyBoxId: checked
+                                          ? [...prev.buyBoxId, box.id]
+                                          : prev.buyBoxId.filter((id) => id !== box.id),
+                                      }));
+                                    }}
+                                    className="mr-2"
+                                  />
+                                  <span>{box.name}</span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="mobile-filter-workflow" className="text-sm font-medium">Workflow Stage</Label>
-                  <Select value={filters.workflowState} onValueChange={(value) => setFilters((prev) => ({ ...prev, workflowState: value }))}>
-                    <SelectTrigger id="mobile-filter-workflow">
-                      <SelectValue placeholder="All Stages" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Stages</SelectItem>
-                      <SelectItem value="Initial">🆕 Initial</SelectItem>
-                      <SelectItem value="Reviewing">👀 Reviewing</SelectItem>
-                      <SelectItem value="Research">🔍 Research</SelectItem>
-                      <SelectItem value="On Progress">⚡ On Progress</SelectItem>
-                      <SelectItem value="Follow Up">📞 Follow Up</SelectItem>
-                      <SelectItem value="Negotiating">💬 Negotiating</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="mobile-filter-workflow"
+                        variant="outline"
+                        className="w-full justify-between"
+                      >
+                        <span className="truncate">
+                          {filters.workflowState.length === 0
+                            ? "All Stages"
+                            : filters.workflowState.length === 1
+                            ? filters.workflowState[0]
+                            : `${filters.workflowState.length} selected`}
+                        </span>
+                        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[250px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search stage..." />
+                        <CommandList>
+                          <CommandEmpty>No stage found.</CommandEmpty>
+                          <CommandGroup>
+                            {[
+                              { value: "Initial", label: "🆕 Initial" },
+                              { value: "Reviewing", label: "👀 Reviewing" },
+                              { value: "Research", label: "🔍 Research" },
+                              { value: "On Progress", label: "⚡ On Progress" },
+                              { value: "Follow Up", label: "📞 Follow Up" },
+                              { value: "Negotiating", label: "💬 Negotiating" },
+                            ].map((stage) => (
+                              <CommandItem
+                                key={stage.value}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    workflowState: prev.workflowState.includes(stage.value)
+                                      ? prev.workflowState.filter((s) => s !== stage.value)
+                                      : [...prev.workflowState, stage.value],
+                                  }));
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <div className="flex items-center w-full">
+                                  <Checkbox
+                                    checked={filters.workflowState.includes(stage.value)}
+                                    onCheckedChange={(checked) => {
+                                      setFilters((prev) => ({
+                                        ...prev,
+                                        workflowState: checked
+                                          ? [...prev.workflowState, stage.value]
+                                          : prev.workflowState.filter((s) => s !== stage.value),
+                                      }));
+                                    }}
+                                    className="mr-2"
+                                  />
+                                  <span>{stage.label}</span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -3232,90 +3402,205 @@ export default function Properties() {
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-7">
             <div className="space-y-2">
               <Label htmlFor="filter-status" className="text-sm font-medium">Status</Label>
-              <Select
-                value={filters.status}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}
-              >
-                <SelectTrigger id="filter-status">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="For Sale">For Sale</SelectItem>
-                  <SelectItem value="Under Contract">Under Contract</SelectItem>
-                  <SelectItem value="Sold">Sold</SelectItem>
-                  <SelectItem value="Off Market">Off Market</SelectItem>
-                  <SelectItem value="Tracking">Tracking</SelectItem>
-                  <SelectItem value="Follow Up">Follow Up</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-status"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.status.length === 0
+                        ? "All Statuses"
+                        : filters.status.length === 1
+                        ? filters.status[0]
+                        : `${filters.status.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search status..." />
+                    <CommandList>
+                      <CommandEmpty>No status found.</CommandEmpty>
+                      <CommandGroup>
+                        {["For Sale", "Under Contract", "Sold", "Off Market", "Tracking", "Follow Up"].map((status) => (
+                          <CommandItem
+                            key={status}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                status: prev.status.includes(status)
+                                  ? prev.status.filter((s) => s !== status)
+                                  : [...prev.status, status],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.status.includes(status)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    status: checked
+                                      ? [...prev.status, status]
+                                      : prev.status.filter((s) => s !== status),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{status}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="filter-workflow" className="text-sm font-medium">Workflow Stage</Label>
-              <Select
-                value={filters.workflowState}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, workflowState: value }))}
-              >
-                <SelectTrigger id="filter-workflow">
-                  <SelectValue placeholder="All Stages" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Stages</SelectItem>
-                  <SelectItem value="Initial">🆕 Initial</SelectItem>
-                  <SelectItem value="Reviewing">👀 Reviewing</SelectItem>
-                  <SelectItem value="Research">🔍 Research</SelectItem>
-                  <SelectItem value="On Progress">⚡ On Progress</SelectItem>
-                  <SelectItem value="Follow Up">📞 Follow Up</SelectItem>
-                  <SelectItem value="Negotiating">💬 Negotiating</SelectItem>
-                  <SelectItem value="Under Contract">📝 Under Contract</SelectItem>
-                  <SelectItem value="Closing">🏁 Closing</SelectItem>
-                  <SelectItem value="Closed">✅ Closed</SelectItem>
-                  <SelectItem value="Not Relevant">❌ Not Relevant</SelectItem>
-                  <SelectItem value="Archived">📦 Archived</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-workflow"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.workflowState.length === 0
+                        ? "All Stages"
+                        : filters.workflowState.length === 1
+                        ? filters.workflowState[0]
+                        : `${filters.workflowState.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[250px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search stage..." />
+                    <CommandList>
+                      <CommandEmpty>No stage found.</CommandEmpty>
+                      <CommandGroup>
+                        {[
+                          { value: "Initial", label: "🆕 Initial" },
+                          { value: "Reviewing", label: "👀 Reviewing" },
+                          { value: "Research", label: "🔍 Research" },
+                          { value: "On Progress", label: "⚡ On Progress" },
+                          { value: "Follow Up", label: "📞 Follow Up" },
+                          { value: "Negotiating", label: "💬 Negotiating" },
+                          { value: "Under Contract", label: "📝 Under Contract" },
+                          { value: "Closing", label: "🏁 Closing" },
+                          { value: "Closed", label: "✅ Closed" },
+                          { value: "Not Relevant", label: "❌ Not Relevant" },
+                          { value: "Archived", label: "📦 Archived" },
+                        ].map((stage) => (
+                          <CommandItem
+                            key={stage.value}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                workflowState: prev.workflowState.includes(stage.value)
+                                  ? prev.workflowState.filter((s) => s !== stage.value)
+                                  : [...prev.workflowState, stage.value],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.workflowState.includes(stage.value)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    workflowState: checked
+                                      ? [...prev.workflowState, stage.value]
+                                      : prev.workflowState.filter((s) => s !== stage.value),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{stage.label}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="filter-list" className="text-sm font-medium">Buy Box</Label>
-                {filters.buyBoxId !== "all" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    onClick={() => {
-                      const selectedBox = buyBoxes?.find((box) => box.id === filters.buyBoxId);
-                      if (selectedBox) {
-                        setSelectedBuyBoxForAnalytics({
-                          id: selectedBox.id,
-                          name: selectedBox.name,
-                        });
-                        setShowBuyBoxAnalytics(true);
-                      }
-                    }}
-                  >
-                    <Info className="h-4 w-4 text-blue-500" />
-                  </Button>
-                )}
               </div>
-              <Select
-                value={filters.buyBoxId}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, buyBoxId: value }))}
-              >
-                <SelectTrigger id="filter-list">
-                  <SelectValue placeholder="All Buy Boxes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Buy Boxes</SelectItem>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-list"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.buyBoxId.length === 0
+                        ? "All Buy Boxes"
+                        : filters.buyBoxId.length === 1
+                        ? buyBoxes?.find((box) => box.id === filters.buyBoxId[0])?.name
+                        : `${filters.buyBoxId.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[250px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search buy box..." />
+                    <CommandList>
+                      <CommandEmpty>No buy box found.</CommandEmpty>
+                      <CommandGroup>
                   {buyBoxes?.map((box) => (
-                    <SelectItem key={box.id} value={box.id}>
-                      {box.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                          <CommandItem
+                            key={box.id}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                buyBoxId: prev.buyBoxId.includes(box.id)
+                                  ? prev.buyBoxId.filter((id) => id !== box.id)
+                                  : [...prev.buyBoxId, box.id],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.buyBoxId.includes(box.id)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    buyBoxId: checked
+                                      ? [...prev.buyBoxId, box.id]
+                                      : prev.buyBoxId.filter((id) => id !== box.id),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{box.name}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">
@@ -3364,100 +3649,356 @@ export default function Properties() {
 
             <div className="space-y-2">
               <Label htmlFor="filter-home-type" className="text-sm font-medium">Home Type</Label>
-              <Select
-                value={filters.homeType}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, homeType: value }))}
-              >
-                <SelectTrigger id="filter-home-type">
-                  <SelectValue placeholder="All Types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="Single Family">Single Family</SelectItem>
-                  <SelectItem value="Multi Family">Multi Family</SelectItem>
-                  <SelectItem value="Condo">Condo</SelectItem>
-                  <SelectItem value="Townhouse">Townhouse</SelectItem>
-                  <SelectItem value="Land">Land</SelectItem>
-                  <SelectItem value="Commercial">Commercial</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-home-type"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.homeType.length === 0
+                        ? "All Types"
+                        : filters.homeType.length === 1
+                        ? filters.homeType[0]
+                        : `${filters.homeType.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search type..." />
+                    <CommandList>
+                      <CommandEmpty>No type found.</CommandEmpty>
+                      <CommandGroup>
+                        {["Single Family", "Multi Family", "Condo", "Townhouse", "Land", "Commercial"].map((type) => (
+                          <CommandItem
+                            key={type}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                homeType: prev.homeType.includes(type)
+                                  ? prev.homeType.filter((t) => t !== type)
+                                  : [...prev.homeType, type],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.homeType.includes(type)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    homeType: checked
+                                      ? [...prev.homeType, type]
+                                      : prev.homeType.filter((t) => t !== type),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{type}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="filter-urgency" className="text-sm font-medium">Urgency</Label>
-              <Select
-                value={filters.urgency}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, urgency: value }))}
-              >
-                <SelectTrigger id="filter-urgency">
-                  <SelectValue placeholder="All Urgencies" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Urgencies</SelectItem>
-                  <SelectItem value="3">🔴 Urgent</SelectItem>
-                  <SelectItem value="2">🟡 Medium</SelectItem>
-                  <SelectItem value="1">🟢 Not Urgent</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-urgency"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.urgency.length === 0
+                        ? "All Urgencies"
+                        : filters.urgency.length === 1
+                        ? filters.urgency[0] === "3" ? "🔴 Urgent" : filters.urgency[0] === "2" ? "🟡 Medium" : "🟢 Not Urgent"
+                        : `${filters.urgency.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0" align="start">
+                  <Command>
+                    <CommandList>
+                      <CommandGroup>
+                        {[
+                          { value: "3", label: "🔴 Urgent" },
+                          { value: "2", label: "🟡 Medium" },
+                          { value: "1", label: "🟢 Not Urgent" },
+                        ].map((urgency) => (
+                          <CommandItem
+                            key={urgency.value}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                urgency: prev.urgency.includes(urgency.value)
+                                  ? prev.urgency.filter((u) => u !== urgency.value)
+                                  : [...prev.urgency, urgency.value],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.urgency.includes(urgency.value)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    urgency: checked
+                                      ? [...prev.urgency, urgency.value]
+                                      : prev.urgency.filter((u) => u !== urgency.value),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{urgency.label}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Assigned To Filter */}
             <div className="space-y-2">
               <Label htmlFor="filter-assigned-to" className="text-sm font-medium">Assigned To</Label>
-              <Select
-                value={filters.assignedTo}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, assignedTo: value }))}
-              >
-                <SelectTrigger id="filter-assigned-to">
-                  <SelectValue placeholder="All Team Members" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Team Members</SelectItem>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-assigned-to"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.assignedTo.length === 0
+                        ? "All Team Members"
+                        : filters.assignedTo.length === 1
+                        ? filters.assignedTo[0] === "unassigned" 
+                          ? "Unassigned" 
+                          : teamMembers?.find((m: any) => m.user_id === filters.assignedTo[0])?.profiles?.full_name || "Unknown"
+                        : `${filters.assignedTo.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[250px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search member..." />
+                    <CommandList>
+                      <CommandEmpty>No member found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          key="unassigned"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            setFilters((prev) => ({
+                              ...prev,
+                              assignedTo: prev.assignedTo.includes("unassigned")
+                                ? prev.assignedTo.filter((id) => id !== "unassigned")
+                                : [...prev.assignedTo, "unassigned"],
+                            }));
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <div className="flex items-center w-full">
+                            <Checkbox
+                              checked={filters.assignedTo.includes("unassigned")}
+                              onCheckedChange={(checked) => {
+                                setFilters((prev) => ({
+                                  ...prev,
+                                  assignedTo: checked
+                                    ? [...prev.assignedTo, "unassigned"]
+                                    : prev.assignedTo.filter((id) => id !== "unassigned"),
+                                }));
+                              }}
+                              className="mr-2"
+                            />
+                            <span>Unassigned</span>
+                          </div>
+                        </CommandItem>
                   {teamMembers?.map((member: any) => (
-                    <SelectItem key={member.user_id} value={member.user_id}>
-                      {member.profiles?.full_name || member.profiles?.email || "Unknown"} {member.role && member.role !== "member" && `(${member.role})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                          <CommandItem
+                            key={member.user_id}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                assignedTo: prev.assignedTo.includes(member.user_id)
+                                  ? prev.assignedTo.filter((id) => id !== member.user_id)
+                                  : [...prev.assignedTo, member.user_id],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.assignedTo.includes(member.user_id)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    assignedTo: checked
+                                      ? [...prev.assignedTo, member.user_id]
+                                      : prev.assignedTo.filter((id) => id !== member.user_id),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{member.profiles?.full_name || member.profiles?.email || "Unknown"} {member.role && member.role !== "member" && `(${member.role})`}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Seller Details Filter */}
             <div className="space-y-2">
               <Label htmlFor="filter-seller-details" className="text-sm font-medium">Seller Details</Label>
-              <Select
-                value={filters.hasSellerDetails}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, hasSellerDetails: value }))}
-              >
-                <SelectTrigger id="filter-seller-details">
-                  <SelectValue placeholder="All Properties" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Properties</SelectItem>
-                  <SelectItem value="yes">✓ Has Seller Details</SelectItem>
-                  <SelectItem value="no">✗ No Seller Details</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-seller-details"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.hasSellerDetails.length === 0
+                        ? "All Properties"
+                        : filters.hasSellerDetails.length === 1
+                        ? filters.hasSellerDetails[0] === "yes" ? "✓ Has Seller Details" : "✗ No Seller Details"
+                        : `${filters.hasSellerDetails.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0" align="start">
+                  <Command>
+                    <CommandList>
+                      <CommandGroup>
+                        {[
+                          { value: "yes", label: "✓ Has Seller Details" },
+                          { value: "no", label: "✗ No Seller Details" },
+                        ].map((option) => (
+                          <CommandItem
+                            key={option.value}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                hasSellerDetails: prev.hasSellerDetails.includes(option.value)
+                                  ? prev.hasSellerDetails.filter((v) => v !== option.value)
+                                  : [...prev.hasSellerDetails, option.value],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.hasSellerDetails.includes(option.value)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    hasSellerDetails: checked
+                                      ? [...prev.hasSellerDetails, option.value]
+                                      : prev.hasSellerDetails.filter((v) => v !== option.value),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{option.label}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Lead Score Filter */}
             <div className="space-y-2">
               <Label htmlFor="filter-lead-score" className="text-sm font-medium">Lead Score</Label>
-              <Select
-                value={filters.leadScore}
-                onValueChange={(value) => setFilters((prev) => ({ ...prev, leadScore: value }))}
-              >
-                <SelectTrigger id="filter-lead-score">
-                  <SelectValue placeholder="All Leads" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Properties</SelectItem>
-                  <SelectItem value="hot">🔥 Hot Leads (Score 3)</SelectItem>
-                  <SelectItem value="warm">🌡️ Warm Leads (Score 2)</SelectItem>
-                  <SelectItem value="cold">❄️ Cold Leads (Score 1)</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-lead-score"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.leadScore.length === 0
+                        ? "All Leads"
+                        : filters.leadScore.length === 1
+                        ? filters.leadScore[0] === "hot" ? "🔥 Hot Leads" : filters.leadScore[0] === "warm" ? "🌡️ Warm Leads" : "❄️ Cold Leads"
+                        : `${filters.leadScore.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[220px] p-0" align="start">
+                  <Command>
+                    <CommandList>
+                      <CommandGroup>
+                        {[
+                          { value: "hot", label: "🔥 Hot Leads (Score 3)" },
+                          { value: "warm", label: "🌡️ Warm Leads (Score 2)" },
+                          { value: "cold", label: "❄️ Cold Leads (Score 1)" },
+                        ].map((score) => (
+                          <CommandItem
+                            key={score.value}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                leadScore: prev.leadScore.includes(score.value)
+                                  ? prev.leadScore.filter((s) => s !== score.value)
+                                  : [...prev.leadScore, score.value],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.leadScore.includes(score.value)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    leadScore: checked
+                                      ? [...prev.leadScore, score.value]
+                                      : prev.leadScore.filter((s) => s !== score.value),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{score.label}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -4724,23 +5265,11 @@ export default function Properties() {
 
               {/* General Tab with Accordion */}
               <TabsContent value="general" className="space-y-4 mt-4">
-                {/* Save Button */}
-                <div className="flex flex-col sm:flex-row justify-end gap-2 pb-4 border-b">
-                  <Button
-                    variant="outline"
-                    onClick={() => setEditedProperty({ ...selectedProperty })}
-                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    Reset Changes
-                  </Button>
-                  <Button
-                    onClick={handleSaveProperty}
-                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
+                {/* Auto-save indicator */}
+                <div className="flex justify-end pb-4 border-b">
+                  <p className="text-xs text-muted-foreground">
+                    {updatePropertyMutation.isPending ? "💾 Saving..." : "✓ Changes saved automatically"}
+                  </p>
                 </div>
 
                 <Accordion type="multiple" defaultValue={[]} className="w-full">
@@ -5323,23 +5852,11 @@ export default function Properties() {
                   })()}
                 </Accordion>
 
-                {/* Save Button at bottom */}
-                <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => setEditedProperty({ ...selectedProperty })}
-                    disabled={!editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    Reset Changes
-                  </Button>
-                  <Button
-                    onClick={handleSaveProperty}
-                    disabled={updatePropertyMutation.isPending || !editedProperty || JSON.stringify(editedProperty) === JSON.stringify(selectedProperty)}
-                    className="w-full sm:w-auto text-sm"
-                  >
-                    {updatePropertyMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
+                {/* Auto-save indicator at bottom */}
+                <div className="flex justify-end pt-4 border-t">
+                  <p className="text-xs text-muted-foreground">
+                    {updatePropertyMutation.isPending ? "💾 Saving..." : "✓ Changes saved automatically"}
+                  </p>
                 </div>
               </TabsContent>
 
