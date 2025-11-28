@@ -513,7 +513,7 @@ export default function Properties() {
       
       return count || 0;
     },
-    enabled: !!userCompany?.company_id && (filters.leadScore === "all" || leadScorePropertyIds !== undefined),
+    enabled: !!userCompany?.company_id && (filters.leadScore.length === 0 || leadScorePropertyIds !== undefined),
   });
 
   const { data: properties, isLoading } = useQuery({
@@ -561,7 +561,7 @@ export default function Properties() {
       console.log(`✅ Fetched ${data?.length || 0} properties (leadScore: ${filters.leadScore})`);
       return data || [];
     },
-    enabled: !!userCompany?.company_id && (filters.leadScore === "all" || leadScorePropertyIds !== undefined),
+    enabled: !!userCompany?.company_id && (filters.leadScore.length === 0 || leadScorePropertyIds !== undefined),
   });
 
   // Debounce search input (500ms delay)
