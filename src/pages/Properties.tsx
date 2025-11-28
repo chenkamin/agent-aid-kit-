@@ -1130,6 +1130,19 @@ export default function Properties() {
       if (!user?.id) throw new Error("User not authenticated");
       if (!userCompany?.company_id) throw new Error("No company found");
       
+      // Determine status based on due date
+      let status = 'open';
+      if (data.due_at && data.due_at.trim() !== '') {
+        const dueDate = new Date(data.due_at);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999); // End of today
+        
+        // If due date is today or in the past, mark as done
+        if (dueDate <= today) {
+          status = 'done';
+        }
+      }
+      
       // Prepare activity data - exclude due_at if empty
       const activityData: any = {
         type: data.type,
@@ -1138,7 +1151,7 @@ export default function Properties() {
         property_id: selectedProperty?.id,
         user_id: user.id,
         company_id: userCompany.company_id,
-        status: 'open',
+        status: status,
       };
       
       // Only include due_at if it's provided and not empty
@@ -1187,6 +1200,19 @@ export default function Properties() {
       if (!userCompany?.company_id) throw new Error("No company found");
       if (selectedPropertyIds.length === 0) throw new Error("No properties selected");
       
+      // Determine status based on due date
+      let status = 'open';
+      if (data.due_at && data.due_at.trim() !== '') {
+        const dueDate = new Date(data.due_at);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999); // End of today
+        
+        // If due date is today or in the past, mark as done
+        if (dueDate <= today) {
+          status = 'done';
+        }
+      }
+      
       // Prepare activity data for each property
       const activities = selectedPropertyIds.map(propertyId => {
         const activityData: any = {
@@ -1196,7 +1222,7 @@ export default function Properties() {
           property_id: propertyId,
           user_id: user.id,
           company_id: userCompany.company_id,
-          status: 'open',
+          status: status,
         };
         
         // Only include due_at if it's provided and not empty

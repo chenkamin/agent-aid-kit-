@@ -320,13 +320,26 @@ export default function Activities() {
       if (!user?.id) throw new Error("User not authenticated");
       if (!userCompany?.company_id) throw new Error("No company found");
       
+      // Determine status based on due date (only for new activities)
+      let status = data.status || 'open';
+      if (!data.id && data.due_at && data.due_at.trim() !== '') {
+        const dueDate = new Date(data.due_at);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999); // End of today
+        
+        // If due date is today or in the past, mark as done
+        if (dueDate <= today) {
+          status = 'done';
+        }
+      }
+      
       const activityData: any = {
         type: data.type,
         title: data.title,
         body: data.body,
         user_id: user.id,
         company_id: userCompany.company_id,
-        status: data.status || 'open',
+        status: status,
         assigned_to: data.assigned_to === "unassigned" ? null : data.assigned_to || null,
       };
       

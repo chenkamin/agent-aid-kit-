@@ -214,3 +214,6 @@ WHERE id IN (hot_lead_ids)
 **Ready to Use!** 
 Click the "Contact Now" button on your Dashboard's Hot Leads card to try it out! 🔥
 
+
+
+

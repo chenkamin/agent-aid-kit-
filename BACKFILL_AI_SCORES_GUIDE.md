@@ -430,3 +430,6 @@ WHERE direction = 'incoming' AND ai_score IS NULL;
 **🎊 Your function is ready to use! Go ahead and backfill those AI scores!**
 
 
+
+
+

@@ -98,10 +98,23 @@ export default function PropertyDetail() {
 
   const addActivityMutation = useMutation({
     mutationFn: async (data: any) => {
+      // Determine status based on due date
+      let status = 'open';
+      if (data.due_at && data.due_at.trim() !== '') {
+        const dueDate = new Date(data.due_at);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999); // End of today
+        
+        // If due date is today or in the past, mark as done
+        if (dueDate <= today) {
+          status = 'done';
+        }
+      }
+      
       const { error } = await supabase.from("activities").insert([{
         ...data,
         property_id: id,
-        status: 'open',
+        status: status,
       }]);
       if (error) throw error;
     },
