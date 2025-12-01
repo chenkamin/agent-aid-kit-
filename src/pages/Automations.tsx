@@ -644,7 +644,7 @@ export default function Automations() {
                 gap={16} 
                 size={1}
               />
-              <Controls />
+              <Controls showZoom={true} showFitView={true} showInteractive={true} />
               <MiniMap />
               
               {/* Delete Node Button - Shows when a node is selected */}

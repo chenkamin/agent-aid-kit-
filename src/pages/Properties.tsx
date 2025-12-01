@@ -447,35 +447,70 @@ export default function Properties() {
         return null;
       }
       
-      // Map filter values to AI scores
+      // Check if "no-lead" is selected
+      const hasNoLead = filters.leadScore.includes("no-lead");
+      
+      // Map filter values to AI scores (excluding "no-lead")
       const scoreMap: Record<string, number> = {
         hot: 3,
         warm: 2,
         cold: 1
       };
       
-      const aiScores = filters.leadScore.map(score => scoreMap[score]).filter(Boolean);
-      if (aiScores.length === 0) return null;
+      const aiScores = filters.leadScore
+        .filter(score => score !== "no-lead")
+        .map(score => scoreMap[score])
+        .filter(Boolean);
       
-      console.log(`🎯 Fetching lead property IDs for scores: ${filters.leadScore.join(', ')} (${aiScores.join(', ')})...`);
-      
-      const { data, error } = await supabase
-        .from("sms_messages")
-        .select("property_id")
-        .eq("company_id", userCompany.company_id)
-        .eq("direction", "incoming")
-        .in("ai_score", aiScores)
-        .not("property_id", "is", null);
-      
-      if (error) {
-        console.error(`❌ Error fetching lead properties:`, error);
-        return null;
+      // If only "no-lead" is selected, fetch all property IDs with INCOMING SMS and return special marker
+      if (hasNoLead && aiScores.length === 0) {
+        console.log(`📭 Fetching properties WITHOUT incoming SMS messages...`);
+        
+        const { data, error } = await supabase
+          .from("sms_messages")
+          .select("property_id")
+          .eq("company_id", userCompany.company_id)
+          .eq("direction", "incoming")
+          .not("property_id", "is", null);
+        
+        if (error) {
+          console.error(`❌ Error fetching incoming SMS properties:`, error);
+          return null;
+        }
+        
+        // Get unique property IDs that HAVE incoming SMS (we'll exclude these)
+        const idsWithIncomingSms = Array.from(new Set(data.map(msg => msg.property_id).filter(Boolean)));
+        console.log(`📭 Found ${idsWithIncomingSms.length} properties WITH incoming SMS - will exclude them`);
+        return { type: "exclude", ids: idsWithIncomingSms } as any;
       }
       
-      // Get unique property IDs
-      const uniqueIds = Array.from(new Set(data.map(msg => msg.property_id).filter(Boolean)));
-      console.log(`🎯 Found ${uniqueIds.length} properties with lead SMS:`, uniqueIds);
-      return uniqueIds;
+      // If only score-based filters (hot/warm/cold)
+      if (aiScores.length > 0 && !hasNoLead) {
+        console.log(`🎯 Fetching lead property IDs for scores: ${filters.leadScore.join(', ')} (${aiScores.join(', ')})...`);
+        
+        const { data, error } = await supabase
+          .from("sms_messages")
+          .select("property_id")
+          .eq("company_id", userCompany.company_id)
+          .eq("direction", "incoming")
+          .in("ai_score", aiScores)
+          .not("property_id", "is", null);
+        
+        if (error) {
+          console.error(`❌ Error fetching lead properties:`, error);
+          return null;
+        }
+        
+        // Get unique property IDs
+        const uniqueIds = Array.from(new Set(data.map(msg => msg.property_id).filter(Boolean)));
+        console.log(`🎯 Found ${uniqueIds.length} properties with lead SMS:`, uniqueIds);
+        return uniqueIds;
+      }
+      
+      // If both score-based and "no-lead" are selected, this doesn't make logical sense
+      // but we'll handle it by returning null (show all)
+      console.log('⚠️ Mixed no-lead and score filters - showing all');
+      return null;
     },
     enabled: !!userCompany?.company_id && filters.leadScore.length > 0,
   });
@@ -487,7 +522,7 @@ export default function Properties() {
       if (!userCompany?.company_id) return 0;
       
       // If filtering by lead score but no properties have that score, return 0
-      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
+      if (filters.leadScore.length > 0 && Array.isArray(leadScorePropertyIds) && leadScorePropertyIds.length === 0) {
         return 0;
       }
       
@@ -497,8 +532,17 @@ export default function Properties() {
         .eq("company_id", userCompany.company_id);
       
       // Filter by lead score property IDs if applicable
-      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
-        query = query.in("id", leadScorePropertyIds);
+      if (filters.leadScore.length > 0 && leadScorePropertyIds) {
+        if ((leadScorePropertyIds as any).type === "exclude") {
+          // Exclude properties with SMS messages
+          const idsToExclude = (leadScorePropertyIds as any).ids;
+          if (idsToExclude.length > 0) {
+            query = query.not("id", "in", `(${idsToExclude.join(",")})`);
+          }
+        } else if (Array.isArray(leadScorePropertyIds) && leadScorePropertyIds.length > 0) {
+          // Include only properties with specific lead scores
+          query = query.in("id", leadScorePropertyIds);
+        }
       }
       
       // Apply all other filters
@@ -523,11 +567,11 @@ export default function Properties() {
       
       console.log('📊 Fetching properties with filters:', {
         leadScore: filters.leadScore,
-        leadScorePropertyIds: leadScorePropertyIds?.length || 0
+        leadScorePropertyIds: Array.isArray(leadScorePropertyIds) ? leadScorePropertyIds.length : leadScorePropertyIds
       });
       
       // If filtering by lead score but no properties have that score, return empty
-      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length === 0) {
+      if (filters.leadScore.length > 0 && Array.isArray(leadScorePropertyIds) && leadScorePropertyIds.length === 0) {
         console.log(`⚠️ No properties with selected lead scores found - returning empty`);
         return [];
       }
@@ -541,9 +585,21 @@ export default function Properties() {
         .eq("company_id", userCompany.company_id);
       
       // Filter by lead score property IDs if applicable
-      if (filters.leadScore.length > 0 && leadScorePropertyIds && leadScorePropertyIds.length > 0) {
-        console.log(`🎯 Filtering to ${leadScorePropertyIds.length} properties with lead scores:`, leadScorePropertyIds);
-        query = query.in("id", leadScorePropertyIds);
+      if (filters.leadScore.length > 0 && leadScorePropertyIds) {
+        if ((leadScorePropertyIds as any).type === "exclude") {
+          // Exclude properties with SMS messages
+          const idsToExclude = (leadScorePropertyIds as any).ids;
+          if (idsToExclude.length > 0) {
+            console.log(`📭 Excluding ${idsToExclude.length} properties WITH SMS messages`);
+            query = query.not("id", "in", `(${idsToExclude.join(",")})`);
+          } else {
+            console.log(`📭 No properties have SMS - showing all`);
+          }
+        } else if (Array.isArray(leadScorePropertyIds) && leadScorePropertyIds.length > 0) {
+          // Include only properties with specific lead scores
+          console.log(`🎯 Filtering to ${leadScorePropertyIds.length} properties with lead scores:`, leadScorePropertyIds);
+          query = query.in("id", leadScorePropertyIds);
+        }
       }
       
       // Apply all other filters
@@ -3949,7 +4005,10 @@ export default function Properties() {
                       {filters.leadScore.length === 0
                         ? "All Leads"
                         : filters.leadScore.length === 1
-                        ? filters.leadScore[0] === "hot" ? "🔥 Hot Leads" : filters.leadScore[0] === "warm" ? "🌡️ Warm Leads" : "❄️ Cold Leads"
+                        ? filters.leadScore[0] === "hot" ? "🔥 Hot Leads" 
+                          : filters.leadScore[0] === "warm" ? "🌡️ Warm Leads" 
+                          : filters.leadScore[0] === "cold" ? "❄️ Cold Leads"
+                          : "📭 No Lead"
                         : `${filters.leadScore.length} selected`}
                     </span>
                     <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -3963,6 +4022,7 @@ export default function Properties() {
                           { value: "hot", label: "🔥 Hot Leads (Score 3)" },
                           { value: "warm", label: "🌡️ Warm Leads (Score 2)" },
                           { value: "cold", label: "❄️ Cold Leads (Score 1)" },
+                          { value: "no-lead", label: "📭 No Lead (No SMS)" },
                         ].map((score) => (
                           <CommandItem
                             key={score.value}
