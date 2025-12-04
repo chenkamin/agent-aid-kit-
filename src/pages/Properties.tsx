@@ -2330,13 +2330,20 @@ export default function Properties() {
       
       // Set new timer for auto-save (debounce 1000ms)
       autoSaveTimerRef.current = setTimeout(() => {
-      // Remove computed/generated columns that cannot be updated
-        const { price_per_sqft, ppsf, created_at, updated_at, ...updateData } = updatedData;
+        // Remove computed/generated columns and joined relationships that cannot be updated
+        const { 
+          price_per_sqft, 
+          ppsf, 
+          created_at, 
+          updated_at, 
+          buy_boxes,  // Joined relationship, not a direct column
+          ...updateData 
+        } = updatedData;
       
         // Only save if there's actual data to update
         if (Object.keys(updateData).length > 0 && selectedProperty?.id) {
-      updatePropertyMutation.mutate(updateData);
-    }
+          updatePropertyMutation.mutate(updateData);
+        }
       }, 1000);
       
       return updatedData;
