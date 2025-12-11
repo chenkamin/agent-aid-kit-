@@ -743,9 +743,9 @@ export default function SMS() {
                               {message.properties.address}
                             </button>
                             {message.properties.buy_boxes?.name && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                Buy Box: {message.properties.buy_boxes.name}
-                              </p>
+                              <Badge variant="outline" className="mt-1 text-xs font-normal block w-fit">
+                                📦 {message.properties.buy_boxes.name}
+                              </Badge>
                             )}
                           </div>
                         )}
@@ -812,9 +812,9 @@ export default function SMS() {
                                   {message.properties.address}
                                 </button>
                                 {message.properties.buy_boxes?.name && (
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {message.properties.buy_boxes.name}
-                                  </p>
+                                  <Badge variant="outline" className="mt-1 text-xs font-normal">
+                                    📦 {message.properties.buy_boxes.name}
+                                  </Badge>
                                 )}
                               </div>
                             ) : (
