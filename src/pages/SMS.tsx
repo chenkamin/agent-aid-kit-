@@ -168,7 +168,7 @@ export default function SMS() {
       if (!userCompany?.company_id) return [];
       const { data, error } = await supabase
         .from("sms_messages")
-        .select("*, properties(address, city)")
+        .select("*, properties(address, city, buy_boxes(name))")
         .eq("company_id", userCompany.company_id)
         .order("created_at", { ascending: false })
         .limit(100);
@@ -742,6 +742,11 @@ export default function SMS() {
                             >
                               {message.properties.address}
                             </button>
+                            {message.properties.buy_boxes?.name && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Buy Box: {message.properties.buy_boxes.name}
+                              </p>
+                            )}
                           </div>
                         )}
                         <div>
@@ -799,12 +804,19 @@ export default function SMS() {
                           </TableCell>
                           <TableCell className="text-sm">
                             {message.properties ? (
-                              <button
-                                onClick={() => navigate(`/properties?propertyId=${message.property_id}`)}
-                                className="text-blue-600 hover:underline cursor-pointer"
-                              >
-                                {message.properties.address}
-                              </button>
+                              <div>
+                                <button
+                                  onClick={() => navigate(`/properties?propertyId=${message.property_id}`)}
+                                  className="text-blue-600 hover:underline cursor-pointer"
+                                >
+                                  {message.properties.address}
+                                </button>
+                                {message.properties.buy_boxes?.name && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {message.properties.buy_boxes.name}
+                                  </p>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-muted-foreground italic">No property</span>
                             )}
