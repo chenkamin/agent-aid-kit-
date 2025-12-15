@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload, Send, Flame, ThermometerSun, Snowflake, Edit, Target } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload, Send, Flame, ThermometerSun, Snowflake, Edit, Target, Loader2, Sparkles, FileDown, Image, BedDouble, Bath, Square, Car, Bell } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -186,6 +186,7 @@ export default function Properties() {
   } | null>(null);
   const [isAddingComp, setIsAddingComp] = useState(false);
   const [editingCompId, setEditingCompId] = useState<string | null>(null);
+  const [isScrapingComps, setIsScrapingComps] = useState(false);
   const [compForm, setCompForm] = useState({
     address: "",
     zillow_link: "",
@@ -689,6 +690,21 @@ export default function Properties() {
       if (!selectedProperty?.id) return [];
       const { data } = await supabase
         .from("activities")
+        .select("*")
+        .eq("property_id", selectedProperty.id)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!selectedProperty?.id,
+  });
+
+  // Fetch notifications for selected property
+  const { data: propertyNotifications } = useQuery({
+    queryKey: ["property-notifications", selectedProperty?.id],
+    queryFn: async () => {
+      if (!selectedProperty?.id) return [];
+      const { data } = await supabase
+        .from("notifications")
         .select("*")
         .eq("property_id", selectedProperty.id)
         .order("created_at", { ascending: false });
@@ -2430,6 +2446,224 @@ export default function Properties() {
       });
     },
   });
+
+  // Scrape comps mutation
+  const scrapeCompsMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedProperty?.id) throw new Error("No property selected");
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape-comp-details`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ propertyId: selectedProperty.id }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to scrape comps');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.comps) {
+        setSelectedProperty((prev: any) => ({ ...prev, comps: data.comps }));
+        setEditedProperty((prev: any) => ({ ...prev, comps: data.comps }));
+      }
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
+      toast({
+        title: "Success",
+        description: `Generated report for ${data.processed} comps${data.errors > 0 ? ` (${data.errors} with errors)` : ''}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate comps report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Export comps to CSV
+  const exportCompsToCSV = () => {
+    if (!selectedProperty?.comps || selectedProperty.comps.length === 0) {
+      toast({
+        title: "No comps to export",
+        description: "Add some comparable properties first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const comps = selectedProperty.comps;
+    const headers = [
+      'Address', 'Price', 'Grade', 'Bedrooms', 'Bathrooms', 'Sqft', 
+      'Lot Size', 'Year Built', 'Home Type', 'Garage', 'Days on Market',
+      'Description', 'Zillow Link'
+    ];
+
+    const csvRows = [
+      headers.join(','),
+      ...comps.map((comp: any) => [
+        `"${comp.address || ''}"`,
+        comp.price || '',
+        comp.grade || '',
+        comp.bedrooms || '',
+        comp.bathrooms || '',
+        comp.sqft || '',
+        `"${comp.lot_size || ''}"`,
+        comp.year_built || '',
+        `"${comp.home_type || ''}"`,
+        `"${comp.garage || ''}"`,
+        comp.days_on_market || '',
+        `"${(comp.description || '').replace(/"/g, '""')}"`,
+        `"${comp.zillow_link || ''}"`,
+      ].join(','))
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `comps-${selectedProperty.address?.replace(/[^a-z0-9]/gi, '_') || 'property'}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    toast({
+      title: "Export Complete",
+      description: "Comps exported to CSV successfully",
+    });
+  };
+
+  // Export comps to PDF
+  const exportCompsToPDF = async () => {
+    if (!selectedProperty?.comps || selectedProperty.comps.length === 0) {
+      toast({
+        title: "No comps to export",
+        description: "Add some comparable properties first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Dynamic import of jspdf
+    let jsPDF: any;
+    try {
+      const module = await import('jspdf');
+      jsPDF = module.jsPDF;
+    } catch {
+      toast({
+        title: "PDF Export Not Available",
+        description: "Please install jspdf: npm install jspdf",
+        variant: "destructive",
+      });
+      return;
+    }
+    const doc = new jsPDF();
+    
+    const comps = selectedProperty.comps;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Title
+    doc.setFontSize(18);
+    doc.text('Comparable Properties Report', pageWidth / 2, 20, { align: 'center' });
+    
+    // Subject Property
+    doc.setFontSize(12);
+    doc.text(`Subject Property: ${selectedProperty.address || 'N/A'}`, 14, 35);
+    doc.text(`${selectedProperty.city || ''}, ${selectedProperty.state || ''} ${selectedProperty.zip || ''}`, 14, 42);
+    doc.text(`Generated: ${format(new Date(), 'MMMM d, yyyy')}`, 14, 49);
+    
+    // Line separator
+    doc.setLineWidth(0.5);
+    doc.line(14, 55, pageWidth - 14, 55);
+    
+    let yPos = 65;
+    
+    comps.forEach((comp: any, index: number) => {
+      // Check if we need a new page
+      if (yPos > 250) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      // Comp header
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${index + 1}. ${comp.address || 'No Address'}`, 14, yPos);
+      
+      // Grade badge color indicator
+      const gradeColor = comp.grade === 'high' ? '#22c55e' : comp.grade === 'low' ? '#ef4444' : '#eab308';
+      doc.setFillColor(gradeColor);
+      doc.roundedRect(pageWidth - 35, yPos - 5, 20, 8, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.text(comp.grade?.toUpperCase() || 'MID', pageWidth - 32, yPos);
+      doc.setTextColor(0, 0, 0);
+      
+      yPos += 10;
+      
+      // Comp details
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      
+      const details = [
+        `Price: $${Number(comp.price || 0).toLocaleString()}`,
+        comp.bedrooms ? `Beds: ${comp.bedrooms}` : null,
+        comp.bathrooms ? `Baths: ${comp.bathrooms}` : null,
+        comp.sqft ? `Sqft: ${comp.sqft.toLocaleString()}` : null,
+        comp.year_built ? `Year: ${comp.year_built}` : null,
+        comp.home_type ? `Type: ${comp.home_type}` : null,
+      ].filter(Boolean);
+      
+      doc.text(details.join('  |  '), 14, yPos);
+      yPos += 7;
+      
+      if (comp.lot_size || comp.garage) {
+        const extraDetails = [
+          comp.lot_size ? `Lot: ${comp.lot_size}` : null,
+          comp.garage ? `Garage: ${comp.garage}` : null,
+          comp.days_on_market ? `DOM: ${comp.days_on_market}` : null,
+        ].filter(Boolean);
+        doc.text(extraDetails.join('  |  '), 14, yPos);
+        yPos += 7;
+      }
+      
+      if (comp.description) {
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        const splitDesc = doc.splitTextToSize(comp.description, pageWidth - 28);
+        doc.text(splitDesc.slice(0, 2), 14, yPos);
+        yPos += splitDesc.slice(0, 2).length * 5;
+        doc.setTextColor(0, 0, 0);
+      }
+      
+      yPos += 10;
+    });
+    
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('Generated by Agent Aid Kit', pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    
+    // Save
+    doc.save(`comps-${selectedProperty.address?.replace(/[^a-z0-9]/gi, '_') || 'property'}-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    
+    toast({
+      title: "Export Complete",
+      description: "Comps exported to PDF successfully",
+    });
+  };
 
   // Send notification mutation
   const sendNotificationMutation = useMutation({
@@ -6073,23 +6307,136 @@ export default function Properties() {
                   </div>
                 )}
               </div>
+
+                {/* Notifications Section */}
+                {propertyNotifications && propertyNotifications.length > 0 && (
+                  <div className="pt-6 border-t">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                      <Bell className="h-5 w-5" />
+                      Notifications
+                      <Badge variant="secondary" className="text-xs">
+                        {propertyNotifications.length}
+                      </Badge>
+                    </h3>
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                      {propertyNotifications.map((notification: any) => (
+                        <div
+                          key={notification.id}
+                          className={`flex gap-3 p-3 rounded-lg border ${
+                            !notification.read 
+                              ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800" 
+                              : "bg-card"
+                          }`}
+                        >
+                          <div className="flex flex-col items-center gap-2">
+                            <div className={`p-2 rounded-full ${
+                              notification.type === 'sms_received' 
+                                ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                                : notification.type === 'activity_due'
+                                ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+                                : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                            }`}>
+                              {notification.type === 'sms_received' ? (
+                                <MessageSquare className="h-4 w-4" />
+                              ) : notification.type === 'activity_due' ? (
+                                <Clock className="h-4 w-4" />
+                              ) : (
+                                <Bell className="h-4 w-4" />
+                              )}
+                            </div>
+                            {!notification.read && (
+                              <div className="h-2 w-2 rounded-full bg-blue-500" />
+                            )}
+                          </div>
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-start justify-between">
+                              <h4 className="font-semibold text-sm">{notification.title}</h4>
+                              <Badge 
+                                variant="outline" 
+                                className={`capitalize text-xs ${
+                                  notification.type === 'sms_received'
+                                    ? 'border-green-200 text-green-700 dark:border-green-800 dark:text-green-400'
+                                    : notification.type === 'activity_due'
+                                    ? 'border-orange-200 text-orange-700 dark:border-orange-800 dark:text-orange-400'
+                                    : ''
+                                }`}
+                              >
+                                {notification.type.replace("_", " ")}
+                              </Badge>
+                            </div>
+                            {notification.message && (
+                              <p className="text-xs text-muted-foreground">{notification.message}</p>
+                            )}
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {notification.created_at && (
+                                <span>{format(new Date(notification.created_at), "MMM d, yyyy 'at' h:mm a")}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </TabsContent>
 
               {/* Comps Tab */}
               <TabsContent value="comps" className="space-y-4 mt-4">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
                   <h3 className="font-semibold text-lg">Comparable Properties</h3>
-                  <Button 
-                    size="sm" 
-                    onClick={() => {
-                      setEditingCompId(null);
-                      setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
-                      setIsAddingComp(true);
-                    }}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Comp
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {/* Generate Report Button */}
+                    {selectedProperty?.comps && selectedProperty.comps.length > 0 && (
+                      <>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => scrapeCompsMutation.mutate()}
+                          disabled={scrapeCompsMutation.isPending}
+                          className="text-purple-600 border-purple-200 hover:bg-purple-50 dark:border-purple-800 dark:hover:bg-purple-950/30"
+                        >
+                          {scrapeCompsMutation.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="mr-2 h-4 w-4" />
+                              Generate Report
+                            </>
+                          )}
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={exportCompsToCSV}
+                        >
+                          <FileDown className="mr-2 h-4 w-4" />
+                          CSV
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={exportCompsToPDF}
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          PDF
+                        </Button>
+                      </>
+                    )}
+                    <Button 
+                      size="sm" 
+                      onClick={() => {
+                        setEditingCompId(null);
+                        setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
+                        setIsAddingComp(true);
+                      }}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Comp
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Add/Edit Comp Form Dialog */}
@@ -6223,22 +6570,50 @@ export default function Properties() {
                             : 'rgb(234, 179, 8)'
                         }}
                       >
+                        {/* Photo Section */}
+                        {comp.photos && comp.photos.length > 0 && (
+                          <div className="relative h-32 overflow-hidden bg-gray-100 dark:bg-gray-800">
+                            <img 
+                              src={comp.photos[0]} 
+                              alt={comp.address}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                            {comp.photos.length > 1 && (
+                              <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded flex items-center gap-1">
+                                <Image className="h-3 w-3" />
+                                {comp.photos.length}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
                         <CardContent className="p-4 flex-1 flex flex-col">
                           {/* Header with Grade Badge */}
                           <div className="flex items-start justify-between gap-2 mb-3">
-                            {comp.grade && (
-                              <Badge 
-                                className={
-                                  comp.grade === 'high' 
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-                                    : comp.grade === 'low' 
-                                    ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                                    : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                                }
-                              >
-                                {comp.grade.charAt(0).toUpperCase() + comp.grade.slice(1)}
-                              </Badge>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {comp.grade && (
+                                <Badge 
+                                  className={
+                                    comp.grade === 'high' 
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                                      : comp.grade === 'low' 
+                                      ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                      : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                  }
+                                >
+                                  {comp.grade.charAt(0).toUpperCase() + comp.grade.slice(1)}
+                                </Badge>
+                              )}
+                              {comp.scraped_at && (
+                                <Badge variant="outline" className="text-xs bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800">
+                                  <Sparkles className="h-3 w-3 mr-1 text-purple-500" />
+                                  Enriched
+                                </Badge>
+                              )}
+                            </div>
                             <div className="flex gap-1">
                               <Button
                                 variant="ghost"
@@ -6300,11 +6675,77 @@ export default function Properties() {
                             </span>
                           </div>
 
+                          {/* Enriched Property Details */}
+                          {(comp.bedrooms || comp.bathrooms || comp.sqft) && (
+                            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground mb-3">
+                              {comp.bedrooms && (
+                                <div className="flex items-center gap-1">
+                                  <BedDouble className="h-3.5 w-3.5" />
+                                  <span>{comp.bedrooms} bed</span>
+                                </div>
+                              )}
+                              {comp.bathrooms && (
+                                <div className="flex items-center gap-1">
+                                  <Bath className="h-3.5 w-3.5" />
+                                  <span>{comp.bathrooms} bath</span>
+                                </div>
+                              )}
+                              {comp.sqft && (
+                                <div className="flex items-center gap-1">
+                                  <Square className="h-3.5 w-3.5" />
+                                  <span>{comp.sqft.toLocaleString()} sqft</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Additional Details */}
+                          {(comp.year_built || comp.lot_size || comp.garage || comp.home_type) && (
+                            <div className="flex flex-wrap gap-2 mb-3">
+                              {comp.year_built && (
+                                <Badge variant="secondary" className="text-xs font-normal">
+                                  Built {comp.year_built}
+                                </Badge>
+                              )}
+                              {comp.home_type && (
+                                <Badge variant="secondary" className="text-xs font-normal">
+                                  {comp.home_type}
+                                </Badge>
+                              )}
+                              {comp.lot_size && (
+                                <Badge variant="secondary" className="text-xs font-normal">
+                                  Lot: {comp.lot_size}
+                                </Badge>
+                              )}
+                              {comp.garage && (
+                                <Badge variant="secondary" className="text-xs font-normal">
+                                  <Car className="h-3 w-3 mr-1" />
+                                  {comp.garage}
+                                </Badge>
+                              )}
+                              {comp.days_on_market && (
+                                <Badge variant="secondary" className="text-xs font-normal">
+                                  {comp.days_on_market} DOM
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+
                           {/* Description */}
                           {comp.description && (
                             <div className="pt-3 mt-auto border-t">
                               <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
                                 {comp.description}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Scrape Error */}
+                          {comp.scrape_error && (
+                            <div className="pt-2 mt-auto">
+                              <p className="text-xs text-red-500 flex items-center gap-1">
+                                <Info className="h-3 w-3" />
+                                {comp.scrape_error}
                               </p>
                             </div>
                           )}

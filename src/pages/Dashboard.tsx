@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { 
@@ -18,13 +19,15 @@ import {
   AlertCircle,
   BarChart3,
   ArrowUpRight,
-  Activity
+  Activity,
+  Trophy,
+  Calendar,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
-import { format, startOfWeek, endOfWeek, isWithinInterval, subDays, startOfMonth, subMonths } from "date-fns";
+import { format, startOfWeek, endOfWeek, isWithinInterval, subDays, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import { Progress } from "@/components/ui/progress";
 import {
   AreaChart,
@@ -102,6 +105,51 @@ export default function Dashboard() {
         .select("*, properties(address, city)")
         .eq("company_id", userCompany.company_id)
         .order("due_at", { ascending: true });
+      return data || [];
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  // Fetch KPI goals
+  const { data: kpiGoalsWeekly } = useQuery({
+    queryKey: ["kpi-goals-weekly", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return null;
+      const { data } = await supabase
+        .from("company_kpi_goals")
+        .select("*")
+        .eq("company_id", userCompany.company_id)
+        .eq("period_type", "weekly")
+        .single();
+      return data;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  const { data: kpiGoalsMonthly } = useQuery({
+    queryKey: ["kpi-goals-monthly", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return null;
+      const { data } = await supabase
+        .from("company_kpi_goals")
+        .select("*")
+        .eq("company_id", userCompany.company_id)
+        .eq("period_type", "monthly")
+        .single();
+      return data;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
+  // Fetch workflow history for KPI tracking
+  const { data: workflowHistory } = useQuery({
+    queryKey: ["dashboard-workflow-history", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return [];
+      const { data } = await supabase
+        .from("property_workflow_history")
+        .select("to_state, changed_at")
+        .gte("changed_at", subMonths(new Date(), 1).toISOString());
       return data || [];
     },
     enabled: !!userCompany?.company_id,
@@ -199,6 +247,120 @@ export default function Dashboard() {
     { name: "Under Contract", value: properties?.filter((p) => p.workflow_state === "Under Contract").length || 0, color: "#10b981" },
     { name: "Closed", value: properties?.filter((p) => p.workflow_state === "Closed").length || 0, color: "#22c55e" },
   ].filter((item) => item.value > 0);
+
+  // KPI Progress Calculations
+  const currentMonthStart = startOfMonth(new Date());
+  const currentMonthEnd = endOfMonth(new Date());
+
+  const calculateKPIProgress = (goals: any, periodStart: Date, periodEnd: Date) => {
+    if (!goals) return { overall: 0, metrics: [] };
+
+    const smsInPeriod = allSmsMessages?.filter((msg) =>
+      isWithinInterval(new Date(msg.created_at), { start: periodStart, end: periodEnd })
+    ) || [];
+
+    const workflowInPeriod = workflowHistory?.filter((wf) =>
+      isWithinInterval(new Date(wf.changed_at), { start: periodStart, end: periodEnd })
+    ) || [];
+
+    const metrics = [
+      {
+        key: "sms_sent",
+        label: "SMS Sent",
+        current: smsInPeriod.filter((m) => m.direction === "outgoing").length,
+        goal: goals.sms_sent_goal || 0,
+      },
+      {
+        key: "sms_responses",
+        label: "Responses",
+        current: smsInPeriod.filter((m) => m.direction === "incoming").length,
+        goal: goals.sms_responses_goal || 0,
+      },
+      {
+        key: "follow_up",
+        label: "Follow Up",
+        current: workflowInPeriod.filter((w) => w.to_state === "Follow Up").length,
+        goal: goals.properties_follow_up_goal || 0,
+      },
+      {
+        key: "negotiating",
+        label: "Negotiating",
+        current: workflowInPeriod.filter((w) => w.to_state === "Negotiating").length,
+        goal: goals.properties_negotiating_goal || 0,
+      },
+      {
+        key: "closed",
+        label: "Closed",
+        current: workflowInPeriod.filter((w) => w.to_state === "Closed").length,
+        goal: goals.properties_closed_goal || 0,
+      },
+    ];
+
+    const metricsWithGoals = metrics.filter((m) => m.goal > 0);
+    const overall = metricsWithGoals.length > 0
+      ? Math.round(
+          metricsWithGoals.reduce((sum, m) => sum + Math.min((m.current / m.goal) * 100, 100), 0) /
+            metricsWithGoals.length
+        )
+      : 0;
+
+    return { overall, metrics: metricsWithGoals.slice(0, 3) };
+  };
+
+  const weeklyProgress = calculateKPIProgress(kpiGoalsWeekly, thisWeekStart, thisWeekEnd);
+  const monthlyProgress = calculateKPIProgress(kpiGoalsMonthly, currentMonthStart, currentMonthEnd);
+
+  const hasKPIGoals = kpiGoalsWeekly || kpiGoalsMonthly;
+
+  // Milestone check mutation
+  const checkMilestonesMutation = useMutation({
+    mutationFn: async ({ periodType, goals, metrics }: { 
+      periodType: string; 
+      goals: any; 
+      metrics: { key: string; label: string; current: number; goal: number }[] 
+    }) => {
+      if (!userCompany?.company_id || !user?.id || !goals) return;
+
+      // First check if we need to reset the period
+      await supabase.rpc("check_and_reset_kpi_period", {
+        p_company_id: userCompany.company_id,
+        p_period_type: periodType,
+      });
+
+      // Then check milestones for each metric with a goal
+      for (const metric of metrics) {
+        if (metric.goal > 0) {
+          await supabase.rpc("check_kpi_milestones", {
+            p_company_id: userCompany.company_id,
+            p_user_id: user.id,
+            p_period_type: periodType,
+            p_metric_key: metric.key,
+            p_metric_label: metric.label,
+            p_current_value: metric.current,
+            p_goal_value: metric.goal,
+          });
+        }
+      }
+    },
+  });
+
+  // Check milestones when dashboard loads
+  useEffect(() => {
+    if (kpiGoalsWeekly && weeklyProgress.metrics.length > 0) {
+      checkMilestonesMutation.mutate({
+        periodType: "weekly",
+        goals: kpiGoalsWeekly,
+        metrics: weeklyProgress.metrics,
+      });
+    }
+    if (kpiGoalsMonthly && monthlyProgress.metrics.length > 0) {
+      checkMilestonesMutation.mutate({
+        periodType: "monthly",
+        goals: kpiGoalsMonthly,
+        metrics: monthlyProgress.metrics,
+      });
+    }
+  }, [kpiGoalsWeekly, kpiGoalsMonthly, weeklyProgress.metrics, monthlyProgress.metrics]);
 
   return (
     <div className="space-y-6 pb-8">
@@ -316,6 +478,119 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* KPI Goals Progress */}
+      {hasKPIGoals && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Weekly KPI Progress */}
+          <Card className="border-2 border-violet-200 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-950/20 dark:to-purple-950/20">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg font-bold text-violet-900 dark:text-violet-100">
+                  <Calendar className="h-5 w-5 text-violet-600" />
+                  Weekly Goals
+                </CardTitle>
+                {weeklyProgress.overall >= 100 && (
+                  <Badge className="bg-emerald-500 text-white gap-1">
+                    <Trophy className="h-3 w-3" />
+                    Complete!
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {kpiGoalsWeekly ? (
+                <>
+                  <div className="flex items-baseline gap-2 mb-3">
+                    <span className="text-4xl font-black text-violet-600">{weeklyProgress.overall}%</span>
+                    <span className="text-muted-foreground">overall progress</span>
+                  </div>
+                  <Progress value={weeklyProgress.overall} className="h-3 mb-4" />
+                  <div className="space-y-2">
+                    {weeklyProgress.metrics.map((m) => (
+                      <div key={m.key} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{m.label}</span>
+                        <span className="font-semibold">
+                          {m.current}/{m.goal}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-4"
+                    onClick={() => navigate("/kpi")}
+                  >
+                    View Details →
+                  </Button>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-muted-foreground mb-3">No weekly goals set yet</p>
+                  <Button size="sm" onClick={() => navigate("/kpi")}>
+                    Set Goals
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Monthly KPI Progress */}
+          <Card className="border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/20 dark:to-blue-950/20">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg font-bold text-indigo-900 dark:text-indigo-100">
+                  <BarChart3 className="h-5 w-5 text-indigo-600" />
+                  Monthly Goals
+                </CardTitle>
+                {monthlyProgress.overall >= 100 && (
+                  <Badge className="bg-emerald-500 text-white gap-1">
+                    <Trophy className="h-3 w-3" />
+                    Complete!
+                  </Badge>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {kpiGoalsMonthly ? (
+                <>
+                  <div className="flex items-baseline gap-2 mb-3">
+                    <span className="text-4xl font-black text-indigo-600">{monthlyProgress.overall}%</span>
+                    <span className="text-muted-foreground">overall progress</span>
+                  </div>
+                  <Progress value={monthlyProgress.overall} className="h-3 mb-4" />
+                  <div className="space-y-2">
+                    {monthlyProgress.metrics.map((m) => (
+                      <div key={m.key} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{m.label}</span>
+                        <span className="font-semibold">
+                          {m.current}/{m.goal}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-4"
+                    onClick={() => navigate("/kpi")}
+                  >
+                    View Details →
+                  </Button>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-muted-foreground mb-3">No monthly goals set yet</p>
+                  <Button size="sm" onClick={() => navigate("/kpi")}>
+                    Set Goals
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* AI Lead Scoring Overview */}
       <div className="grid gap-4 md:grid-cols-3">

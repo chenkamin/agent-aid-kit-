@@ -23,6 +23,7 @@ import Lists from "./pages/Lists";
 import Email from "./pages/Email";
 import SMS from "./pages/SMS";
 import Automations from "./pages/Automations";
+import KPIGoals from "./pages/KPIGoals";
 import UserSettings from "./pages/UserSettings";
 import Pricing from "./pages/Pricing";
 import AcceptInvite from "./pages/AcceptInvite";
@@ -178,6 +179,16 @@ const App = () => (
                 <ProtectedRoute>
                   <Layout>
                     <Automations />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/kpi"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <KPIGoals />
                   </Layout>
                 </ProtectedRoute>
               }
