@@ -148,6 +148,33 @@ function normalizeHomeType(homeType: string): string {
   return 'Other';
 }
 
+// Normalize Zillow status to database enum values
+function normalizeStatus(zillowStatus: string | null | undefined): string {
+  if (!zillowStatus) return 'For Sale';
+  
+  // Remove underscores, spaces, and dashes, then convert to uppercase for comparison
+  const status = zillowStatus.toUpperCase().replace(/[_\s-]+/g, '');
+  
+  const statusMap: Record<string, string> = {
+    'FORSALE': 'For Sale',
+    'PENDING': 'Pending',
+    'SOLD': 'Sold',
+    'UNDERCONTRACT': 'Under Contract',
+    'OFFMARKET': 'Off Market',
+    'CONTINGENT': 'Under Contract',  // Contingent treated as under contract
+    'COMINGSOON': 'For Sale',        // Coming soon treated as for sale
+    'RECENTLYSOLD': 'Sold',          // Recently sold is still sold
+  };
+  
+  const normalizedStatus = statusMap[status];
+  if (normalizedStatus) {
+    return normalizedStatus;
+  }
+  
+  console.log(`   ⚠️ Unknown status: "${zillowStatus}" - defaulting to "For Sale"`);
+  return 'For Sale';
+}
+
 async function scrapePropertyDetails(addresses: string[], apifyToken: string) {
   console.log(`\n   🔍 DETAILED SCRAPING FUNCTION CALLED`);
   console.log(`      Scraping detailed info for ${addresses.length} properties...`);
@@ -871,13 +898,15 @@ Deno.serve(async (req) => {
           const listingUrl = prop.detailUrl || prop.url || '';
           const addressData = extractAddressFromUrl(listingUrl);
           const scrapedPrice = parseNumber(prop.price || prop.unformattedPrice || prop.hdpData?.homeInfo?.price);
-          const scrapedStatus = 'For Sale';
+          const rawStatus = prop.homeStatus || prop.statusText || prop.hdpData?.homeInfo?.homeStatus;
+          const scrapedStatus = normalizeStatus(rawStatus);
           const homeTypeValue = prop.homeType || prop.hdpData?.homeInfo?.homeType || prop.propertyType || 'undefined';
 
           console.log(`\n   📋 Processing property:`);
           console.log(`      URL: ${listingUrl}`);
           console.log(`      Address: ${addressData.address}, ${addressData.city}, ${addressData.state} ${addressData.zip}`);
           console.log(`      Price: $${scrapedPrice?.toLocaleString() || 'N/A'}`);
+          console.log(`      Status: "${rawStatus}" → "${scrapedStatus}"`);
           console.log(`      Home Type: "${homeTypeValue}" → "${normalizeHomeType(homeTypeValue)}"`);
 
           // Check by BOTH URL and Address+City to prevent duplicates

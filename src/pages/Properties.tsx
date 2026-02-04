@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload, Send, Flame, ThermometerSun, Snowflake, Edit, Target, Loader2, Sparkles, FileDown, Image, BedDouble, Bath, Square, Car, Bell } from "lucide-react";
+import { Plus, Building2, DollarSign, MapPin, Home, Calendar, Ruler, Clock, Phone, Mail, FileText, Video, CheckCircle2, List, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, Search, ChevronDown, ChevronUp, Download, Info, MessageSquare, Trash2, UserCircle, Check, Upload, Send, Flame, ThermometerSun, Snowflake, Edit, Target, Loader2, Sparkles, FileDown, Image, BedDouble, Bath, Square, Car, Bell, User } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +34,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -146,6 +146,7 @@ export default function Properties() {
     assignedTo: [] as string[],
     hasSellerDetails: [] as string[],
     leadScore: [] as string[],
+    smsStatus: [] as string[],  // "contacted", "not-contacted", "awaiting-reply", "replied"
   });
   const [searchInput, setSearchInput] = useState(""); // Immediate input value
   const [searchQuery, setSearchQuery] = useState(""); // Debounced value for querying
@@ -168,6 +169,10 @@ export default function Properties() {
     message: "",
     templateId: "",
   });
+  // Chat-style SMS interface state
+  const [smsMessageText, setSmsMessageText] = useState("");
+  const [chatSelectedTemplateId, setChatSelectedTemplateId] = useState("");
+  const smsMessagesEndRef = useRef<HTMLDivElement>(null);
   const [contactSelectorOpen, setContactSelectorOpen] = useState(false);
   const [isSendingBulkEmail, setIsSendingBulkEmail] = useState(false);
   const [isSendingBulkEmailInProgress, setIsSendingBulkEmailInProgress] = useState(false);
@@ -439,6 +444,82 @@ export default function Properties() {
     return query;
   };
 
+  // Fetch property IDs based on SMS status filter
+  const { data: smsStatusPropertyIds } = useQuery({
+    queryKey: ["sms-status-properties", userCompany?.company_id, filters.smsStatus],
+    queryFn: async () => {
+      if (!userCompany?.company_id || filters.smsStatus.length === 0) {
+        return null;
+      }
+
+      console.log('📱 Fetching SMS status property IDs for:', filters.smsStatus);
+
+      // Query all SMS messages to determine status per property
+      const { data, error } = await supabase
+        .from("sms_messages")
+        .select("property_id, direction")
+        .eq("company_id", userCompany.company_id)
+        .not("property_id", "is", null);
+
+      if (error) {
+        console.error("❌ Error fetching SMS for status filter:", error);
+        return null;
+      }
+
+      // Group by property_id and track outgoing/incoming
+      const statusMap = new Map<string, { hasOutgoing: boolean; hasIncoming: boolean }>();
+      for (const sms of data || []) {
+        if (!sms.property_id) continue;
+        if (!statusMap.has(sms.property_id)) {
+          statusMap.set(sms.property_id, { hasOutgoing: false, hasIncoming: false });
+        }
+        const entry = statusMap.get(sms.property_id)!;
+        if (sms.direction === "outgoing") entry.hasOutgoing = true;
+        if (sms.direction === "incoming") entry.hasIncoming = true;
+      }
+
+      // Collect property IDs that match ANY of the selected filters
+      const matchingPropertyIds = new Set<string>();
+      
+      for (const filter of filters.smsStatus) {
+        if (filter === "contacted") {
+          // Has outgoing messages
+          for (const [propertyId, status] of statusMap) {
+            if (status.hasOutgoing) matchingPropertyIds.add(propertyId);
+          }
+        } else if (filter === "awaiting-reply") {
+          // Has outgoing but no incoming
+          for (const [propertyId, status] of statusMap) {
+            if (status.hasOutgoing && !status.hasIncoming) matchingPropertyIds.add(propertyId);
+          }
+        } else if (filter === "replied") {
+          // Has incoming messages
+          for (const [propertyId, status] of statusMap) {
+            if (status.hasIncoming) matchingPropertyIds.add(propertyId);
+          }
+        }
+      }
+
+      // Handle "not-contacted" - properties with NO outgoing messages
+      if (filters.smsStatus.includes("not-contacted")) {
+        // Get all property IDs that have outgoing messages
+        const idsWithOutgoing = Array.from(statusMap.entries())
+          .filter(([_, status]) => status.hasOutgoing)
+          .map(([propertyId]) => propertyId);
+        
+        console.log(`📭 Found ${idsWithOutgoing.length} properties WITH outgoing SMS - will exclude them for "not-contacted"`);
+        
+        // Return special marker to exclude these properties
+        return { type: "not-contacted-exclude", ids: idsWithOutgoing, includeIds: Array.from(matchingPropertyIds) } as any;
+      }
+
+      const matchingIds = Array.from(matchingPropertyIds);
+      console.log(`📱 Found ${matchingIds.length} properties matching SMS status filters:`, filters.smsStatus);
+      return matchingIds;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
   // Fetch property IDs with SMS leads based on score filter
   const { data: leadScorePropertyIds } = useQuery({
     queryKey: ["lead-score-properties", userCompany?.company_id, filters.leadScore],
@@ -516,14 +597,52 @@ export default function Properties() {
     enabled: !!userCompany?.company_id && filters.leadScore.length > 0,
   });
 
+  // Fetch SMS status (outgoing/incoming) per property
+  const { data: propertySmsStatus } = useQuery({
+    queryKey: ["property-sms-status", userCompany?.company_id],
+    queryFn: async () => {
+      if (!userCompany?.company_id) return new Map();
+      
+      const { data, error } = await supabase
+        .from("sms_messages")
+        .select("property_id, direction")
+        .eq("company_id", userCompany.company_id)
+        .not("property_id", "is", null);
+      
+      if (error) {
+        console.error("Error fetching SMS status:", error);
+        return new Map();
+      }
+      
+      // Group by property_id and track outgoing/incoming
+      const statusMap = new Map<string, { hasOutgoing: boolean; hasIncoming: boolean }>();
+      for (const sms of data || []) {
+        if (!sms.property_id) continue;
+        if (!statusMap.has(sms.property_id)) {
+          statusMap.set(sms.property_id, { hasOutgoing: false, hasIncoming: false });
+        }
+        const entry = statusMap.get(sms.property_id)!;
+        if (sms.direction === "outgoing") entry.hasOutgoing = true;
+        if (sms.direction === "incoming") entry.hasIncoming = true;
+      }
+      return statusMap;
+    },
+    enabled: !!userCompany?.company_id,
+  });
+
   // Get total count of properties for pagination
   const { data: totalCount } = useQuery({
-    queryKey: ["properties-count", userCompany?.company_id, filters, searchQuery, leadScorePropertyIds],
+    queryKey: ["properties-count", userCompany?.company_id, filters, searchQuery, leadScorePropertyIds, smsStatusPropertyIds],
     queryFn: async () => {
       if (!userCompany?.company_id) return 0;
       
       // If filtering by lead score but no properties have that score, return 0
       if (filters.leadScore.length > 0 && Array.isArray(leadScorePropertyIds) && leadScorePropertyIds.length === 0) {
+        return 0;
+      }
+      
+      // If filtering by SMS status but no properties match, return 0
+      if (filters.smsStatus.length > 0 && Array.isArray(smsStatusPropertyIds) && smsStatusPropertyIds.length === 0) {
         return 0;
       }
       
@@ -546,6 +665,32 @@ export default function Properties() {
         }
       }
       
+      // Filter by SMS status property IDs if applicable
+      if (filters.smsStatus.length > 0 && smsStatusPropertyIds) {
+        if ((smsStatusPropertyIds as any).type === "not-contacted-exclude") {
+          // Handle "not-contacted" case: exclude properties with outgoing SMS
+          const idsToExclude = (smsStatusPropertyIds as any).ids;
+          const includeIds = (smsStatusPropertyIds as any).includeIds;
+          
+          if (includeIds.length > 0) {
+            // If there are other filters too (contacted/awaiting/replied), include those IDs
+            if (idsToExclude.length > 0) {
+              query = query.or(`id.in.(${includeIds.join(",")}),id.not.in.(${idsToExclude.join(",")})`);
+            } else {
+              query = query.in("id", includeIds);
+            }
+          } else {
+            // Only "not-contacted" filter - exclude properties with outgoing SMS
+            if (idsToExclude.length > 0) {
+              query = query.not("id", "in", `(${idsToExclude.join(",")})`);
+            }
+          }
+        } else if (Array.isArray(smsStatusPropertyIds) && smsStatusPropertyIds.length > 0) {
+          // Include only properties with specific SMS statuses
+          query = query.in("id", smsStatusPropertyIds);
+        }
+      }
+      
       // Apply all other filters
       query = applyFiltersToQuery(query);
       
@@ -558,22 +703,30 @@ export default function Properties() {
       
       return count || 0;
     },
-    enabled: !!userCompany?.company_id && (filters.leadScore.length === 0 || leadScorePropertyIds !== undefined),
+    enabled: !!userCompany?.company_id && (filters.leadScore.length === 0 || leadScorePropertyIds !== undefined) && (filters.smsStatus.length === 0 || smsStatusPropertyIds !== undefined),
   });
 
   const { data: properties, isLoading } = useQuery({
-    queryKey: ["properties", userCompany?.company_id, filters, searchQuery, currentPage, itemsPerPage, leadScorePropertyIds],
+    queryKey: ["properties", userCompany?.company_id, filters, searchQuery, currentPage, itemsPerPage, leadScorePropertyIds, smsStatusPropertyIds],
     queryFn: async () => {
       if (!userCompany?.company_id) return [];
       
       console.log('📊 Fetching properties with filters:', {
         leadScore: filters.leadScore,
-        leadScorePropertyIds: Array.isArray(leadScorePropertyIds) ? leadScorePropertyIds.length : leadScorePropertyIds
+        leadScorePropertyIds: Array.isArray(leadScorePropertyIds) ? leadScorePropertyIds.length : leadScorePropertyIds,
+        smsStatus: filters.smsStatus,
+        smsStatusPropertyIds: Array.isArray(smsStatusPropertyIds) ? smsStatusPropertyIds.length : smsStatusPropertyIds
       });
       
       // If filtering by lead score but no properties have that score, return empty
       if (filters.leadScore.length > 0 && Array.isArray(leadScorePropertyIds) && leadScorePropertyIds.length === 0) {
         console.log(`⚠️ No properties with selected lead scores found - returning empty`);
+        return [];
+      }
+      
+      // If filtering by SMS status but no properties match, return empty
+      if (filters.smsStatus.length > 0 && Array.isArray(smsStatusPropertyIds) && smsStatusPropertyIds.length === 0) {
+        console.log(`⚠️ No properties with selected SMS status found - returning empty`);
         return [];
       }
       
@@ -603,6 +756,35 @@ export default function Properties() {
         }
       }
       
+      // Filter by SMS status property IDs if applicable
+      if (filters.smsStatus.length > 0 && smsStatusPropertyIds) {
+        if ((smsStatusPropertyIds as any).type === "not-contacted-exclude") {
+          // Handle "not-contacted" case: exclude properties with outgoing SMS
+          const idsToExclude = (smsStatusPropertyIds as any).ids;
+          const includeIds = (smsStatusPropertyIds as any).includeIds;
+          
+          if (includeIds.length > 0) {
+            // If there are other filters too (contacted/awaiting/replied), include those IDs
+            console.log(`📱 Including ${includeIds.length} properties with SMS status AND excluding ${idsToExclude.length} contacted properties`);
+            if (idsToExclude.length > 0) {
+              query = query.or(`id.in.(${includeIds.join(",")}),id.not.in.(${idsToExclude.join(",")})`);
+            } else {
+              query = query.in("id", includeIds);
+            }
+          } else {
+            // Only "not-contacted" filter - exclude properties with outgoing SMS
+            console.log(`📭 Excluding ${idsToExclude.length} contacted properties for "not-contacted" filter`);
+            if (idsToExclude.length > 0) {
+              query = query.not("id", "in", `(${idsToExclude.join(",")})`);
+            }
+          }
+        } else if (Array.isArray(smsStatusPropertyIds) && smsStatusPropertyIds.length > 0) {
+          // Include only properties with specific SMS statuses
+          console.log(`📱 Filtering to ${smsStatusPropertyIds.length} properties with SMS status:`, filters.smsStatus);
+          query = query.in("id", smsStatusPropertyIds);
+        }
+      }
+      
       // Apply all other filters
       query = applyFiltersToQuery(query);
       
@@ -615,10 +797,10 @@ export default function Properties() {
         throw error;
       }
       
-      console.log(`✅ Fetched ${data?.length || 0} properties (leadScore: ${filters.leadScore})`);
+      console.log(`✅ Fetched ${data?.length || 0} properties (leadScore: ${filters.leadScore}, smsStatus: ${filters.smsStatus})`);
       return data || [];
     },
-    enabled: !!userCompany?.company_id && (filters.leadScore.length === 0 || leadScorePropertyIds !== undefined),
+    enabled: !!userCompany?.company_id && (filters.leadScore.length === 0 || leadScorePropertyIds !== undefined) && (filters.smsStatus.length === 0 || smsStatusPropertyIds !== undefined),
   });
 
   // Debounce search input (500ms delay)
@@ -728,7 +910,7 @@ export default function Properties() {
     enabled: !!selectedProperty?.id,
   });
 
-  // Fetch SMS messages for selected property
+  // Fetch SMS messages for selected property (oldest first for chat view)
   const { data: propertySmsMessages } = useQuery({
     queryKey: ["property-sms", selectedProperty?.id],
     queryFn: async () => {
@@ -737,7 +919,7 @@ export default function Properties() {
         .from("sms_messages" as any)
         .select("*")
         .eq("property_id", selectedProperty.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: true });
       return data || [];
     },
     enabled: !!selectedProperty?.id,
@@ -836,8 +1018,17 @@ export default function Properties() {
     enabled: !!user?.id,
   });
 
-  // All filtering is now done at the database level, so we just use properties directly
-  const filteredProperties = properties;
+  // Auto-scroll to bottom of SMS chat when new messages arrive
+  useEffect(() => {
+    if (propertySmsMessages && propertySmsMessages.length > 0) {
+      setTimeout(() => {
+        smsMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  }, [propertySmsMessages]);
+
+  // All filters including SMS status are now applied at database level
+  const filteredProperties = properties || [];
 
   // Sort properties
   const sortedProperties = filteredProperties ? [...filteredProperties].sort((a, b) => {
@@ -965,6 +1156,41 @@ export default function Properties() {
       default:
         return 'New property, not yet reviewed';
     }
+  };
+
+  // Get SMS status badge for a property
+  const getSmsStatusBadge = (propertyId: string) => {
+    const status = propertySmsStatus?.get(propertyId);
+    const hasOutgoing = status?.hasOutgoing || false;
+    const hasIncoming = status?.hasIncoming || false;
+    
+    if (hasIncoming) {
+      return (
+        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 gap-1">
+          <CheckCircle2 className="h-3 w-3" />
+          Replied
+        </Badge>
+      );
+    }
+    if (hasOutgoing && !hasIncoming) {
+      return (
+        <Badge variant="outline" className="text-yellow-700 border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 dark:text-yellow-400 gap-1">
+          <Clock className="h-3 w-3" />
+          Awaiting
+        </Badge>
+      );
+    }
+    if (hasOutgoing) {
+      return (
+        <Badge variant="outline" className="text-green-700 border-green-400 bg-green-50 dark:bg-green-950/30 dark:text-green-400 gap-1">
+          <Send className="h-3 w-3" />
+          Contacted
+        </Badge>
+      );
+    }
+    return (
+      <span className="text-xs text-muted-foreground">-</span>
+    );
   };
 
   const exportToCSV = () => {
@@ -2294,6 +2520,41 @@ export default function Properties() {
       });
     },
   });
+
+  // Handle sending SMS from chat interface
+  const handleSendChatSMS = async () => {
+    if (!smsMessageText.trim()) return;
+    
+    const toPhone = selectedProperty?.seller_agent_phone;
+    if (!toPhone) {
+      toast({
+        title: "Error",
+        description: "No phone number available for this property",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      await sendSMSMutation.mutateAsync({
+        to: toPhone,
+        message: smsMessageText,
+        propertyId: selectedProperty?.id,
+        agentName: selectedProperty?.seller_agent_name || toPhone,
+      });
+      
+      setSmsMessageText("");
+      setChatSelectedTemplateId("");
+      
+      // Scroll to bottom after sending
+      setTimeout(() => {
+        smsMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (error) {
+      // Error is handled by the mutation's onError
+      console.error('Failed to send SMS:', error);
+    }
+  };
 
   // Update property mutation
   // Debounce timer ref for auto-save
@@ -4301,6 +4562,76 @@ export default function Properties() {
                 </PopoverContent>
               </Popover>
             </div>
+
+            {/* SMS Status Filter */}
+            <div className="space-y-2">
+              <Label htmlFor="filter-sms-status" className="text-sm font-medium">SMS Status</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="filter-sms-status"
+                    variant="outline"
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {filters.smsStatus.length === 0
+                        ? "All"
+                        : filters.smsStatus.length === 1
+                        ? filters.smsStatus[0] === "contacted" ? "Contacted" 
+                          : filters.smsStatus[0] === "not-contacted" ? "Not Contacted" 
+                          : filters.smsStatus[0] === "awaiting-reply" ? "Awaiting Reply"
+                          : "Replied"
+                        : `${filters.smsStatus.length} selected`}
+                    </span>
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[220px] p-0" align="start">
+                  <Command>
+                    <CommandList>
+                      <CommandGroup>
+                        {[
+                          { value: "contacted", label: "Contacted (SMS Sent)" },
+                          { value: "not-contacted", label: "Not Contacted" },
+                          { value: "awaiting-reply", label: "Awaiting Reply" },
+                          { value: "replied", label: "Replied" },
+                        ].map((status) => (
+                          <CommandItem
+                            key={status.value}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setFilters((prev) => ({
+                                ...prev,
+                                smsStatus: prev.smsStatus.includes(status.value)
+                                  ? prev.smsStatus.filter((s) => s !== status.value)
+                                  : [...prev.smsStatus, status.value],
+                              }));
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <div className="flex items-center w-full">
+                              <Checkbox
+                                checked={filters.smsStatus.includes(status.value)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    smsStatus: checked
+                                      ? [...prev.smsStatus, status.value]
+                                      : prev.smsStatus.filter((s) => s !== status.value),
+                                  }));
+                                }}
+                                className="mr-2"
+                              />
+                              <span>{status.label}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
 
           <div className="flex items-center justify-between mt-4">
@@ -4318,17 +4649,19 @@ export default function Properties() {
                   maxBedrooms: "",
                 });
                 setFilters({
-                  status: "all",
-                  buyBoxId: "all",
+                  status: [],
+                  buyBoxId: [],
                   minPrice: "",
                   maxPrice: "",
                   minBedrooms: "",
                   maxBedrooms: "",
-                  homeType: "all",
-                  workflowState: "all",
-                  urgency: "all",
-                  assignedTo: "all",
-                  hasSellerDetails: "all",
+                  homeType: [],
+                  workflowState: [],
+                  urgency: [],
+                  assignedTo: [],
+                  hasSellerDetails: [],
+                  leadScore: [],
+                  smsStatus: [],
                 });
               }}
             >
@@ -4545,6 +4878,9 @@ export default function Properties() {
                     </Button>
                   </TableHead>
                   <TableHead>
+                    <span className="font-semibold">SMS</span>
+                  </TableHead>
+                  <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('city')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       City
                       {getSortIcon('city')}
@@ -4665,6 +5001,9 @@ export default function Properties() {
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
+                      </TableCell>
+                      <TableCell>
+                        {getSmsStatusBadge(property.id)}
                       </TableCell>
                       <TableCell>{property.city || '-'}</TableCell>
                       <TableCell>
@@ -6844,122 +7183,229 @@ export default function Properties() {
                   )}
                 </div>
 
-                {/* SMS Communications Section */}
-                <div className="space-y-4 pt-6 border-t">
-                  <div className="flex items-center justify-between">
+                {/* SMS Communications Section - Chat Style */}
+                <div className="pt-6 border-t">
+                  <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <MessageSquare className="h-5 w-5 text-green-600" />
-                      <h3 className="font-semibold text-lg">SMS Communications</h3>
+                      <h3 className="font-semibold text-lg">SMS Conversation</h3>
                     </div>
-                    <Badge variant="outline" className="text-xs">
-                      {propertySmsMessages?.length || 0} messages
-                    </Badge>
                   </div>
 
-                  {/* SMS Messages List */}
-                  {!propertySmsMessages || propertySmsMessages.length === 0 ? (
-                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                      <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                      <p className="text-muted-foreground text-sm">No SMS messages for this property yet</p>
-                      <p className="text-xs text-muted-foreground mt-2">Messages will appear here when you communicate about this property</p>
+                  {/* Chat Container */}
+                  <div className="flex flex-col border rounded-lg overflow-hidden" style={{ height: '600px' }}>
+                    {/* Chat Header - WhatsApp Style */}
+                    <div className="flex items-center gap-3 px-4 py-3 bg-[#075e54] dark:bg-gray-800 text-white">
+                      <div className="w-10 h-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                        <User className="h-6 w-6 text-gray-600 dark:text-gray-300" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">
+                          {selectedProperty?.seller_agent_name || 'Unknown Agent'}
+                        </p>
+                        <p className="text-xs text-gray-200 dark:text-gray-400">
+                          {selectedProperty?.seller_agent_phone || 'No phone number'}
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="text-xs bg-white/20 text-white border-0">
+                        {propertySmsMessages?.length || 0} msgs
+                      </Badge>
                     </div>
-                  ) : (
-                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                      {propertySmsMessages.map((sms: any) => (
-                        <div
-                          key={sms.id}
-                          className={`p-4 rounded-lg border ${
-                            sms.direction === 'incoming'
-                              ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
-                              : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {sms.direction === 'incoming' ? (
-                                <Badge variant="default" className="bg-blue-600 text-xs">
-                                  Incoming
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary" className="text-xs">
-                                  <Send className="h-3 w-3 mr-1" />
-                                  Outgoing
-                                </Badge>
-                              )}
-                              <Badge variant="outline" className="text-xs capitalize">
-                                {sms.status}
-                              </Badge>
-                              {/* AI Score Badge for incoming messages */}
-                              {sms.direction === 'incoming' && sms.ai_score && (
-                                <Badge 
-                                  variant={sms.ai_score === 3 ? 'destructive' : sms.ai_score === 2 ? 'default' : 'secondary'}
-                                  className="gap-1 text-xs"
-                                >
-                                  {sms.ai_score === 3 ? <Flame className="h-3 w-3" /> : sms.ai_score === 2 ? <ThermometerSun className="h-3 w-3" /> : <Snowflake className="h-3 w-3" />}
-                                  {sms.ai_score === 3 ? 'Hot' : sms.ai_score === 2 ? 'Warm' : 'Cold'}
-                                </Badge>
-                              )}
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              {format(new Date(sms.created_at), "MMM d, yyyy h:mm a")}
-                            </span>
-                          </div>
-
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Phone className="h-3 w-3" />
-                              <span>
-                                {sms.direction === 'incoming' 
-                                  ? `From: ${sms.from_number}` 
-                                  : `To: ${sms.to_number}`}
-                              </span>
-                            </div>
-                            
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                              {sms.message}
-                            </p>
-
-                            {/* AI Analysis for incoming messages */}
-                            {sms.direction === 'incoming' && sms.ai_score && (
-                              <div className="mt-3 pt-3 border-t">
-                                <div className="flex items-center gap-2 mb-2">
-                                  {sms.ai_score === 3 && (
-                                    <>
-                                      <Flame className="h-5 w-5 text-red-500" />
-                                      <Badge variant="destructive" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                        🔥 HOT LEAD
-                                      </Badge>
-                                    </>
-                                  )}
-                                  {sms.ai_score === 2 && (
-                                    <>
-                                      <ThermometerSun className="h-5 w-5 text-orange-500" />
-                                      <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
-                                        Warm Lead
-                                      </Badge>
-                                    </>
-                                  )}
-                                  {sms.ai_score === 1 && (
-                                    <>
-                                      <Snowflake className="h-5 w-5 text-blue-400" />
-                                      <Badge variant="secondary" className="bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">
-                                        Cold Lead
-                                      </Badge>
-                                    </>
-                                  )}
-                                </div>
-                                {sms.ai_analysis && (
-                                  <p className="text-xs text-muted-foreground italic bg-white dark:bg-gray-800 p-2 rounded">
-                                    💡 AI Analysis: {sms.ai_analysis}
-                                  </p>
-                                )}
-                              </div>
-                            )}
+                    
+                    {/* Messages Area - WhatsApp Style */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#e5ddd5] dark:bg-gray-900/80">
+                      {!propertySmsMessages || propertySmsMessages.length === 0 ? (
+                        <div className="flex items-center justify-center h-full">
+                          <div className="text-center bg-white/80 dark:bg-gray-800/80 rounded-lg p-6">
+                            <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                            <p className="text-muted-foreground text-sm">No SMS messages yet</p>
+                            <p className="text-xs text-muted-foreground mt-2">Start the conversation below</p>
                           </div>
                         </div>
-                      ))}
+                      ) : (
+                        <>
+                          {propertySmsMessages.map((sms: any) => (
+                            <div
+                              key={sms.id}
+                              className={`flex ${sms.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}
+                            >
+                              <div
+                                className={`relative max-w-[75%] px-3 py-2 rounded-lg shadow-sm ${
+                                  sms.direction === 'outgoing'
+                                    ? 'bg-[#dcf8c6] dark:bg-green-900/60 rounded-tr-none'
+                                    : 'bg-white dark:bg-gray-800 rounded-tl-none'
+                                }`}
+                              >
+                                {/* AI Score indicator for incoming hot leads */}
+                                {sms.direction === 'incoming' && sms.ai_score === 3 && (
+                                  <div className="flex items-center gap-1 mb-1">
+                                    <Flame className="h-3 w-3 text-red-500" />
+                                    <span className="text-[10px] font-medium text-red-600 dark:text-red-400">Hot Lead</span>
+                                  </div>
+                                )}
+                                {sms.direction === 'incoming' && sms.ai_score === 2 && (
+                                  <div className="flex items-center gap-1 mb-1">
+                                    <ThermometerSun className="h-3 w-3 text-orange-500" />
+                                    <span className="text-[10px] font-medium text-orange-600 dark:text-orange-400">Warm Lead</span>
+                                  </div>
+                                )}
+                                
+                                {/* Message text */}
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap text-gray-800 dark:text-gray-100">
+                                  {sms.message}
+                                </p>
+                                
+                                {/* Timestamp and status */}
+                                <div className={`flex items-center gap-1 mt-1 ${sms.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}>
+                                  <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                                    {format(new Date(sms.created_at), "h:mm a")}
+                                  </span>
+                                  {sms.direction === 'outgoing' && (
+                                    <span className="text-[10px]">
+                                      {sms.status === 'delivered' ? (
+                                        <span className="text-blue-500">✓✓</span>
+                                      ) : sms.status === 'sent' ? (
+                                        <span className="text-gray-400">✓✓</span>
+                                      ) : sms.status === 'failed' ? (
+                                        <span className="text-red-500">!</span>
+                                      ) : (
+                                        <span className="text-gray-400">✓</span>
+                                      )}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* AI Analysis tooltip for incoming */}
+                                {sms.direction === 'incoming' && sms.ai_analysis && (
+                                  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                    <p className="text-[10px] text-gray-500 dark:text-gray-400 italic">
+                                      {sms.ai_analysis}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          <div ref={smsMessagesEndRef} />
+                        </>
+                      )}
                     </div>
-                  )}
+
+                    {/* Message Input Area - WhatsApp Style */}
+                    <div className="border-t p-3 bg-[#f0f0f0] dark:bg-gray-800">
+                      {/* Template Selector - Compact */}
+                      <div className="mb-2">
+                        <Select
+                          value={chatSelectedTemplateId}
+                          onValueChange={(value) => {
+                            setChatSelectedTemplateId(value);
+                            const template = smsTemplates?.find((t: any) => t.id === value);
+                            if (template) {
+                              // Replace template variables
+                              let message = template.body;
+                              const calculatedOfferPrice = selectedProperty?.buy_box_id && userCompany?.companies?.discount_percentage
+                                ? (() => {
+                                    const buyBox = buyBoxes?.find((bb: any) => bb.id === selectedProperty.buy_box_id);
+                                    if (buyBox?.arv) {
+                                      const arvValue = Number(buyBox.arv);
+                                      const discountPercent = Number(userCompany.companies.discount_percentage);
+                                      return Math.round(arvValue * (1 - discountPercent / 100));
+                                    }
+                                    return selectedProperty?.price || '';
+                                  })()
+                                : selectedProperty?.price || '';
+                              const formattedPrice = calculatedOfferPrice ? `$${Number(calculatedOfferPrice).toLocaleString()}` : 'N/A';
+                              
+                              message = message
+                                .replace(/\{\{AGENT_NAME\}\}/gi, selectedProperty?.seller_agent_name || '')
+                                .replace(/\{\{PROPERTY\}\}/gi, selectedProperty?.address || 'N/A')
+                                .replace(/\{\{ADDRESS\}\}/gi, selectedProperty?.address || 'N/A')
+                                .replace(/\{\{PRICE\}\}/gi, formattedPrice)
+                                .replace(/\{\{BEDROOMS\}\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
+                                .replace(/\{\{BEDS\}\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
+                                .replace(/\{\{BATHROOMS\}\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A')
+                                .replace(/\{\{BATHS\}\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A')
+                                .replace(/\{\{SQFT\}\}/gi, selectedProperty?.square_footage?.toString() || selectedProperty?.living_sqf?.toString() || 'N/A')
+                                .replace(/\{agent_name\}/gi, selectedProperty?.seller_agent_name || '')
+                                .replace(/\{address\}/gi, selectedProperty?.address || 'N/A')
+                                .replace(/\{price\}/gi, formattedPrice)
+                                .replace(/\{beds\}/gi, selectedProperty?.bedrooms?.toString() || 'N/A')
+                                .replace(/\{baths\}/gi, selectedProperty?.bathrooms?.toString() || 'N/A');
+                              
+                              setSmsMessageText(message);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="text-xs h-8 bg-white dark:bg-gray-700">
+                            <SelectValue placeholder="Use template..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {smsTemplates && smsTemplates.length > 0 ? (
+                              smsTemplates.map((template: any) => (
+                                <SelectItem key={template.id} value={template.id}>
+                                  {template.name}
+                                  {template.is_default && " 🛡️"}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="none" disabled>
+                                No templates available
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Message Input and Send Button - Chat Style */}
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1 bg-white dark:bg-gray-700 rounded-2xl px-4 py-2">
+                          <Textarea
+                            value={smsMessageText}
+                            onChange={(e) => setSmsMessageText(e.target.value)}
+                            placeholder="Type a message..."
+                            className="min-h-[40px] max-h-[120px] resize-none border-0 p-0 focus-visible:ring-0 bg-transparent"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                if (smsMessageText.trim() && selectedProperty?.seller_agent_phone && !sendSMSMutation.isPending) {
+                                  handleSendChatSMS();
+                                }
+                              }
+                            }}
+                          />
+                        </div>
+                        <Button
+                          onClick={handleSendChatSMS}
+                          disabled={!smsMessageText.trim() || !selectedProperty?.seller_agent_phone || sendSMSMutation.isPending}
+                          size="icon"
+                          className="rounded-full h-10 w-10 bg-[#00a884] hover:bg-[#008f72] dark:bg-green-600 dark:hover:bg-green-700"
+                        >
+                          {sendSMSMutation.isPending ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            <Send className="h-5 w-5" />
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Character Counter and Status */}
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="text-xs text-muted-foreground">
+                          {smsMessageText.length} / 160 characters
+                          {smsMessageText.length > 160 && (
+                            <span className="text-orange-500 ml-2">
+                              (Will be sent as {Math.ceil(smsMessageText.length / 160)} messages)
+                            </span>
+                          )}
+                        </div>
+                        {!selectedProperty?.seller_agent_phone && (
+                          <span className="text-xs text-red-500">
+                            No phone number available
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </TabsContent>
 

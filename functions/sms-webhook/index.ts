@@ -245,32 +245,74 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Company found: ${company.id}`);
 
-    // Try to find the related property by matching the sender's phone number
-    // Look for properties where the seller agent phone matches (normalize for comparison)
-    console.log(`🔍 Looking for property with seller phone: ${fromNumber}`);
+    // Try to find the related property using a smarter matching strategy:
+    // 1. First, look for the most recent SMS conversation with this phone number
+    //    (if we sent an outgoing SMS to this number, the reply is likely about that property)
+    // 2. If no prior conversation, fall back to matching by seller_agent_phone
     
-    const { data: properties, error: propertiesError } = await supabase
-      .from('properties')
-      .select('id, address, city, seller_agent_phone')
+    console.log(`🔍 Looking for property - checking recent SMS conversations first...`);
+    
+    let property: { id: string; address: string; city: string; seller_agent_phone: string } | null = null;
+    
+    // Strategy 1: Find the most recent outgoing SMS to this phone number
+    // This is the most reliable way to match - if we texted them about property X,
+    // their reply is almost certainly about property X
+    const { data: matchingOutgoingSms, error: outgoingError } = await supabase
+      .from('sms_messages')
+      .select(`
+        id,
+        property_id,
+        to_number,
+        created_at,
+        properties(id, address, city, seller_agent_phone)
+      `)
       .eq('company_id', company.id)
-      .not('seller_agent_phone', 'is', null)
-      .order('created_at', { ascending: false });
-
-    let property = null;
-    if (!propertiesError && properties) {
-      // Find property by normalizing phone numbers on both sides
-      property = properties.find(p => {
-        const normalizedPropPhone = normalizePhoneNumber(p.seller_agent_phone || '');
-        console.log(`   Comparing: ${fromNumber} with ${p.seller_agent_phone} (normalized: ${normalizedPropPhone})`);
-        return normalizedPropPhone === fromNumber;
+      .eq('direction', 'outgoing')
+      .not('property_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    
+    if (!outgoingError && matchingOutgoingSms && matchingOutgoingSms.length > 0) {
+      // Find the most recent outgoing SMS to this phone number
+      const matchedSms = matchingOutgoingSms.find(sms => {
+        const normalizedToNumber = normalizePhoneNumber(sms.to_number || '');
+        return normalizedToNumber === fromNumber;
       });
+      
+      if (matchedSms && matchedSms.properties) {
+        property = matchedSms.properties as { id: string; address: string; city: string; seller_agent_phone: string };
+        console.log(`🎯 Property matched via recent SMS conversation: ${property.address}, ${property.city}`);
+        console.log(`   (Found outgoing SMS to this number from ${matchedSms.created_at})`);
+      }
+    }
+    
+    // Strategy 2: Fall back to matching by seller_agent_phone if no SMS conversation found
+    if (!property) {
+      console.log(`🔍 No SMS conversation found, falling back to seller_agent_phone matching...`);
+      
+      const { data: properties, error: propertiesError } = await supabase
+        .from('properties')
+        .select('id, address, city, seller_agent_phone')
+        .eq('company_id', company.id)
+        .not('seller_agent_phone', 'is', null)
+        .order('created_at', { ascending: false });
+
+      if (!propertiesError && properties) {
+        // Find property by normalizing phone numbers on both sides
+        const matchedProperty = properties.find(p => {
+          const normalizedPropPhone = normalizePhoneNumber(p.seller_agent_phone || '');
+          return normalizedPropPhone === fromNumber;
+        });
+        
+        if (matchedProperty) {
+          property = matchedProperty;
+          console.log(`🏠 Property matched via seller_agent_phone: ${property.address}, ${property.city}`);
+        }
+      }
     }
 
     if (!property) {
       console.log('⚠️ No property found for this phone number');
-      console.log(`   Searched through ${properties?.length || 0} properties`);
-    } else {
-      console.log(`🏠 Property matched: ${property.address}, ${property.city}`);
     }
 
     // Analyze the message with OpenAI if configured
