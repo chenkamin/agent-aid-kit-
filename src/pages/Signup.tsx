@@ -184,7 +184,7 @@ export default function Signup() {
             <div className="flex items-center gap-8 pt-4">
               <div className="space-y-1">
                 <div className="text-3xl font-bold">800+</div>
-                <div className="text-sm text-white/80">Deal Makers</div>
+                <div className="text-sm text-white/80">Active Investors</div>
               </div>
               <div className="space-y-1">
                 <div className="text-3xl font-bold">$12.4M+</div>

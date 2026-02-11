@@ -691,6 +691,7 @@ export default function Activities() {
                       <SelectItem value="inspection">Inspection</SelectItem>
                       <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
                       <SelectItem value="closing">Closing</SelectItem>
+                      <SelectItem value="follow_up">Follow Up</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
@@ -825,6 +826,7 @@ export default function Activities() {
                     <SelectItem value="inspection">Inspection</SelectItem>
                     <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
                     <SelectItem value="closing">Closing</SelectItem>
+                    <SelectItem value="follow_up">Follow Up</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>

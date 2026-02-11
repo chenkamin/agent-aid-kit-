@@ -421,6 +421,14 @@ export default function Automations() {
                   >
                     🔄 Workflow Changed
                   </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => addNode('trigger', 'sms_no_reply')}
+                  >
+                    🔁 SMS No Reply
+                  </Button>
                 </div>
 
                 <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -537,6 +545,14 @@ export default function Automations() {
                 onClick={() => addNode('trigger', 'workflow_changed')}
               >
                 🔄 Workflow Changed
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => addNode('trigger', 'sms_no_reply')}
+              >
+                🔁 SMS No Reply
               </Button>
             </div>
 

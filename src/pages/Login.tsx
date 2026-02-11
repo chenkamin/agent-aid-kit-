@@ -54,9 +54,9 @@ export default function Login() {
             <div className="bg-primary/10 p-3 rounded-2xl">
               <Building2 className="h-10 w-10 text-primary" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight">Welcome Back, Deal Maker! 🚀</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Welcome Back!</h1>
             <p className="text-muted-foreground">
-              Sign in and let's close some deals today
+              Your next opportunity is waiting
             </p>
           </div>
 

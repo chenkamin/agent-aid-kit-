@@ -377,9 +377,7 @@ export default function Landing() {
             <p className="text-2xl font-semibold text-foreground mb-2">
               Stop chasing leads. Start dominating your market.
             </p>
-            <p className="text-xl text-muted-foreground">
-              Here's the exact playbook wholesalers and investors use to make an extra $58K per year
-            </p>
+         
           </motion.div>
 
           <div className="max-w-7xl mx-auto">
@@ -1082,7 +1080,7 @@ export default function Landing() {
       </div>
 
       {/* Pricing Section */}
-      <div className="bg-muted/20 py-24">
+      {/* <div className="bg-muted/20 py-24">
         <div className="container mx-auto px-4">
         <div id="pricing" className="max-w-6xl mx-auto scroll-mt-16">
           <div className="text-center mb-16">
@@ -1095,11 +1093,11 @@ export default function Landing() {
             <p className="text-xl text-muted-foreground">
               Choose your plan and start closing more deals
             </p>
-          </div>
+          </div> */}
 
-          <div className="grid md:grid-cols-3 gap-8">
+          {/* <div className="grid md:grid-cols-3 gap-8"> */}
             {/* Basic Plan */}
-            <Card className="border-none shadow-lg hover:shadow-xl transition-all">
+            {/* <Card className="border-none shadow-lg hover:shadow-xl transition-all">
               <CardHeader>
                 <div className="flex items-center justify-between mb-2">
                   <CardTitle className="text-2xl">Basic</CardTitle>
@@ -1136,10 +1134,10 @@ export default function Landing() {
                   </Button>
                 </Link>
               </CardContent>
-            </Card>
+            </Card> */}
 
             {/* Pro Plan */}
-            <Card className="border-2 border-blue-600 shadow-xl relative">
+            {/* <Card className="border-2 border-blue-600 shadow-xl relative">
               <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
                 <Badge className="bg-blue-600 text-white px-4 py-1">
                   Most Popular
@@ -1181,10 +1179,10 @@ export default function Landing() {
                   </Button>
                 </Link>
               </CardContent>
-            </Card>
+            </Card> */}
 
             {/* Xtream Plan */}
-            <Card className="border-none shadow-lg hover:shadow-xl transition-all">
+            {/* <Card className="border-none shadow-lg hover:shadow-xl transition-all">
               <CardHeader>
                 <div className="flex items-center justify-between mb-2">
                   <CardTitle className="text-2xl">Xtream</CardTitle>
@@ -1222,16 +1220,16 @@ export default function Landing() {
                 </Link>
               </CardContent>
             </Card>
-          </div>
+          </div> */}
 
-          <div className="text-center mt-8">
+          {/* <div className="text-center mt-8">
             <p className="text-muted-foreground">
               All plans include a 14-day free trial. No credit card required.
             </p>
           </div>
         </div>
           </div>
-        </div>
+        </div> */}
 
         {/* FAQ Section */}
       <div className="bg-background py-24">

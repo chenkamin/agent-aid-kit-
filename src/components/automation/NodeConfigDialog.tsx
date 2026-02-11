@@ -6,9 +6,20 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Card } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
+import { Plus, Trash2 } from 'lucide-react';
+
+interface SequenceStep {
+  days_after: number;
+  use_ai: boolean;
+  template_id: string | null;
+  message: string;
+  ai_instructions: string;
+}
 
 interface NodeConfigDialogProps {
   node: any;
@@ -396,7 +407,280 @@ export default function NodeConfigDialog({ node, isOpen, onClose, onSave }: Node
     }
 
     // TRIGGER NODES
-    return <p className="text-sm text-muted-foreground">Triggers don't need configuration</p>;
+    if (nodeType === 'trigger') {
+      switch (nodeLabel) {
+        case 'sms_no_reply':
+          // Initialize default config if not set
+          const steps: SequenceStep[] = config.steps || [
+            { days_after: 2, use_ai: false, template_id: null, message: '', ai_instructions: '' }
+          ];
+          
+          const addStep = () => {
+            const lastStep = steps[steps.length - 1];
+            const newStep: SequenceStep = {
+              days_after: (lastStep?.days_after || 2) + 3,
+              use_ai: false,
+              template_id: null,
+              message: '',
+              ai_instructions: ''
+            };
+            setConfig({ ...config, steps: [...steps, newStep] });
+          };
+          
+          const removeStep = (index: number) => {
+            const newSteps = steps.filter((_, i) => i !== index);
+            setConfig({ ...config, steps: newSteps });
+          };
+          
+          const updateStep = (index: number, field: keyof SequenceStep, value: any) => {
+            const newSteps = [...steps];
+            newSteps[index] = { ...newSteps[index], [field]: value };
+            // If switching to AI, clear template
+            if (field === 'use_ai' && value === true) {
+              newSteps[index].template_id = null;
+              newSteps[index].message = '';
+            }
+            setConfig({ ...config, steps: newSteps });
+          };
+
+          const handleStepTemplateSelect = (index: number, templateId: string) => {
+            const newSteps = [...steps];
+            if (templateId === 'custom') {
+              newSteps[index] = { ...newSteps[index], template_id: null, message: '' };
+            } else {
+              const template = smsTemplates?.find((t: any) => t.id === templateId);
+              if (template) {
+                newSteps[index] = { 
+                  ...newSteps[index], 
+                  template_id: templateId,
+                  message: template.body 
+                };
+              }
+            }
+            setConfig({ ...config, steps: newSteps });
+          };
+
+          // Get currently selected stop workflow states
+          const stopOnWorkflowStates: string[] = config.stop_on_workflow_states || [];
+          
+          const toggleWorkflowState = (state: string) => {
+            const newStates = stopOnWorkflowStates.includes(state)
+              ? stopOnWorkflowStates.filter(s => s !== state)
+              : [...stopOnWorkflowStates, state];
+            setConfig({ ...config, stop_on_workflow_states: newStates });
+          };
+
+          return (
+            <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+              {/* Sequence Steps */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="text-base font-semibold">Follow-up Sequence</Label>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={addStep}
+                  >
+                    <Plus className="h-4 w-4 mr-1" /> Add Step
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Configure when and what follow-up messages to send if no reply is received.
+                </p>
+                
+                <div className="space-y-4">
+                  {steps.map((step, index) => (
+                    <Card key={index} className="p-4 relative">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-medium text-sm">Step {index + 1}</span>
+                        {steps.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeStep(index)}
+                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      
+                      {/* Days After */}
+                      <div className="mb-3">
+                        <Label htmlFor={`days_after_${index}`} className="text-xs">
+                          Send after (days)
+                        </Label>
+                        <Input
+                          id={`days_after_${index}`}
+                          type="number"
+                          min="1"
+                          value={step.days_after}
+                          onChange={(e) => updateStep(index, 'days_after', parseInt(e.target.value) || 1)}
+                          className="mt-1"
+                        />
+                      </div>
+
+                      {/* AI Toggle */}
+                      <div className="flex items-center justify-between p-2 border rounded mb-3 bg-blue-50/50 dark:bg-blue-950/20">
+                        <div className="flex-1 mr-2">
+                          <Label htmlFor={`use_ai_${index}`} className="text-xs font-medium">
+                            🤖 AI Auto-Pilot
+                          </Label>
+                        </div>
+                        <Switch
+                          id={`use_ai_${index}`}
+                          checked={step.use_ai}
+                          onCheckedChange={(checked) => updateStep(index, 'use_ai', checked)}
+                        />
+                      </div>
+
+                      {/* Template/Message - Show if AI is OFF */}
+                      {!step.use_ai && (
+                        <>
+                          <div className="mb-3">
+                            <Label htmlFor={`template_${index}`} className="text-xs">Template</Label>
+                            <Select 
+                              value={step.template_id || 'custom'} 
+                              onValueChange={(value) => handleStepTemplateSelect(index, value)}
+                            >
+                              <SelectTrigger id={`template_${index}`} className="mt-1">
+                                <SelectValue placeholder="Select template..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="custom">✍️ Custom Message</SelectItem>
+                                {smsTemplates?.map((template: any) => (
+                                  <SelectItem key={template.id} value={template.id}>
+                                    📝 {template.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor={`message_${index}`} className="text-xs">Message</Label>
+                            <Textarea
+                              id={`message_${index}`}
+                              value={step.message}
+                              onChange={(e) => updateStep(index, 'message', e.target.value)}
+                              placeholder="Hi {{AGENT_NAME}}, following up on {{ADDRESS}}..."
+                              rows={3}
+                              className="mt-1 text-xs"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {/* AI Instructions - Show if AI is ON */}
+                      {step.use_ai && (
+                        <div>
+                          <Label htmlFor={`ai_instructions_${index}`} className="text-xs">
+                            AI Instructions (Optional)
+                          </Label>
+                          <Textarea
+                            id={`ai_instructions_${index}`}
+                            value={step.ai_instructions}
+                            onChange={(e) => updateStep(index, 'ai_instructions', e.target.value)}
+                            placeholder="e.g., Be more persistent, mention this is a follow-up..."
+                            rows={2}
+                            className="mt-1 text-xs"
+                          />
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              {/* Stop Conditions */}
+              <div className="border-t pt-4">
+                <Label className="text-base font-semibold">Stop Conditions</Label>
+                <p className="text-xs text-muted-foreground mb-4">
+                  The sequence will stop when any of these conditions are met.
+                </p>
+
+                {/* Stop on Reply */}
+                <div className="flex items-center space-x-2 mb-3">
+                  <Checkbox
+                    id="stop_on_reply"
+                    checked={config.stop_on_reply !== false}
+                    onCheckedChange={(checked) => setConfig({ ...config, stop_on_reply: checked })}
+                  />
+                  <Label htmlFor="stop_on_reply" className="text-sm font-normal">
+                    Stop when a reply is received
+                  </Label>
+                </div>
+
+                {/* Max Attempts */}
+                <div className="mb-3">
+                  <Label htmlFor="max_attempts" className="text-xs">
+                    Maximum follow-up attempts
+                  </Label>
+                  <Input
+                    id="max_attempts"
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={config.max_attempts || 3}
+                    onChange={(e) => setConfig({ ...config, max_attempts: parseInt(e.target.value) || 3 })}
+                    className="mt-1 w-24"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Stop after this many follow-ups (regardless of sequence steps)
+                  </p>
+                </div>
+
+                {/* Max Days */}
+                <div className="mb-3">
+                  <Label htmlFor="max_days" className="text-xs">
+                    Maximum days to follow up
+                  </Label>
+                  <Input
+                    id="max_days"
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={config.max_days || 14}
+                    onChange={(e) => setConfig({ ...config, max_days: parseInt(e.target.value) || 14 })}
+                    className="mt-1 w-24"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Stop the sequence after this many days from initial SMS
+                  </p>
+                </div>
+
+                {/* Stop on Workflow States */}
+                <div>
+                  <Label className="text-xs">Stop when workflow state changes to:</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {WORKFLOW_STATES.map(state => (
+                      <div key={state} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`stop_state_${state}`}
+                          checked={stopOnWorkflowStates.includes(state)}
+                          onCheckedChange={() => toggleWorkflowState(state)}
+                        />
+                        <Label 
+                          htmlFor={`stop_state_${state}`} 
+                          className="text-xs font-normal cursor-pointer"
+                        >
+                          {state}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+
+        default:
+          return <p className="text-sm text-muted-foreground">This trigger doesn't need configuration</p>;
+      }
+    }
+
+    return <p className="text-sm text-muted-foreground">No configuration available</p>;
   };
 
   const getNodeTitle = () => {
@@ -408,13 +692,17 @@ export default function NodeConfigDialog({ node, isOpen, onClose, onSave }: Node
       'ai_score': 'Check AI Score',
       'workflow_state': 'Check Workflow State',
       'property_value': 'Check Property Value',
+      'sms_no_reply': 'SMS No Reply - Follow-up Sequence',
     };
     return labels[node.data.label] || 'Configure Node';
   };
 
+  // Determine if we need a wider dialog
+  const isWideDialog = node?.data?.label === 'sms_no_reply';
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className={isWideDialog ? "sm:max-w-[600px]" : "sm:max-w-[500px]"}>
         <DialogHeader>
           <DialogTitle>{getNodeTitle()}</DialogTitle>
         </DialogHeader>

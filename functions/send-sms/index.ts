@@ -389,6 +389,38 @@ Deno.serve(async (req) => {
                 console.error('⚠️ Automation trigger failed:', await automationResponse.text());
               }
             }
+            
+            // Start SMS follow-up sequence tracking
+            console.log('🔄 Checking for SMS no-reply automations to start sequence tracking...');
+            try {
+              const sequenceResponse = await fetch(
+                `${supabaseUrl}/functions/v1/start-sms-sequence`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${supabaseKey}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    propertyId: msg.propertyId,
+                    companyId: userCompany.company_id,
+                    smsMessageId: messageId
+                  })
+                }
+              );
+              
+              if (sequenceResponse.ok) {
+                const sequenceResult = await sequenceResponse.json();
+                if (sequenceResult.sequencesCreated > 0) {
+                  console.log(`✅ SMS follow-up sequence started: ${sequenceResult.sequencesCreated} sequence(s)`);
+                }
+              } else {
+                console.error('⚠️ Failed to start SMS sequence:', await sequenceResponse.text());
+              }
+            } catch (seqError) {
+              console.error('⚠️ Error starting SMS sequence:', seqError);
+              // Don't fail SMS send if sequence start fails
+            }
           } catch (autoError) {
             console.error('⚠️ Error triggering automations:', autoError);
             // Don't fail SMS send if automation fails

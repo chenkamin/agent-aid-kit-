@@ -406,6 +406,40 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Stop any active SMS follow-up sequences for this property (reply received)
+    if (property) {
+      console.log('🔄 Checking for active SMS follow-up sequences to stop...');
+      
+      const { data: activeSequences, error: seqError } = await supabase
+        .from('sms_followup_sequences')
+        .select('id, automation_id')
+        .eq('property_id', property.id)
+        .eq('status', 'active');
+
+      if (!seqError && activeSequences && activeSequences.length > 0) {
+        console.log(`📍 Found ${activeSequences.length} active sequence(s) to stop`);
+        
+        const { error: stopError } = await supabase
+          .from('sms_followup_sequences')
+          .update({
+            status: 'stopped',
+            stop_reason: 'reply_received',
+            next_followup_at: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('property_id', property.id)
+          .eq('status', 'active');
+
+        if (stopError) {
+          console.error('❌ Error stopping sequences:', stopError);
+        } else {
+          console.log(`✅ Stopped ${activeSequences.length} follow-up sequence(s) - reply received`);
+        }
+      } else {
+        console.log('📍 No active follow-up sequences found for this property');
+      }
+    }
+
     // Trigger automations for incoming SMS
     if (property) {
       console.log('🤖 Triggering automations for SMS received...');

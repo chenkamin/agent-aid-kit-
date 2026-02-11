@@ -38,6 +38,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import BuyBoxAnalyticsModal from "@/components/BuyBoxAnalyticsModal";
 import { useSearchParams } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -1158,41 +1159,6 @@ export default function Properties() {
     }
   };
 
-  // Get SMS status badge for a property
-  const getSmsStatusBadge = (propertyId: string) => {
-    const status = propertySmsStatus?.get(propertyId);
-    const hasOutgoing = status?.hasOutgoing || false;
-    const hasIncoming = status?.hasIncoming || false;
-    
-    if (hasIncoming) {
-      return (
-        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 gap-1">
-          <CheckCircle2 className="h-3 w-3" />
-          Replied
-        </Badge>
-      );
-    }
-    if (hasOutgoing && !hasIncoming) {
-      return (
-        <Badge variant="outline" className="text-yellow-700 border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 dark:text-yellow-400 gap-1">
-          <Clock className="h-3 w-3" />
-          Awaiting
-        </Badge>
-      );
-    }
-    if (hasOutgoing) {
-      return (
-        <Badge variant="outline" className="text-green-700 border-green-400 bg-green-50 dark:bg-green-950/30 dark:text-green-400 gap-1">
-          <Send className="h-3 w-3" />
-          Contacted
-        </Badge>
-      );
-    }
-    return (
-      <span className="text-xs text-muted-foreground">-</span>
-    );
-  };
-
   const exportToCSV = () => {
     if (!sortedProperties || sortedProperties.length === 0) {
       toast({
@@ -1401,10 +1367,11 @@ export default function Properties() {
   };
 
   const getNextFollowUp = (property: any) => {
-    if (!property.activities || property.activities.length === 0) return null;
+    if (!upcomingActivities || upcomingActivities.length === 0) return null;
     
-    const followUps = property.activities.filter(
+    const followUps = upcomingActivities.filter(
       (activity: any) => 
+        activity.property_id === property.id &&
         activity.type === 'follow_up' && 
         activity.status === 'open' && 
         activity.due_at
@@ -1499,6 +1466,48 @@ export default function Properties() {
       return;
     }
     addActivityMutation.mutate(activityForm);
+  };
+
+  // Quick follow-up from table
+  const handleQuickFollowUp = async (propertyId: string, daysFromNow: number, specificDate?: Date) => {
+    if (!user?.id || !userCompany?.company_id) return;
+    
+    const dueDate = specificDate || new Date();
+    if (!specificDate) {
+      dueDate.setDate(dueDate.getDate() + daysFromNow);
+    }
+    dueDate.setHours(9, 0, 0, 0); // Set to 9 AM
+    
+    const property = properties?.find(p => p.id === propertyId);
+    const title = `Follow up: ${property?.address || 'Property'}`;
+    
+    try {
+      const { error } = await supabase.from("activities").insert([{
+        property_id: propertyId,
+        type: 'follow_up',
+        title: title,
+        body: '',
+        due_at: dueDate.toISOString(),
+        user_id: user.id,
+        company_id: userCompany.company_id,
+        status: 'open',
+      }]);
+      
+      if (error) throw error;
+      
+      queryClient.invalidateQueries({ queryKey: ["properties", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["upcoming-activities", userCompany?.company_id] });
+      toast({
+        title: "Follow-up scheduled",
+        description: `Follow-up set for ${format(dueDate, 'MMM d, yyyy')}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: `Failed to schedule follow-up: ${error.message}`,
+        variant: "destructive",
+      });
+    }
   };
 
   const bulkAddActivityMutation = useMutation({
@@ -4878,30 +4887,12 @@ export default function Properties() {
                     </Button>
                   </TableHead>
                   <TableHead>
-                    <span className="font-semibold">SMS</span>
+                    <span className="font-semibold">Follow Up</span>
                   </TableHead>
                   <TableHead>
                     <Button variant="ghost" onClick={() => handleSort('city')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
                       City
                       {getSortIcon('city')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('living_sqf')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
-                      Sq/Ft
-                      {getSortIcon('living_sqf')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('bedrooms')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
-                      Beds
-                      {getSortIcon('bedrooms')}
-                    </Button>
-                  </TableHead>
-                  <TableHead>
-                    <Button variant="ghost" onClick={() => handleSort('bathrooms')} className="font-semibold p-0 h-auto hover:bg-transparent active:bg-transparent focus:bg-transparent">
-                      Baths
-                      {getSortIcon('bathrooms')}
                     </Button>
                   </TableHead>
                 </TableRow>
@@ -5002,15 +4993,86 @@ export default function Properties() {
                           </Tooltip>
                         </TooltipProvider>
                       </TableCell>
-                      <TableCell>
-                        {getSmsStatusBadge(property.id)}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              className={`h-auto p-1 text-xs font-normal ${
+                                nextFollowUp 
+                                  ? 'text-amber-600 dark:text-amber-400 hover:text-amber-700' 
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              {nextFollowUp ? (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {format(new Date(nextFollowUp.due_at), 'MMM d')}
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1">
+                                  <Plus className="h-3 w-3" />
+                                  Set
+                                </span>
+                              )}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-2" align="start">
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-muted-foreground mb-2">Quick set follow-up</p>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start text-xs h-8"
+                                onClick={() => handleQuickFollowUp(property.id, 1)}
+                              >
+                                Tomorrow
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start text-xs h-8"
+                                onClick={() => handleQuickFollowUp(property.id, 3)}
+                              >
+                                In 3 days
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start text-xs h-8"
+                                onClick={() => handleQuickFollowUp(property.id, 7)}
+                              >
+                                In 1 week
+                              </Button>
+                              <div className="border-t pt-2 mt-2">
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="w-full justify-start text-xs h-8"
+                                    >
+                                      <Calendar className="h-3 w-3 mr-2" />
+                                      Pick a date
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-auto p-0" align="start">
+                                    <CalendarComponent
+                                      mode="single"
+                                      selected={undefined}
+                                      onSelect={(date) => {
+                                        if (date) handleQuickFollowUp(property.id, 0, date);
+                                      }}
+                                      initialFocus
+                                    />
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       </TableCell>
                       <TableCell>{property.city || '-'}</TableCell>
-                      <TableCell>
-                        {property.living_sqf ? Number(property.living_sqf).toLocaleString() : '-'}
-                      </TableCell>
-                      <TableCell>{property.bedrooms || '-'}</TableCell>
-                      <TableCell>{property.bathrooms || '-'}</TableCell>
                     </TableRow>
                 );
               })}
@@ -5829,6 +5891,7 @@ export default function Properties() {
                             <SelectItem value="inspection">Inspection</SelectItem>
                             <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
                             <SelectItem value="closing">Closing</SelectItem> 
+                            <SelectItem value="follow_up">Follow Up</SelectItem>
                             <SelectItem value="other">Other</SelectItem>
                           </SelectContent>
                         </Select>
@@ -7444,6 +7507,7 @@ export default function Properties() {
                   <SelectItem value="inspection">Inspection</SelectItem>
                   <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
                   <SelectItem value="closing">Closing</SelectItem>
+                  <SelectItem value="follow_up">Follow Up</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>

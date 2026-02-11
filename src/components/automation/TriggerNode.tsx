@@ -9,6 +9,11 @@ interface TriggerNodeProps {
     label: string;
     icon?: string;
     description?: string;
+    config?: {
+      steps?: Array<{ days_after: number }>;
+      max_attempts?: number;
+      max_days?: number;
+    };
   };
   id: string;
 }
@@ -18,6 +23,7 @@ export default function TriggerNode({ data }: TriggerNodeProps) {
     switch (label) {
       case 'sms_sent': return '📤';
       case 'sms_received': return '📥';
+      case 'sms_no_reply': return '🔁';
       case 'email_sent': return '✉️';
       case 'email_received': return '📨';
       case 'property_added': return '🏠';
@@ -30,12 +36,32 @@ export default function TriggerNode({ data }: TriggerNodeProps) {
     switch (label) {
       case 'sms_sent': return 'SMS Sent';
       case 'sms_received': return 'SMS Received';
+      case 'sms_no_reply': return 'SMS No Reply';
       case 'email_sent': return 'Email Sent';
       case 'email_received': return 'Email Received';
       case 'property_added': return 'Property Added';
       case 'workflow_changed': return 'Workflow Changed';
       default: return label;
     }
+  };
+
+  // Generate config summary for sms_no_reply
+  const getConfigSummary = () => {
+    if (data.label !== 'sms_no_reply' || !data.config) return null;
+    
+    const { steps, max_attempts, max_days } = data.config;
+    const stepCount = steps?.length || 0;
+    const daysList = steps?.map(s => s.days_after).join(', ') || '';
+    
+    return (
+      <div className="mt-2 text-xs text-muted-foreground space-y-1">
+        {stepCount > 0 && (
+          <div>📅 {stepCount} step{stepCount > 1 ? 's' : ''}: Day {daysList}</div>
+        )}
+        {max_attempts && <div>🔢 Max {max_attempts} attempts</div>}
+        {max_days && <div>⏱️ Max {max_days} days</div>}
+      </div>
+    );
   };
 
   return (
@@ -51,6 +77,7 @@ export default function TriggerNode({ data }: TriggerNodeProps) {
         {data.description && (
           <p className="text-xs text-muted-foreground mt-2">{data.description}</p>
         )}
+        {getConfigSummary()}
       </div>
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
     </Card>
