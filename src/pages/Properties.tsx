@@ -50,6 +50,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import confetti from "canvas-confetti";
 
 const PROPERTY_TYPES = [
   { value: "Single Family", label: "Single Family Home (SFH)", icon: "🏠" },
@@ -901,15 +902,64 @@ export default function Properties() {
     queryKey: ["workflow-history", selectedProperty?.id],
     queryFn: async () => {
       if (!selectedProperty?.id) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("property_workflow_history")
-        .select("*")
+        .select(`
+          *,
+          profiles:user_id (
+            id,
+            email,
+            full_name
+          )
+        `)
         .eq("property_id", selectedProperty.id)
         .order("changed_at", { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching workflow history:", error);
+        // Try fallback query without profiles join
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from("property_workflow_history")
+          .select("*")
+          .eq("property_id", selectedProperty.id)
+          .order("changed_at", { ascending: false });
+        
+        if (fallbackError) {
+          console.error("Fallback query also failed:", fallbackError);
+          return [];
+        }
+        return fallbackData || [];
+      }
+      
       return data || [];
     },
     enabled: !!selectedProperty?.id,
   });
+
+  // Fetch user profiles for workflow history (if needed)
+  const workflowUserIds = useMemo(() => {
+    if (!workflowHistory) return [];
+    return [...new Set(workflowHistory.map((h: any) => h.user_id).filter(Boolean))];
+  }, [workflowHistory]);
+
+  const { data: workflowUsers } = useQuery({
+    queryKey: ["workflow-users", workflowUserIds],
+    queryFn: async () => {
+      if (workflowUserIds.length === 0) return [];
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, email, full_name")
+        .in("id", workflowUserIds);
+      return data || [];
+    },
+    enabled: workflowUserIds.length > 0,
+  });
+
+  // Create a map of user_id to user info
+  const workflowUserMap = useMemo(() => {
+    if (!workflowUsers) return new Map();
+    return new Map(workflowUsers.map((u: any) => [u.id, u]));
+  }, [workflowUsers]);
 
   // Fetch SMS messages for selected property (oldest first for chat view)
   const { data: propertySmsMessages } = useQuery({
@@ -1445,7 +1495,7 @@ export default function Properties() {
         description: "The activity has been added successfully.",
       });
       setIsAddingActivity(false);
-      setActivityForm({ type: "other", title: "", body: "", due_at: "" });
+      setActivityForm({ type: "follow_up", title: "", body: "", due_at: "" });
     },
     onError: (error) => {
       toast({
@@ -1461,6 +1511,14 @@ export default function Properties() {
       toast({
         title: "Error",
         description: "Please enter a title for the activity",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (activityForm.type === 'follow_up' && !activityForm.due_at) {
+      toast({
+        title: "Error",
+        description: "Please select a follow-up date",
         variant: "destructive",
       });
       return;
@@ -2423,6 +2481,9 @@ export default function Properties() {
         title: "Success",
         description: `Updated ${data.propertyIds.length} properties to "${data.workflowState}"`,
       });
+      if (data.workflowState === "Closed") {
+        confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });
+      }
       setSelectedPropertyIds([]);
     },
     onError: (error: any, variables) => {
@@ -5300,6 +5361,10 @@ export default function Properties() {
                           to_state: value,
                         });
 
+                        if (value === "Closed") {
+                          confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } });
+                        }
+
                         // If moving to "Not Relevant" or "Archived", mark all open activities as done
                         if (value === 'Not Relevant' || value === 'Archived') {
                           const { data: openActivities, error: activitiesError } = await supabase
@@ -5881,6 +5946,7 @@ export default function Properties() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="follow_up">📅 Follow Up</SelectItem>
                             <SelectItem value="call">Call</SelectItem>
                             <SelectItem value="sms">SMS</SelectItem>
                             <SelectItem value="whatsapp">WhatsApp</SelectItem>
@@ -5890,8 +5956,7 @@ export default function Properties() {
                             <SelectItem value="comp-analysis">Comp Analysis</SelectItem>
                             <SelectItem value="inspection">Inspection</SelectItem>
                             <SelectItem value="price-reduction-ask">Price Reduction Ask</SelectItem>
-                            <SelectItem value="closing">Closing</SelectItem> 
-                            <SelectItem value="follow_up">Follow Up</SelectItem>
+                            <SelectItem value="closing">Closing</SelectItem>
                             <SelectItem value="other">Other</SelectItem>
                           </SelectContent>
                         </Select>
@@ -5918,14 +5983,18 @@ export default function Properties() {
                         />
                       </div>
 
-                      {/* Optional due date for any activity type */}
+                      {/* Due date - required for follow_up, optional for others */}
                       <div className="space-y-2">
-                        <Label htmlFor="activity-due">Due Date (Optional)</Label>
+                        <Label htmlFor="activity-due">
+                          {activityForm.type === 'follow_up' ? 'Follow Up Date' : 'Due Date (Optional)'}
+                          {activityForm.type === 'follow_up' && <span className="text-red-500 ml-1">*</span>}
+                        </Label>
                         <Input
                           id="activity-due"
                           type="datetime-local"
                           value={activityForm.due_at}
                           onChange={(e) => setActivityForm(prev => ({ ...prev, due_at: e.target.value }))}
+                          required={activityForm.type === 'follow_up'}
                         />
                       </div>
 
@@ -6617,6 +6686,15 @@ export default function Properties() {
                                 <div className="text-xs text-muted-foreground">
                                   {history.changed_at && format(new Date(history.changed_at), "h:mm a")}
                                 </div>
+                                {(() => {
+                                  const userInfo = history.profiles || workflowUserMap.get(history.user_id);
+                                  return userInfo && (
+                                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 justify-end">
+                                      <User className="h-3 w-3" />
+                                      <span>{userInfo.full_name || userInfo.email}</span>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>

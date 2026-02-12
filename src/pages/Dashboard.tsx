@@ -238,14 +238,19 @@ export default function Dashboard() {
     };
   });
 
-  // Workflow state distribution for active properties
+  // Workflow state distribution for all properties
   const workflowData = [
     { name: "Initial", value: properties?.filter((p) => p.workflow_state === "Initial").length || 0, color: "#94a3b8" },
-    { name: "Research", value: properties?.filter((p) => p.workflow_state === "Research").length || 0, color: "#3b82f6" },
-    { name: "In Progress", value: properties?.filter((p) => p.workflow_state === "On Progress").length || 0, color: "#f59e0b" },
-    { name: "Negotiating", value: properties?.filter((p) => p.workflow_state === "Negotiating").length || 0, color: "#8b5cf6" },
-    { name: "Under Contract", value: properties?.filter((p) => p.workflow_state === "Under Contract").length || 0, color: "#10b981" },
+    { name: "Reviewing", value: properties?.filter((p) => p.workflow_state === "Reviewing").length || 0, color: "#3b82f6" },
+    { name: "Research", value: properties?.filter((p) => p.workflow_state === "Research").length || 0, color: "#8b5cf6" },
+    { name: "On Progress", value: properties?.filter((p) => p.workflow_state === "On Progress").length || 0, color: "#f59e0b" },
+    { name: "Follow Up", value: properties?.filter((p) => p.workflow_state === "Follow Up").length || 0, color: "#10b981" },
+    { name: "Negotiating", value: properties?.filter((p) => p.workflow_state === "Negotiating").length || 0, color: "#06b6d4" },
+    { name: "Under Contract", value: properties?.filter((p) => p.workflow_state === "Under Contract").length || 0, color: "#f97316" },
+    { name: "Closing", value: properties?.filter((p) => p.workflow_state === "Closing").length || 0, color: "#ec4899" },
     { name: "Closed", value: properties?.filter((p) => p.workflow_state === "Closed").length || 0, color: "#22c55e" },
+    { name: "Not Relevant", value: properties?.filter((p) => p.workflow_state === "Not Relevant").length || 0, color: "#ef4444" },
+    { name: "Archived", value: properties?.filter((p) => p.workflow_state === "Archived").length || 0, color: "#6b7280" },
   ].filter((item) => item.value > 0);
 
   // KPI Progress Calculations
@@ -368,7 +373,7 @@ export default function Dashboard() {
       <div className="relative overflow-hidden rounded-lg bg-blue-600 p-6 text-white shadow-lg">
         <div className="relative z-10">
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">
-            💰 Your Deal-Making Command Center
+            Deal Pipeline Dashboard
           </h1>
           <p className="text-lg text-blue-50 mb-4">
             Track conversations, close deals, and watch your ROI soar
