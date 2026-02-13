@@ -51,6 +51,20 @@ export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  // Mark that user has viewed dashboard (for onboarding)
+  useEffect(() => {
+    const markDashboardViewed = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_viewed_dashboard: true })
+          .eq('id', authUser.id);
+      }
+    };
+    markDashboardViewed();
+  }, []);
+
   // Fetch user's company first
   const { data: userCompany } = useQuery({
     queryKey: ["user-company", user?.id],

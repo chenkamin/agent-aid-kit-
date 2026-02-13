@@ -47,7 +47,7 @@ export default function OnboardingChecklist() {
       
       const { data, error } = await supabase
         .from('profiles')
-        .select('onboarding_completed, onboarding_sms_connected, onboarding_email_connected, onboarding_buybox_created, onboarding_viewed_properties')
+        .select('onboarding_completed, onboarding_sms_connected, onboarding_email_connected, onboarding_buybox_created, onboarding_viewed_properties, onboarding_viewed_dashboard, onboarding_viewed_contacts, onboarding_viewed_activities, onboarding_viewed_automations, onboarding_viewed_kpi')
         .eq('id', user.id)
         .single();
       
@@ -111,9 +111,14 @@ export default function OnboardingChecklist() {
   const hasEmail = !!emailSettings?.email_host;
   const hasBuyBox = (buyBoxes?.length || 0) > 0;
   const hasViewedProperties = profile.onboarding_viewed_properties || false;
+  const hasViewedDashboard = profile.onboarding_viewed_dashboard || false;
+  const hasViewedContacts = profile.onboarding_viewed_contacts || false;
+  const hasViewedActivities = profile.onboarding_viewed_activities || false;
+  const hasViewedAutomations = profile.onboarding_viewed_automations || false;
+  const hasViewedKpi = profile.onboarding_viewed_kpi || false;
 
-  const completedCount = [hasSMS, hasEmail, hasBuyBox, hasViewedProperties].filter(Boolean).length;
-  const totalCount = 4;
+  const completedCount = [hasSMS, hasEmail, hasBuyBox, hasViewedProperties, hasViewedDashboard, hasViewedContacts, hasViewedActivities, hasViewedAutomations, hasViewedKpi].filter(Boolean).length;
+  const totalCount = 9;
   const progressPercent = Math.round((completedCount / totalCount) * 100);
 
   return (
@@ -166,6 +171,36 @@ export default function OnboardingChecklist() {
           label="View Properties"
           description="Start reviewing matching properties"
           onClick={() => navigate('/properties')}
+        />
+        <ChecklistItem
+          completed={hasViewedDashboard}
+          label="View Dashboard"
+          description="Your KPIs and deal pipeline overview"
+          onClick={() => navigate('/')}
+        />
+        <ChecklistItem
+          completed={hasViewedContacts}
+          label="View Contacts"
+          description="Manage sellers and agents"
+          onClick={() => navigate('/contacts')}
+        />
+        <ChecklistItem
+          completed={hasViewedActivities}
+          label="View Activities"
+          description="Track tasks and follow-ups"
+          onClick={() => navigate('/activities')}
+        />
+        <ChecklistItem
+          completed={hasViewedAutomations}
+          label="View Automations"
+          description="Build automated workflows"
+          onClick={() => navigate('/automations')}
+        />
+        <ChecklistItem
+          completed={hasViewedKpi}
+          label="View KPI Goals"
+          description="Set and track your goals"
+          onClick={() => navigate('/kpi')}
         />
         
         {completedCount === totalCount && (

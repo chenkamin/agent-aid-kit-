@@ -92,6 +92,20 @@ export default function KPIGoals() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedGoals, setEditedGoals] = useState<Partial<KPIGoals>>({});
 
+  // Mark that user has viewed KPI goals (for onboarding)
+  useEffect(() => {
+    const markKpiViewed = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_viewed_kpi: true })
+          .eq('id', authUser.id);
+      }
+    };
+    markKpiViewed();
+  }, []);
+
   // Get date ranges
   const now = new Date();
   const currentWeekStart = startOfWeek(now, { weekStartsOn: 1 });

@@ -47,7 +47,7 @@ export default function OnboardingTour() {
         <div className="text-left">
           <h2 className="text-xl font-bold mb-2">Welcome to Dealio! 👋</h2>
           <p className="text-sm">
-            Let's get you set up in 4 quick steps to start finding investment properties. 
+            Let's get you set up in 9 quick steps to start finding investment properties. 
             This tour will guide you through the essential features.
           </p>
         </div>
@@ -98,6 +98,66 @@ export default function OnboardingTour() {
           <h3 className="font-semibold mb-2">Step 4: View Properties</h3>
           <p className="text-sm">
             Once your Buy Box is set up, view and manage properties that match your criteria. You can track leads, send offers, and close deals!
+          </p>
+        </div>
+      ),
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="dashboard-nav"]',
+      content: (
+        <div className="text-left">
+          <h3 className="font-semibold mb-2">Step 5: Dashboard</h3>
+          <p className="text-sm">
+            Your command center. View KPIs, deal pipeline, SMS activity, and hot leads at a glance.
+          </p>
+        </div>
+      ),
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="contacts-nav"]',
+      content: (
+        <div className="text-left">
+          <h3 className="font-semibold mb-2">Step 6: Contacts</h3>
+          <p className="text-sm">
+            Manage sellers, agents, and leads. View all contacts linked to your properties.
+          </p>
+        </div>
+      ),
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="activities-nav"]',
+      content: (
+        <div className="text-left">
+          <h3 className="font-semibold mb-2">Step 7: Activities</h3>
+          <p className="text-sm">
+            Track tasks and follow-ups. Never miss a call, email, or viewing.
+          </p>
+        </div>
+      ),
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="automations-nav"]',
+      content: (
+        <div className="text-left">
+          <h3 className="font-semibold mb-2">Step 8: Automations</h3>
+          <p className="text-sm">
+            Build automated workflows. Trigger actions on SMS received, property added, and more.
+          </p>
+        </div>
+      ),
+      placement: 'right',
+    },
+    {
+      target: '[data-tour="kpi-nav"]',
+      content: (
+        <div className="text-left">
+          <h3 className="font-semibold mb-2">Step 9: KPI Goals</h3>
+          <p className="text-sm">
+            Set and track your goals. Monitor SMS sent, deals closed, and pipeline metrics.
           </p>
         </div>
       ),

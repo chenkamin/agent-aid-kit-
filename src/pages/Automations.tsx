@@ -67,6 +67,20 @@ export default function Automations() {
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [templatesDialogOpen, setTemplatesDialogOpen] = useState(false);
 
+  // Mark that user has viewed automations (for onboarding)
+  useEffect(() => {
+    const markAutomationsViewed = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_viewed_automations: true })
+          .eq('id', authUser.id);
+      }
+    };
+    markAutomationsViewed();
+  }, []);
+
   // Fetch company
   const { data: userCompany } = useQuery({
     queryKey: ['user-company', user?.id],

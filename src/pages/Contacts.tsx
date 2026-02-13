@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Users, Mail, Phone, Building, Trash2, Search, Filter, Home, ExternalLink, DollarSign, Bed, Bath, Calendar } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -46,6 +46,20 @@ export default function Contacts() {
     type: "Agent",
     notes: "",
   });
+
+  // Mark that user has viewed contacts (for onboarding)
+  useEffect(() => {
+    const markContactsViewed = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_viewed_contacts: true })
+          .eq('id', authUser.id);
+      }
+    };
+    markContactsViewed();
+  }, []);
 
   // Get user's company
   const { data: userCompany } = useQuery({

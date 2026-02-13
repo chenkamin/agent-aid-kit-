@@ -51,6 +51,20 @@ export default function Activities() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   
+  // Mark that user has viewed activities (for onboarding)
+  useEffect(() => {
+    const markActivitiesViewed = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_viewed_activities: true })
+          .eq('id', authUser.id);
+      }
+    };
+    markActivitiesViewed();
+  }, []);
+
   // Fetch user's company first
   const { data: userCompany } = useQuery({
     queryKey: ["user-company", user?.id],
