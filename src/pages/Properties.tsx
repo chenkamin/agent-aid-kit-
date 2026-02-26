@@ -1151,6 +1151,19 @@ export default function Properties() {
     }
   };
 
+  const getConditionBadge = (condition: string | null) => {
+    switch (condition) {
+      case 'value_add':
+        return { label: 'Value Add', className: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700' };
+      case 'turnkey':
+        return { label: 'Turnkey', className: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700' };
+      case 'modern_rehab':
+        return { label: 'Modern Rehab', className: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700' };
+      default:
+        return null;
+    }
+  };
+
   const getWorkflowStateIcon = (state: string) => {
     switch (state) {
       case 'Initial':
@@ -4869,9 +4882,19 @@ export default function Properties() {
                         {property.bathrooms && <span>{property.bathrooms} bath</span>}
                       </div>
 
-                      {property.is_new_listing && (
-                        <Badge className="bg-green-500 text-white hover:bg-green-600 mb-2">NEW</Badge>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                        {property.is_new_listing && (
+                          <Badge className="bg-green-500 text-white hover:bg-green-600">NEW</Badge>
+                        )}
+                        {(() => {
+                          const badge = getConditionBadge(property.house_condition);
+                          return badge ? (
+                            <Badge variant="outline" className={`text-xs ${badge.className}`}>
+                              {badge.label}
+                            </Badge>
+                          ) : null;
+                        })()}
+                      </div>
                       
                       {nextFollowUp && (
                         <Link 
@@ -5002,6 +5025,9 @@ export default function Properties() {
                       City
                       {getSortIcon('city')}
                     </Button>
+                  </TableHead>
+                  <TableHead>
+                    <span className="font-semibold">Condition</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -5181,6 +5207,16 @@ export default function Properties() {
                         </Popover>
                       </TableCell>
                       <TableCell>{property.city || '-'}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const badge = getConditionBadge(property.house_condition);
+                          return badge ? (
+                            <Badge variant="outline" className={`text-xs ${badge.className}`}>
+                              {badge.label}
+                            </Badge>
+                          ) : null;
+                        })()}
+                      </TableCell>
                     </TableRow>
                 );
               })}

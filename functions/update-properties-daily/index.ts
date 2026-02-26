@@ -293,6 +293,32 @@ async function scrapePropertyDetails(addresses: string[], apifyToken: string) {
   return detailedProperties;
 }
 
+async function triggerConditionClassification(propertyId: string, description: string) {
+  try {
+    console.log(`🏷️ Triggering condition classification for property ${propertyId}`);
+    const response = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/functions/v1/classify-condition`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+        },
+        body: JSON.stringify({ propertyId, description })
+      }
+    );
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Condition classified for ${propertyId}: ${result.condition}`);
+    } else {
+      console.log(`⚠️ Condition classification failed for ${propertyId}`);
+    }
+  } catch (error) {
+    console.log(`⚠️ Condition classification error for ${propertyId}:`, error);
+  }
+}
+
 async function recordPropertyChanges(supabase: any, updates: any[]) {
   const changeRecords = updates.flatMap(update =>
     update.changes.map((change: any) => ({
@@ -1048,7 +1074,8 @@ Deno.serve(async (req) => {
               last_scraped_at: new Date().toISOString(),
               seller_agent_name: agentName,
               seller_agent_phone: agentPhone,
-              seller_agent_email: agentEmail
+              seller_agent_email: agentEmail,
+              description: prop.description || detailedData?.description || prop.hdpData?.homeInfo?.homeDescription || null
             };
             
             console.log(`      ➕ Adding to newListings array`);
@@ -1164,6 +1191,9 @@ Deno.serve(async (req) => {
               console.log(`      ✅ INSERT SUCCESSFUL`);
               if (insertData) {
                 console.log(`      🔍 Inserted property ID: ${insertData[0]?.id}`);
+                if (insertData[0]?.id && listing.description) {
+                  triggerConditionClassification(insertData[0].id, listing.description);
+                }
               }
               successCount++;
             }

@@ -247,6 +247,32 @@ async function scrapePropertyDetails(addresses: string[], apifyToken: string) {
   return detailedProperties;
 }
 
+async function triggerConditionClassification(propertyId: string, description: string) {
+  try {
+    console.log(`🏷️ Triggering condition classification for property ${propertyId}`);
+    const response = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/functions/v1/classify-condition`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+        },
+        body: JSON.stringify({ propertyId, description })
+      }
+    );
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ Condition classified for ${propertyId}: ${result.condition}`);
+    } else {
+      console.log(`⚠️ Condition classification failed for ${propertyId}`);
+    }
+  } catch (error) {
+    console.log(`⚠️ Condition classification error for ${propertyId}:`, error);
+  }
+}
+
 async function triggerARVEstimation(propertyId: string, listingUrl: string, authHeader: string) {
   try {
     console.log(`🔮 Triggering ARV estimation for property ${propertyId}`);
@@ -951,7 +977,8 @@ Deno.serve(async (req) => {
           last_scraped_at: new Date().toISOString(),
           seller_agent_name: agentName,
           seller_agent_phone: agentPhone,
-          seller_agent_email: agentEmail
+          seller_agent_email: agentEmail,
+          description: prop.remarks || null
         });
       } else {
         // EXISTING LISTING - CHECK FOR CHANGES
@@ -1040,7 +1067,7 @@ Deno.serve(async (req) => {
           successCount++;
           // Collect IDs for ARV estimation
           if (insertedProperty) {
-            newPropertyIds.push({ id: insertedProperty.id, url: insertedProperty.listing_url });
+            newPropertyIds.push({ id: insertedProperty.id, url: insertedProperty.listing_url, description: listing.description });
           }
         }
       }
@@ -1078,6 +1105,9 @@ Deno.serve(async (req) => {
       newPropertyIds.forEach(prop => {
         if (prop.url) {
           triggerARVEstimation(prop.id, prop.url, authHeader);
+        }
+        if (prop.description) {
+          triggerConditionClassification(prop.id, prop.description);
         }
       });
     }
