@@ -2825,6 +2825,53 @@ export default function Properties() {
     },
   });
 
+  // Find comps via AI web search
+  const findCompsMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedProperty?.id) throw new Error("No property selected");
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/find-comps-ai`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ propertyId: selectedProperty.id }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to find comps');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.comps) {
+        setSelectedProperty((prev: any) => ({ ...prev, comps: data.comps }));
+        setEditedProperty((prev: any) => ({ ...prev, comps: data.comps }));
+      }
+      queryClient.invalidateQueries({ queryKey: ["properties", userCompany?.company_id] });
+      toast({
+        title: "Comps Found",
+        description: `Found ${data.newCount} comparable properties via AI search`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to find comps",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Export comps to CSV
   const exportCompsToCSV = () => {
     if (!selectedProperty?.comps || selectedProperty.comps.length === 0) {
@@ -6907,6 +6954,25 @@ export default function Properties() {
                     )}
                     <Button 
                       size="sm" 
+                      variant="outline"
+                      onClick={() => findCompsMutation.mutate()}
+                      disabled={findCompsMutation.isPending}
+                      className="text-blue-600 border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-950/30"
+                    >
+                      {findCompsMutation.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Searching...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="mr-2 h-4 w-4" />
+                          Find Comps
+                        </>
+                      )}
+                    </Button>
+                    <Button 
+                      size="sm" 
                       onClick={() => {
                         setEditingCompId(null);
                         setCompForm({ address: "", zillow_link: "", price: "", grade: "middle", description: "" });
@@ -7301,7 +7367,7 @@ export default function Properties() {
                             
                             <div className="space-y-1">
                               <p className="font-semibold text-sm">Subject: {email.subject}</p>
-                              <p className="text-sm leading-relaxed whitespace-pre-wrap line-clamp-4">
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-y-auto pr-2">
                                 {email.body}
                               </p>
                             </div>

@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings, Bell, Check, Trash2, Send, Mail, Sparkles, Target } from "lucide-react";
+import { Building2, Users, Activity, LayoutDashboard, LogOut, List, MessageSquare, Menu, X, Settings, Bell, Check, Send, Mail, Sparkles, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -400,13 +400,13 @@ export default function Layout({ children }: LayoutProps) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 flex-shrink-0"
+                            className="h-8 w-8 flex-shrink-0 rounded-full opacity-70 hover:opacity-100 hover:bg-destructive/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               deleteNotificationMutation.mutate(notification.id);
                             }}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <X className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
