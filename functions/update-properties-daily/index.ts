@@ -293,6 +293,32 @@ async function scrapePropertyDetails(addresses: string[], apifyToken: string) {
   return detailedProperties;
 }
 
+async function triggerARVEstimation(propertyId: string, listingUrl: string) {
+  try {
+    console.log(`🔮 Triggering ARV estimation for property ${propertyId}`);
+    const response = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/functions/v1/estimate-arv`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+        },
+        body: JSON.stringify({ propertyId, listingUrl })
+      }
+    );
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`✅ ARV estimated for ${propertyId}: $${result.arv_estimate}`);
+    } else {
+      console.log(`⚠️ ARV estimation failed for ${propertyId} (status: ${response.status})`);
+    }
+  } catch (error) {
+    console.log(`⚠️ ARV estimation error for ${propertyId}:`, error);
+  }
+}
+
 async function triggerConditionClassification(propertyId: string, description: string) {
   try {
     console.log(`🏷️ Triggering condition classification for property ${propertyId}`);
@@ -1193,6 +1219,9 @@ Deno.serve(async (req) => {
                 console.log(`      🔍 Inserted property ID: ${insertData[0]?.id}`);
                 if (insertData[0]?.id && listing.description) {
                   triggerConditionClassification(insertData[0].id, listing.description);
+                }
+                if (insertData[0]?.id && listing.listing_url) {
+                  triggerARVEstimation(insertData[0].id, listing.listing_url);
                 }
               }
               successCount++;

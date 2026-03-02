@@ -6312,6 +6312,79 @@ export default function Properties() {
                     </AccordionContent>
                   </AccordionItem>
 
+                  {/* AI ARV Analysis */}
+                  {selectedProperty?.arv_data && (
+                    <AccordionItem value="arv">
+                      <AccordionTrigger className="text-lg font-semibold">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-5 w-5 text-purple-500" />
+                          AI ARV Analysis
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-4 pt-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">ARV Estimate</p>
+                              <p className="text-xl font-bold text-green-600 dark:text-green-400">
+                                {selectedProperty.arv_data.arv_estimate
+                                  ? `$${Number(selectedProperty.arv_data.arv_estimate).toLocaleString()}`
+                                  : '—'}
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Confidence</p>
+                              <Badge
+                                className={
+                                  selectedProperty.arv_data.confidence === 'high'
+                                    ? 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400'
+                                    : selectedProperty.arv_data.confidence === 'medium'
+                                    ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400'
+                                    : 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400'
+                                }
+                                variant="outline"
+                              >
+                                {selectedProperty.arv_data.confidence ?? '—'}
+                              </Badge>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Repair Estimate</p>
+                              <p className="font-semibold text-orange-600 dark:text-orange-400">
+                                {selectedProperty.arv_data.repair_estimate != null
+                                  ? `$${Number(selectedProperty.arv_data.repair_estimate).toLocaleString()}`
+                                  : '—'}
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Generated</p>
+                              <p className="text-sm text-muted-foreground">
+                                {selectedProperty.arv_data.generated_at
+                                  ? format(new Date(selectedProperty.arv_data.generated_at), 'MMM d, yyyy')
+                                  : '—'}
+                              </p>
+                            </div>
+                          </div>
+                          {selectedProperty.arv_data.reasoning && (
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground font-medium">Reasoning</p>
+                              <p className="text-sm bg-muted/50 rounded-md p-3">
+                                {selectedProperty.arv_data.reasoning}
+                              </p>
+                            </div>
+                          )}
+                          {selectedProperty.arv_data.market_analysis && (
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground font-medium">Market Analysis</p>
+                              <p className="text-sm bg-muted/50 rounded-md p-3">
+                                {selectedProperty.arv_data.market_analysis}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  )}
+
                   {/* Property Details */}
                   <AccordionItem value="property">
                     <AccordionTrigger className="text-lg font-semibold">

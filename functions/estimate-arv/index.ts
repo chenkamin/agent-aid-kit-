@@ -303,6 +303,14 @@ Based on the ${imageUrls.length > 0 ? 'images and ' : ''}comparable sales, estim
 
     const updateData = {
       arv_estimate: arvData.arv_estimate,
+      arv_data: {
+        arv_estimate: arvData.arv_estimate,
+        confidence: arvData.confidence,
+        reasoning: arvData.reasoning,
+        repair_estimate: arvData.repair_estimate ?? null,
+        market_analysis: arvData.market_analysis,
+        generated_at: new Date().toISOString(),
+      },
       agent_notes: `ARV Estimate: $${arvData.arv_estimate?.toLocaleString()}\n` +
         `Confidence: ${arvData.confidence}\n` +
         `Reasoning: ${arvData.reasoning}\n` +
